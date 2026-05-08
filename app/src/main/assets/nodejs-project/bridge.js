@@ -274,8 +274,9 @@ function waitForRetry(callback) {
 // OpenAI Chat Completions format for providers like OpenRouter, NVIDIA NIM,
 // Meta Llama, and Ollama. Handles both streaming and non-streaming responses.
 
-function startProxyServer() {
+function startProxyServer(onReady) {
     const proxy = http.createServer((req, res) => {
+        // POST /v1/messages — main Anthropic chat endpoint
         if (req.method === 'POST' && req.url.startsWith('/v1/messages')) {
             let body = '';
             req.on('data', chunk => { body += chunk; });
@@ -284,19 +285,31 @@ function startProxyServer() {
                 catch (e) { proxyError(res, 400, e.message); }
             });
             req.on('error', e => proxyError(res, 500, e.message));
-        } else {
-            res.writeHead(404);
-            res.end('{"error":"not found"}');
+            return;
         }
+        // GET /v1/models — Claude Code checks this on startup; return a fake list
+        if (req.method === 'GET' && req.url.startsWith('/v1/models')) {
+            const cfg = readConfig();
+            const modelId = cfg.modelId || 'claude-3-5-sonnet-20241022';
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                data: [{ id: modelId, display_name: modelId, created_at: '' }]
+            }));
+            return;
+        }
+        // Any other endpoint — return 200 so Claude Code doesn't crash on startup probes
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end('{}');
     });
 
     proxy.on('error', err => {
         log('Proxy error: ' + err.message + ' — retrying in 3 s\n');
-        setTimeout(startProxyServer, 3000);
+        setTimeout(() => startProxyServer(onReady), 3000);
     });
 
     proxy.listen(PROXY_PORT, HOST, () => {
         log('Proxy ready on ' + HOST + ':' + PROXY_PORT + '\n');
+        if (onReady) onReady();
     });
 }
 
@@ -524,7 +537,7 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res) {
 
 // ─── TCP bridge server ────────────────────────────────────────────────────────
 
-function startBridgeServer() {
+function openTcpBridge() {
     const server = net.createServer(socket => {
         if (!isClaudeInstalled()) {
             socket.write('\r\n\x1b[31mClaude Code not installed — run Setup from the app.\x1b[0m\r\n');
@@ -543,13 +556,18 @@ function startBridgeServer() {
             LD_LIBRARY_PATH: NATIVE_DIR,  // needed by libnode-launcher.so child processes
         };
 
-        if (cfg.apiKey)    env.ANTHROPIC_API_KEY    = cfg.apiKey;
-        if (cfg.baseUrl)   env.ANTHROPIC_BASE_URL   = cfg.baseUrl;
-        if (cfg.authToken) env.ANTHROPIC_AUTH_TOKEN = cfg.authToken;
-        // Only set ANTHROPIC_MODEL for subscription mode (real Anthropic model IDs).
-        // For proxy mode the proxy overwrites the model from cfg.modelId anyway,
-        // and setting a non-Anthropic model ID here causes Claude Code to crash on startup.
-        if (cfg.modelId && !cfg.authToken) env.ANTHROPIC_MODEL = cfg.modelId;
+        if (cfg.authToken) {
+            // Proxy mode: Claude Code authenticates with the local proxy using a dummy
+            // token. The real provider key is used by the proxy directly — never pass
+            // it to Claude Code because it will validate the format (expects sk-ant-...)
+            // and exit immediately if the key is from another provider.
+            env.ANTHROPIC_AUTH_TOKEN = cfg.authToken;
+        } else if (cfg.apiKey) {
+            // Subscription mode: pass the real Anthropic key directly.
+            env.ANTHROPIC_API_KEY = cfg.apiKey;
+        }
+        if (cfg.baseUrl)                    env.ANTHROPIC_BASE_URL = cfg.baseUrl;
+        if (cfg.modelId && !cfg.authToken)  env.ANTHROPIC_MODEL    = cfg.modelId;
         env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = '1';
         env.DISABLE_AUTOUPDATER = '1';
 
@@ -573,17 +591,19 @@ function startBridgeServer() {
     });
 
     server.on('error', err => {
-        process.stderr.write('Bridge server error: ' + err.message + '\n');
-        setTimeout(startBridgeServer, 3000);
+        process.stderr.write('TCP bridge error: ' + err.message + '\n');
+        setTimeout(openTcpBridge, 3000);
     });
 
     server.listen(PORT, HOST, () => {
         log('Bridge ready on ' + HOST + ':' + PORT + '\n');
     });
+}
 
-    // Start the Anthropic→OpenAI proxy alongside the bridge.
-    // Proxy-mode providers (OpenRouter, NVIDIA NIM, etc.) route through port 8082.
-    startProxyServer();
+function startBridgeServer() {
+    // Start proxy first — port 8082 must be listening before Claude Code spawns,
+    // otherwise its first API call gets ECONNREFUSED and it exits immediately.
+    startProxyServer(() => openTcpBridge());
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
