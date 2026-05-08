@@ -9,14 +9,6 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- Required to send commands to Termux -->
-    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
-
-    <!-- Package visibility: needed to detect if Termux is installed -->
-    <queries>
-        <package android:name="com.termux" />
-    </queries>
-
     <application
         android:name=".ClaudeApp"
         android:allowBackup="false"
@@ -42,14 +34,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Termux install guide (shown when Termux not installed) -->
-        <activity
-            android:name=".TermuxInstallActivity"
-            android:exported="false"
-            android:screenOrientation="portrait"
-            android:theme="@style/Theme.ClaudeCodeSetup" />
-
-        <!-- Termux setup guide (runs setup.sh in Termux) -->
+        <!-- First-time setup (npm install progress) -->
         <activity
             android:name=".SetupActivity"
             android:exported="false"

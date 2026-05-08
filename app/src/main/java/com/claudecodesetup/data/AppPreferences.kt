@@ -23,16 +23,18 @@ class AppPreferences(context: Context) {
         context.getSharedPreferences("claude_prefs", Context.MODE_PRIVATE)
     }
 
-    // ─── Termux / bridge setup ───────────────────────────────────────────────
+    // ─── Node.js / bridge setup ──────────────────────────────────────────────
 
-    /** True after the Termux setup script ran successfully and bridge was detected. */
-    fun isTermuxSetupComplete(): Boolean = prefs.getBoolean(KEY_TERMUX_SETUP_DONE, false)
-    fun setTermuxSetupComplete(done: Boolean) = prefs.edit().putBoolean(KEY_TERMUX_SETUP_DONE, done).apply()
+    /** True after bridge.js completed npm install and port 8083 was detected. */
+    fun isNodeSetupComplete(): Boolean = prefs.getBoolean(KEY_NODE_SETUP_DONE, false)
+    fun setNodeSetupComplete(done: Boolean) =
+        prefs.edit().putBoolean(KEY_NODE_SETUP_DONE, done).apply()
 
     // ─── Provider config ─────────────────────────────────────────────────────
 
     fun isProviderConfigured(): Boolean = prefs.getBoolean(KEY_PROVIDER_SET, false)
-    fun setProviderConfigured(set: Boolean) = prefs.edit().putBoolean(KEY_PROVIDER_SET, set).apply()
+    fun setProviderConfigured(set: Boolean) =
+        prefs.edit().putBoolean(KEY_PROVIDER_SET, set).apply()
 
     fun getLoginMode(): String = prefs.getString(KEY_LOGIN_MODE, MODE_PROXY) ?: MODE_PROXY
     fun setLoginMode(mode: String) = prefs.edit().putString(KEY_LOGIN_MODE, mode).apply()
@@ -52,12 +54,14 @@ class AppPreferences(context: Context) {
     // ─── Session ─────────────────────────────────────────────────────────────
 
     fun isSessionActive(): Boolean = prefs.getBoolean(KEY_SESSION_ACTIVE, false)
-    fun setSessionActive(active: Boolean) = prefs.edit().putBoolean(KEY_SESSION_ACTIVE, active).apply()
+    fun setSessionActive(active: Boolean) =
+        prefs.edit().putBoolean(KEY_SESSION_ACTIVE, active).apply()
 
     // ─── Misc ────────────────────────────────────────────────────────────────
 
     fun getInstalledClaudeVersion(): String = prefs.getString(KEY_CLAUDE_VERSION, "") ?: ""
-    fun setInstalledClaudeVersion(v: String) = prefs.edit().putString(KEY_CLAUDE_VERSION, v).apply()
+    fun setInstalledClaudeVersion(v: String) =
+        prefs.edit().putString(KEY_CLAUDE_VERSION, v).apply()
 
     fun getLanguage(): String = prefs.getString(KEY_LANGUAGE, "en") ?: "en"
     fun setLanguage(lang: String) = prefs.edit().putString(KEY_LANGUAGE, lang).apply()
@@ -78,16 +82,16 @@ class AppPreferences(context: Context) {
     }
 
     companion object {
-        private const val KEY_TERMUX_SETUP_DONE = "termux_setup_done"
-        private const val KEY_PROVIDER_SET  = "provider_set"
-        private const val KEY_LOGIN_MODE    = "login_mode"
-        private const val KEY_PROVIDER_ID   = "provider_id"
-        private const val KEY_API_KEY       = "api_key"
-        private const val KEY_MODEL_ID      = "model_id"
-        private const val KEY_BASE_URL      = "base_url"
-        private const val KEY_SESSION_ACTIVE = "session_active"
-        private const val KEY_LANGUAGE      = "language"
-        private const val KEY_CLAUDE_VERSION = "claude_version"
+        private const val KEY_NODE_SETUP_DONE = "node_setup_done"
+        private const val KEY_PROVIDER_SET    = "provider_set"
+        private const val KEY_LOGIN_MODE      = "login_mode"
+        private const val KEY_PROVIDER_ID     = "provider_id"
+        private const val KEY_API_KEY         = "api_key"
+        private const val KEY_MODEL_ID        = "model_id"
+        private const val KEY_BASE_URL        = "base_url"
+        private const val KEY_SESSION_ACTIVE  = "session_active"
+        private const val KEY_LANGUAGE        = "language"
+        private const val KEY_CLAUDE_VERSION  = "claude_version"
 
         const val MODE_SUBSCRIPTION = "subscription"
         const val MODE_PROXY        = "proxy"

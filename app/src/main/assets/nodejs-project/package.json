@@ -1,0 +1,6 @@
+{
+  "name": "claude-bridge",
+  "version": "1.0.0",
+  "description": "Node.js bridge — runs claude-code and exposes it on TCP 8083",
+  "main": "bridge.js"
+}

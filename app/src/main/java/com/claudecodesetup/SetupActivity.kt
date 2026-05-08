@@ -1,58 +1,51 @@
 package com.claudecodesetup
 
-import android.Manifest
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import com.claudecodesetup.data.AppPreferences
 import com.claudecodesetup.databinding.ActivitySetupBinding
-import com.claudecodesetup.managers.BridgeManager
+import com.claudecodesetup.managers.NodeBridgeManager
 
 class SetupActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySetupBinding
     private lateinit var prefs: AppPreferences
-    private lateinit var bridge: BridgeManager
+    private lateinit var bridge: NodeBridgeManager
 
-    private val pollHandler = Handler(Looper.getMainLooper())
-    private val stepHandler = Handler(Looper.getMainLooper())
-    private var polling = false
+    private val handler    = Handler(Looper.getMainLooper())
+    private var monitoring = false
 
-    // Holds the full paste command so "Copy again" always works.
-    private var pasteCmd = ""
-
-    private val logLines = mutableListOf<String>()
-
-    // delay(ms), progress(0–100), label shown in the log and step indicator.
-    private val setupSteps = listOf(
-        Triple(0L,       5,  "Waiting for Termux to start..."),
-        Triple(8_000L,   15, "Updating Termux packages..."),
-        Triple(40_000L,  30, "Installing proot-distro, socat, curl..."),
-        Triple(110_000L, 45, "Setting up Ubuntu Linux (~300 MB)..."),
-        Triple(310_000L, 65, "Installing Node.js v20 inside Ubuntu..."),
-        Triple(490_000L, 80, "Installing Claude Code..."),
-        Triple(610_000L, 95, "Starting bridge services...")
+    // ── Fake progress steps shown while npm install runs ──────────────────────
+    // (real log appears in the scroll view; these just advance the bar)
+    private val progressSteps = listOf(
+        Pair(0L,        5),
+        Pair(10_000L,  15),
+        Pair(30_000L,  30),
+        Pair(60_000L,  50),
+        Pair(100_000L, 65),
+        Pair(140_000L, 80),
+        Pair(180_000L, 90),
     )
 
-    private val pollRunnable = object : Runnable {
+    // ── Monitor: polls every 2 s for log updates + bridge completion ──────────
+    private val monitorRunnable = object : Runnable {
         override fun run() {
+            if (!monitoring) return
+            refreshLog()
             Thread {
-                val reachable = bridge.isBridgeReachable()
+                val ready  = bridge.isBridgeReachable()
+                val failed = bridge.isSetupFailed()
                 runOnUiThread {
-                    if (reachable) {
-                        onBridgeDetected()
-                    } else if (polling) {
-                        pollHandler.postDelayed(this, POLL_INTERVAL_MS)
+                    when {
+                        ready  -> onSetupComplete()
+                        failed -> onSetupFailed(
+                            "Installation failed.\nCheck your internet connection and tap Try again."
+                        )
+                        else   -> handler.postDelayed(this, POLL_MS)
                     }
                 }
             }.start()
@@ -64,71 +57,63 @@ class SetupActivity : AppCompatActivity() {
         binding = ActivitySetupBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        prefs = AppPreferences(this)
-        bridge = BridgeManager(this)
+        prefs  = AppPreferences(this)
+        bridge = NodeBridgeManager(this)
 
-        requestNotificationPermission()
         showInitialState()
 
         binding.btnStartSetup.setOnClickListener { startSetup() }
-        binding.btnRetry.setOnClickListener { startSetup() }
-        binding.btnContinue.setOnClickListener { proceedToNext() }
-        binding.btnCopyCmd.setOnClickListener { copyPasteCommand() }
+        binding.btnRetry.setOnClickListener      { startSetup() }
+        binding.btnContinue.setOnClickListener   { proceedToNext() }
     }
 
     override fun onResume() {
         super.onResume()
-        if (binding.layoutWaiting.visibility == View.VISIBLE) {
-            startPolling()
-        }
+        if (binding.layoutWaiting.visibility == View.VISIBLE) startMonitoring()
     }
 
     override fun onPause() {
         super.onPause()
-        stopPolling()
+        stopMonitoring()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        stopPolling()
-        stopSteps()
+        stopMonitoring()
     }
 
-    // ─── States ──────────────────────────────────────────────────────────────
+    // ─── States ───────────────────────────────────────────────────────────────
 
     private fun showInitialState() {
         binding.layoutInitial.visibility = View.VISIBLE
         binding.layoutWaiting.visibility = View.GONE
         binding.layoutSuccess.visibility = View.GONE
-        binding.layoutError.visibility = View.GONE
+        binding.layoutError.visibility   = View.GONE
     }
 
     private fun showWaitingState() {
         binding.layoutInitial.visibility = View.GONE
         binding.layoutWaiting.visibility = View.VISIBLE
         binding.layoutSuccess.visibility = View.GONE
-        binding.layoutError.visibility = View.GONE
-        binding.progressSetup.progress = 0
-        binding.tvCurrentStep.text = "Waiting for Termux..."
-        logLines.clear()
-        binding.tvTaskLog.text = ""
+        binding.layoutError.visibility   = View.GONE
+        binding.progressSetup.progress   = 0
+        binding.tvCurrentStep.text       = "Starting Node.js..."
+        binding.tvTaskLog.text           = ""
     }
 
     private fun showSuccessState() {
-        stopPolling()
-        stopSteps()
+        stopMonitoring()
         binding.layoutInitial.visibility = View.GONE
         binding.layoutWaiting.visibility = View.GONE
         binding.layoutSuccess.visibility = View.VISIBLE
-        binding.layoutError.visibility = View.GONE
+        binding.layoutError.visibility   = View.GONE
     }
 
     private fun showErrorState(msg: String) {
-        stopPolling()
-        stopSteps()
+        stopMonitoring()
         binding.layoutWaiting.visibility = View.GONE
-        binding.layoutError.visibility = View.VISIBLE
-        binding.tvErrorMsg.text = msg
+        binding.layoutError.visibility   = View.VISIBLE
+        binding.tvErrorMsg.text          = msg
     }
 
     // ─── Setup flow ───────────────────────────────────────────────────────────
@@ -136,73 +121,64 @@ class SetupActivity : AppCompatActivity() {
     private fun startSetup() {
         binding.layoutError.visibility = View.GONE
         showWaitingState()
+        scheduleProgressSteps()
+        bridge.startSetup()   // starts Node.js → bridge.js → npm install
+        startMonitoring()
+    }
 
-        try {
-            val scriptContent = assets.open("setup.sh").bufferedReader().readText()
+    // ─── Progress bar steps (time-based visual feedback) ─────────────────────
 
-            // Build the full one-liner and copy to clipboard FIRST.
-            // This works regardless of whether allow-external-apps is set in Termux.
-            pasteCmd = bridge.buildSetupPasteCommand(scriptContent)
-            copyToClipboard(pasteCmd, showToast = false)
-
-            // Open Termux so the user sees the terminal immediately.
-            bridge.openTermuxForSetup()
-
-            // Also try via RunCommandService — succeeds silently if allow-external-apps
-            // is already enabled (e.g. after the first manual paste sets it).
-            bridge.tryRunSetupViaIntent(scriptContent)
-
-            scheduleSteps()
-            startPolling()
-        } catch (e: Exception) {
-            showErrorState("Could not start setup: ${e.message}")
+    private fun scheduleProgressSteps() {
+        for ((delayMs, progress) in progressSteps) {
+            handler.postDelayed({
+                if (binding.layoutWaiting.visibility == View.VISIBLE) {
+                    binding.progressSetup.progress = progress
+                }
+            }, delayMs)
         }
     }
 
-    // ─── Step progression ────────────────────────────────────────────────────
+    // ─── Log polling ──────────────────────────────────────────────────────────
 
-    private fun scheduleSteps() {
-        stopSteps()
-        for ((delayMs, progress, message) in setupSteps) {
-            stepHandler.postDelayed({ advanceStep(progress, message) }, delayMs)
+    private fun refreshLog() {
+        val text = bridge.readSetupLog()
+        if (text.isNotEmpty()) {
+            binding.tvTaskLog.text = text
+            binding.scrollTaskLog.post {
+                binding.scrollTaskLog.fullScroll(View.FOCUS_DOWN)
+            }
+            // Derive step label from last non-blank line
+            val lastLine = text.trimEnd().lines().lastOrNull { it.isNotBlank() }
+            if (lastLine != null) binding.tvCurrentStep.text = lastLine.take(60)
         }
     }
 
-    private fun advanceStep(progress: Int, message: String) {
-        if (binding.layoutWaiting.visibility != View.VISIBLE) return
-        binding.progressSetup.progress = progress
-        binding.tvCurrentStep.text = message
-        logLines.add(message)
-        binding.tvTaskLog.text = logLines.joinToString("\n")
-        binding.scrollTaskLog.post { binding.scrollTaskLog.fullScroll(View.FOCUS_DOWN) }
+    // ─── Monitor start/stop ───────────────────────────────────────────────────
+
+    private fun startMonitoring() {
+        if (monitoring) return
+        monitoring = true
+        handler.post(monitorRunnable)
     }
 
-    private fun stopSteps() {
-        stepHandler.removeCallbacksAndMessages(null)
+    private fun stopMonitoring() {
+        monitoring = false
+        handler.removeCallbacksAndMessages(null)
     }
 
-    // ─── Polling ─────────────────────────────────────────────────────────────
+    // ─── Completion handlers ──────────────────────────────────────────────────
 
-    private fun startPolling() {
-        if (polling) return
-        polling = true
-        pollHandler.post(pollRunnable)
-    }
-
-    private fun stopPolling() {
-        polling = false
-        pollHandler.removeCallbacks(pollRunnable)
-    }
-
-    private fun onBridgeDetected() {
-        stopPolling()
-        stopSteps()
+    private fun onSetupComplete() {
+        stopMonitoring()
         binding.progressSetup.progress = 100
-        logLines.add("Setup complete!")
-        binding.tvTaskLog.text = logLines.joinToString("\n")
-        binding.scrollTaskLog.post { binding.scrollTaskLog.fullScroll(View.FOCUS_DOWN) }
-        prefs.setTermuxSetupComplete(true)
+        refreshLog()
+        prefs.setNodeSetupComplete(true)
         showSuccessState()
+    }
+
+    private fun onSetupFailed(msg: String) {
+        refreshLog()
+        showErrorState(msg)
     }
 
     private fun proceedToNext() {
@@ -210,34 +186,7 @@ class SetupActivity : AppCompatActivity() {
         finish()
     }
 
-    // ─── Clipboard ───────────────────────────────────────────────────────────
-
-    private fun copyPasteCommand() {
-        if (pasteCmd.isEmpty()) return
-        copyToClipboard(pasteCmd, showToast = true)
-    }
-
-    private fun copyToClipboard(text: String, showToast: Boolean) {
-        val cb = getSystemService(ClipboardManager::class.java)
-        cb.setPrimaryClip(ClipData.newPlainText("claudecode-setup", text))
-        if (showToast) {
-            Toast.makeText(this, "Command copied — paste it in Termux", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // ─── Notification permission ──────────────────────────────────────────────
-
-    private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this,
-                    Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS), 42)
-            }
-        }
-    }
-
     companion object {
-        private const val POLL_INTERVAL_MS = 5_000L
+        private const val POLL_MS = 2_000L
     }
 }

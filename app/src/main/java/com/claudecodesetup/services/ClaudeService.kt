@@ -14,7 +14,7 @@ import com.claudecodesetup.ClaudeApp
 import com.claudecodesetup.R
 import com.claudecodesetup.TerminalActivity
 import com.claudecodesetup.data.AppPreferences
-import com.claudecodesetup.managers.BridgeManager
+import com.claudecodesetup.managers.NodeBridgeManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -30,7 +30,7 @@ class ClaudeService : LifecycleService() {
     private val binder = LocalBinder()
 
     private lateinit var prefs: AppPreferences
-    private lateinit var bridge: BridgeManager
+    private lateinit var bridge: NodeBridgeManager
     private lateinit var wakeLock: PowerManager.WakeLock
 
     private val sessions = LinkedHashMap<Int, ClaudeSession>()
@@ -38,7 +38,7 @@ class ClaudeService : LifecycleService() {
     var activeSessionId: Int = -1
         private set
 
-    // Restart bridge once per service lifecycle (picks up new provider config)
+    // Start the bridge only once per service lifecycle
     private var bridgeStartedThisSession = false
 
     // ─── Callbacks (set by TerminalActivity) ─────────────────────────────────
@@ -82,8 +82,8 @@ class ClaudeService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
-        prefs = AppPreferences(this)
-        bridge = BridgeManager(this)
+        prefs  = AppPreferences(this)
+        bridge = NodeBridgeManager(this)
         val pm = getSystemService(PowerManager::class.java)
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ClaudeCode:WakeLock")
         startForeground(NOTIF_ID, buildNotification("Claude Code is ready"))
@@ -92,7 +92,7 @@ class ClaudeService : LifecycleService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         when (intent?.action) {
-            ACTION_STOP -> { stopAllSessions(); stopSelf() }
+            ACTION_STOP           -> { stopAllSessions(); stopSelf() }
             ACTION_RESTART_BRIDGE -> restartBridge()
         }
         return START_STICKY
@@ -109,7 +109,7 @@ class ClaudeService : LifecycleService() {
     fun createSession(mode: String): Int {
         if (sessions.size >= MAX_SESSIONS) return -1
 
-        val id = nextSessionId++
+        val id      = nextSessionId++
         val session = ClaudeSession(id, "Session ${id + 1}")
         sessions[id] = session
 
@@ -186,7 +186,7 @@ class ClaudeService : LifecycleService() {
     ) = withContext(Dispatchers.IO) {
         val currentMode = mode ?: prefs.getLoginMode()
 
-        // Start the bridge once per service session (picks up current provider config)
+        // Start/refresh the Node.js bridge once per service lifecycle
         if (!bridgeStartedThisSession) {
             bridgeStartedThisSession = true
             updateNotification("Starting Claude bridge…")
@@ -198,9 +198,9 @@ class ClaudeService : LifecycleService() {
             )
         }
 
-        // Wait up to 45 s for the bridge socat to open port 8083
-        if (!waitForBridge(45)) {
-            val err = "\r\n[31mBridge timeout — is Termux running? Try reopening Termux.[0m\r\n"
+        // Wait up to 60 s for bridge.js to open port 8083
+        if (!waitForBridge(60)) {
+            val err = "\r\n[31mBridge timeout — Node.js did not start in time.[0m\r\n"
             session.appendOutput(err)
             onOutput?.invoke(session.id, err)
             session.alive = false
@@ -211,7 +211,7 @@ class ClaudeService : LifecycleService() {
 
         val sock = bridge.openSession()
         if (sock == null) {
-            val err = "\r\n[31mCould not connect to Claude bridge (port ${BridgeManager.BRIDGE_PORT}).[0m\r\n"
+            val err = "\r\n[31mCould not connect to Claude bridge (port ${NodeBridgeManager.BRIDGE_PORT}).[0m\r\n"
             session.appendOutput(err)
             onOutput?.invoke(session.id, err)
             session.alive = false
@@ -220,16 +220,16 @@ class ClaudeService : LifecycleService() {
             return@withContext
         }
 
-        session.socket = sock
+        session.socket       = sock
         session.outputStream = sock.outputStream
-        session.alive = true
+        session.alive        = true
         prefs.setSessionActive(true)
         acquireWakeLock()
         updateNotificationSessionCount()
 
         // Stream output until socket closes
         try {
-            val buf = ByteArray(4096)
+            val buf   = ByteArray(4096)
             val input = sock.inputStream
             var n: Int
             while (input.read(buf).also { n = it } != -1) {
@@ -241,8 +241,8 @@ class ClaudeService : LifecycleService() {
             // Normal socket close
         } finally {
             runCatching { sock.close() }
-            session.alive = false
-            session.socket = null
+            session.alive        = false
+            session.socket       = null
             session.outputStream = null
 
             if (sessions.values.none { it.alive }) {
@@ -309,7 +309,7 @@ class ClaudeService : LifecycleService() {
 
     private fun updateNotificationSessionCount() {
         val alive = sessions.values.count { it.alive }
-        val text = when {
+        val text  = when {
             alive == 0 -> "Claude Code stopped"
             alive == 1 -> "Claude Code is running"
             else       -> "Claude Code — $alive sessions running"

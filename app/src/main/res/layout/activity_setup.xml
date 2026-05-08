@@ -33,7 +33,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="We'll install Claude Code inside Ubuntu Linux via Termux.\nThis only happens once (5–15 minutes)."
+            android:text="Claude Code will be downloaded and installed inside the app.\nThis only happens once (~50 MB)."
             android:textColor="@color/text_secondary"
             android:textSize="14sp"
             android:lineSpacingMultiplier="1.4"
@@ -68,7 +68,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="1. Tap the button — Termux opens automatically\n2. A setup command is copied to your clipboard\n3. In Termux: long-press → Paste → Enter\n4. Ubuntu + Node.js + Claude Code install (~300 MB)\n5. This screen advances automatically when done"
+                    android:text="1. Tap the button below\n2. Claude Code downloads automatically (~50 MB)\n3. No other apps needed — everything runs inside this app\n4. This screen advances automatically when done"
                     android:textColor="@color/text_primary"
                     android:textSize="14sp"
                     android:lineSpacingMultiplier="1.5" />
@@ -79,13 +79,13 @@
                 android:id="@+id/btnStartSetup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Start Setup in Termux"
+                android:text="Install Claude Code"
                 android:textSize="16sp"
                 android:backgroundTint="@color/accent_orange" />
 
         </LinearLayout>
 
-        <!-- ── Waiting state ────────────────────────────────────────── -->
+        <!-- ── Waiting / installing state ──────────────────────────── -->
         <LinearLayout
             android:id="@+id/layoutWaiting"
             android:layout_width="match_parent"
@@ -94,75 +94,19 @@
             android:layout_marginTop="20dp"
             android:visibility="gone">
 
-            <!-- PRIMARY ACTION: paste instructions (most prominent) -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:background="@drawable/bg_provider_card"
-                android:padding="18dp"
-                android:layout_marginBottom="20dp">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="SETUP COMMAND COPIED TO CLIPBOARD"
-                    android:textColor="@color/accent_orange"
-                    android:textSize="12sp"
-                    android:textStyle="bold"
-                    android:letterSpacing="0.05"
-                    android:layout_marginBottom="14dp" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="In the Termux window that opened:"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="1.  Long-press anywhere in the terminal\n2.  Tap  Paste\n3.  Press  Enter"
-                    android:textColor="@color/text_primary"
-                    android:textSize="15sp"
-                    android:textStyle="bold"
-                    android:lineSpacingMultiplier="1.7" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:text="The setup will run automatically inside Termux.\nCome back here — this screen advances on its own."
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp"
-                    android:lineSpacingMultiplier="1.4" />
-
-                <Button
-                    android:id="@+id/btnCopyCmd"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:text="Copy command again"
-                    android:textSize="13sp"
-                    android:backgroundTint="@color/accent_orange" />
-
-            </LinearLayout>
-
-            <!-- Step label -->
+            <!-- Current step label -->
             <TextView
                 android:id="@+id/tvCurrentStep"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Waiting for Termux..."
+                android:text="Starting..."
                 android:textColor="@color/text_primary"
                 android:textSize="14sp"
                 android:textStyle="bold"
                 android:gravity="center"
                 android:layout_marginBottom="8dp" />
 
-            <!-- Horizontal progress bar -->
+            <!-- Progress bar -->
             <ProgressBar
                 android:id="@+id/progressSetup"
                 style="@android:style/Widget.ProgressBar.Horizontal"
@@ -173,22 +117,21 @@
                 android:progressTint="@color/accent_orange"
                 android:progressBackgroundTint="@color/surface" />
 
-            <!-- Task log header -->
+            <!-- Install log -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:layout_marginBottom="4dp"
-                android:text="SETUP LOG"
+                android:text="INSTALL LOG"
                 android:textColor="@color/text_secondary"
                 android:textSize="11sp"
                 android:letterSpacing="0.1" />
 
-            <!-- Scrollable real-time task log -->
             <ScrollView
                 android:id="@+id/scrollTaskLog"
                 android:layout_width="match_parent"
-                android:layout_height="150dp"
+                android:layout_height="200dp"
                 android:background="@drawable/bg_provider_card"
                 android:scrollbars="vertical">
 
@@ -201,13 +144,14 @@
                     android:textColor="@color/text_primary"
                     android:textSize="11sp"
                     android:lineSpacingMultiplier="1.5" />
+
             </ScrollView>
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
-                android:text="This page advances automatically when setup completes (5–15 min)."
+                android:text="Keep the app open. This page advances automatically when done."
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp"
                 android:gravity="center" />
