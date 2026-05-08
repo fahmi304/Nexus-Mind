@@ -1,14 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
+    <style name="ActivityAnimation" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/fade_in</item>
+        <item name="android:activityOpenExitAnimation">@anim/fade_out</item>
+        <item name="android:activityCloseEnterAnimation">@anim/fade_in</item>
+        <item name="android:activityCloseExitAnimation">@anim/fade_out</item>
+    </style>
+
     <style name="Theme.ClaudeCodeSetup" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/accent_green</item>
+        <item name="colorPrimary">@color/accent_orange</item>
         <item name="colorPrimaryDark">@color/bg_dark</item>
-        <item name="colorAccent">@color/accent_green</item>
+        <item name="colorAccent">@color/accent_orange</item>
         <item name="android:windowBackground">@color/bg_dark</item>
         <item name="android:statusBarColor">@color/toolbar_bg</item>
         <item name="android:navigationBarColor">@color/bg_dark</item>
         <item name="android:textColor">@color/text_primary</item>
+        <item name="android:windowAnimationStyle">@style/ActivityAnimation</item>
     </style>
 
     <style name="Theme.ClaudeCodeSetup.Splash" parent="Theme.ClaudeCodeSetup">
@@ -37,7 +45,7 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginBottom">8dp</item>
         <item name="android:layout_marginTop">8dp</item>
-        <item name="android:textColor">@color/accent_green</item>
+        <item name="android:textColor">@color/accent_orange</item>
         <item name="android:textSize">12sp</item>
         <item name="android:textAllCaps">true</item>
         <item name="android:letterSpacing">0.1</item>

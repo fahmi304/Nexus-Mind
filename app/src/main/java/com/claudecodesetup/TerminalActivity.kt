@@ -9,14 +9,13 @@ import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Bundle
 import android.os.IBinder
-import android.view.Menu
-import android.view.MenuItem
 import android.view.View
-import android.widget.Button
+import android.view.inputmethod.EditorInfo
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.claudecodesetup.data.AppPreferences
@@ -48,7 +47,6 @@ class TerminalActivity : AppCompatActivity() {
             if (existing.isEmpty()) {
                 claudeService!!.createSession(prefs.getLoginMode())
             } else {
-                // Activity recreated — restore tab strip and replay active session
                 existing.forEach { addTabForSession(it) }
                 val resumeId = claudeService!!.activeSessionId
                 if (resumeId >= 0) switchToSession(resumeId, replay = true)
@@ -67,10 +65,11 @@ class TerminalActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         prefs = AppPreferences(this)
-        setSupportActionBar(binding.toolbar)
 
         setupWebView()
-        setupButtons()
+        setupQuickActions()
+        setupInputBar()
+        setupHeaderButtons()
         startAndBindService()
     }
 
@@ -81,10 +80,8 @@ class TerminalActivity : AppCompatActivity() {
         wv.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
-            databaseEnabled = true
             cacheMode = WebSettings.LOAD_DEFAULT
             allowFileAccess = true
-            mediaPlaybackRequiresUserGesture = false
         }
 
         wv.addJavascriptInterface(TerminalBridge(), "Android")
@@ -98,20 +95,18 @@ class TerminalActivity : AppCompatActivity() {
     }
 
     private fun writeToTerminal(data: String) {
-        // Encode as a JSON string literal so all control chars and Unicode are safe
-        // to inject into evaluateJavascript without breaking the JS parser.
         val json = buildString(data.length + 2) {
             append('"')
             for (ch in data) {
                 when (ch) {
-                    '"'      -> append("\\\"")
-                    '\\'     -> append("\\\\")
-                    '\n'     -> append("\\n")
-                    '\r'     -> append("\\r")
-                    '\t'     -> append("\\t")
+                    '"'  -> append("\\\"")
+                    '\\' -> append("\\\\")
+                    '\n' -> append("\\n")
+                    '\r' -> append("\\r")
+                    '\t' -> append("\\t")
                     ' ' -> append("\\u2028")
                     ' ' -> append("\\u2029")
-                    else     -> if (ch.code < 0x20) append("\\u${ch.code.toString(16).padStart(4, '0')}") else append(ch)
+                    else -> if (ch.code < 0x20) append("\\u${ch.code.toString(16).padStart(4, '0')}") else append(ch)
                 }
             }
             append('"')
@@ -131,9 +126,7 @@ class TerminalActivity : AppCompatActivity() {
 
     private fun attachServiceCallbacks() {
         claudeService!!.onOutput = { sessionId, chunk ->
-            if (sessionId == activeSessionId) {
-                writeToTerminal(chunk)
-            }
+            if (sessionId == activeSessionId) writeToTerminal(chunk)
         }
 
         claudeService!!.onSessionAdded = { session ->
@@ -165,22 +158,16 @@ class TerminalActivity : AppCompatActivity() {
             setTextColor(getColor(R.color.text_secondary))
 
             setOnClickListener { switchToSession(session.id, replay = true) }
-            setOnLongClickListener {
-                confirmCloseSession(session.id)
-                true
-            }
+            setOnLongClickListener { confirmCloseSession(session.id); true }
         }
 
         tabButtons[session.id] = btn
 
-        // Insert before the "+" button
         val container = binding.tabContainer
         val plusIndex = container.indexOfChild(binding.btnNewSession)
         container.addView(btn, plusIndex)
 
-        if (activeSessionId == -1) {
-            switchToSession(session.id, replay = false)
-        }
+        if (activeSessionId == -1) switchToSession(session.id, replay = false)
 
         updateTabActive(session.id)
         updateNewSessionButton()
@@ -189,15 +176,9 @@ class TerminalActivity : AppCompatActivity() {
     private fun updateTabActive(sessionId: Int) {
         tabButtons.forEach { (id, btn) ->
             val isActive = id == sessionId
-            val session = claudeService?.getSession(id)
-            val isAlive = session?.alive ?: false
-
+            val isAlive = claudeService?.getSession(id)?.alive ?: false
             btn.backgroundTintList = ColorStateList.valueOf(
-                when {
-                    isActive -> getColor(R.color.accent_green)
-                    !isAlive -> getColor(R.color.surface)
-                    else     -> getColor(R.color.surface)
-                }
+                if (isActive) getColor(R.color.accent_orange) else getColor(R.color.surface)
             )
             btn.setTextColor(
                 when {
@@ -237,26 +218,20 @@ class TerminalActivity : AppCompatActivity() {
         if (replay) {
             val output = claudeService?.getSession(id)?.getOutput() ?: ""
             if (output.isNotEmpty()) {
-                // Write buffered output in background chunks to keep the UI responsive
                 lifecycleScope.launch(Dispatchers.IO) {
                     val chunkSize = 8192
                     var offset = 0
                     while (offset < output.length) {
                         val end = minOf(offset + chunkSize, output.length)
-                        val chunk = output.substring(offset, end)
-                        withContext(Dispatchers.Main) { writeToTerminal(chunk) }
+                        withContext(Dispatchers.Main) { writeToTerminal(output.substring(offset, end)) }
                         offset = end
                     }
-                    // Show restart button if the session has already ended
                     val alive = claudeService?.getSession(id)?.alive ?: false
-                    if (!alive) {
-                        withContext(Dispatchers.Main) {
-                            binding.btnRestart.visibility = View.VISIBLE
-                        }
+                    if (!alive) withContext(Dispatchers.Main) {
+                        binding.btnRestart.visibility = View.VISIBLE
                     }
                 }
             } else {
-                // New empty session — show nothing yet
                 val alive = claudeService?.getSession(id)?.alive ?: true
                 if (!alive) binding.btnRestart.visibility = View.VISIBLE
             }
@@ -265,18 +240,13 @@ class TerminalActivity : AppCompatActivity() {
 
     private fun confirmCloseSession(sessionId: Int) {
         if ((claudeService?.getAllSessions()?.size ?: 0) <= 1) {
-            // Last session — just show a notice
             AlertDialog.Builder(this)
                 .setTitle("Close session?")
                 .setMessage("This is your last session. Closing it will stop Claude Code.")
                 .setPositiveButton("Close") { _, _ ->
                     claudeService?.closeSession(sessionId)
                     tabButtons.remove(sessionId)?.let { binding.tabContainer.removeView(it) }
-                    if (tabButtons.isEmpty()) {
-                        // No sessions left — clear terminal
-                        clearTerminal()
-                        activeSessionId = -1
-                    }
+                    if (tabButtons.isEmpty()) { clearTerminal(); activeSessionId = -1 }
                     updateNewSessionButton()
                 }
                 .setNegativeButton("Cancel", null)
@@ -284,7 +254,6 @@ class TerminalActivity : AppCompatActivity() {
         } else {
             claudeService?.closeSession(sessionId)
             tabButtons.remove(sessionId)?.let { binding.tabContainer.removeView(it) }
-            // Auto-switch to the next available session
             val nextId = claudeService?.getAllSessions()?.firstOrNull()?.id ?: -1
             if (nextId >= 0) switchToSession(nextId, replay = true)
             updateNewSessionButton()
@@ -293,12 +262,15 @@ class TerminalActivity : AppCompatActivity() {
 
     // ─── Quick-action buttons ─────────────────────────────────────────────────
 
-    private fun setupButtons() {
-        binding.btnYes.setOnClickListener { sendInput("y\n") }
-        binding.btnNo.setOnClickListener { sendInput("n\n") }
-        binding.btnCancel.setOnClickListener { sendInput("") } // ETX = Ctrl+C (embedded \x03)
-        binding.btnEnter.setOnClickListener { sendInput("\n") }
-        binding.btnTab.setOnClickListener { sendInput("\t") }
+    private fun setupQuickActions() {
+        binding.btnYes.setOnClickListener    { sendInput("y\r") }
+        binding.btnNo.setOnClickListener     { sendInput("n\r") }
+        binding.btnCancel.setOnClickListener { sendInput("") }   // Ctrl+C
+        binding.btnEsc.setOnClickListener    { sendInput("") }    // Escape
+        binding.btnTab.setOnClickListener    { sendInput("\t") }
+        binding.btnEnter.setOnClickListener  { sendInput("\r") }
+        binding.btnArrowUp.setOnClickListener   { sendInput("[A") }
+        binding.btnArrowDown.setOnClickListener { sendInput("[B") }
 
         binding.btnRestart.setOnClickListener {
             binding.btnRestart.visibility = View.GONE
@@ -306,18 +278,39 @@ class TerminalActivity : AppCompatActivity() {
             claudeService?.restartSession(activeSessionId)
         }
 
-        binding.btnSwitchProvider.setOnClickListener {
-            showSwitchProviderDialog()
-        }
-
         binding.btnNewSession.setOnClickListener {
             val id = claudeService?.createSession(prefs.getLoginMode()) ?: return@setOnClickListener
-            if (id >= 0) {
-                // onSessionAdded callback will add the tab; auto-switch after it arrives
-                runOnUiThread { switchToSession(id, replay = false) }
-            }
+            if (id >= 0) runOnUiThread { switchToSession(id, replay = false) }
         }
     }
+
+    // ─── Claude.ai-style input bar ────────────────────────────────────────────
+
+    private fun setupInputBar() {
+        binding.btnSend.setOnClickListener { submitInput() }
+
+        binding.etInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEND) { submitInput(); true } else false
+        }
+    }
+
+    private fun submitInput() {
+        val text = binding.etInput.text?.toString()?.trimEnd() ?: return
+        if (text.isEmpty()) return
+        sendInput(text + "\r")
+        binding.etInput.setText("")
+    }
+
+    // ─── Header buttons ───────────────────────────────────────────────────────
+
+    private fun setupHeaderButtons() {
+        binding.btnSettings.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+            overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
+        }
+    }
+
+    // ─── Input routing ────────────────────────────────────────────────────────
 
     private fun sendInput(text: String) {
         claudeService?.sendInput(text)
@@ -334,7 +327,6 @@ class TerminalActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         if (serviceBound) {
-            // Clear callbacks so dangling lambdas don't reference a dead Activity
             claudeService?.onOutput = null
             claudeService?.onSessionAdded = null
             claudeService?.onSessionEnded = null
@@ -343,51 +335,7 @@ class TerminalActivity : AppCompatActivity() {
         }
     }
 
-    // ─── Menus ────────────────────────────────────────────────────────────────
-
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.terminal_menu, menu)
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            R.id.menu_settings -> {
-                startActivity(Intent(this, SettingsActivity::class.java))
-                true
-            }
-            R.id.menu_copy -> {
-                binding.webViewTerminal.evaluateJavascript("window.termCopySelection()", null)
-                true
-            }
-            R.id.menu_restart_proxy -> {
-                Intent(this, ClaudeService::class.java).also {
-                    it.action = ClaudeService.ACTION_RESTART_PROXY
-                    startService(it)
-                }
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
-        }
-    }
-
-    // ─── Provider switch dialog ───────────────────────────────────────────────
-
-    private fun showSwitchProviderDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("Switch provider?")
-            .setMessage("This will stop all sessions and let you choose a new provider.")
-            .setPositiveButton("Switch") { _, _ ->
-                claudeService?.stopAllSessions()
-                prefs.clearProviderOnly()
-                startActivity(Intent(this, LoginFlowActivity::class.java))
-                finish()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    // ─── JavaScript interface ─────────────────────────────────────────────────
+    // ─── JavaScript bridge ────────────────────────────────────────────────────
 
     inner class TerminalBridge {
 
@@ -397,20 +345,14 @@ class TerminalActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
-        fun onTerminalReady() {
-            // Terminal JS is fully loaded
-        }
+        fun onTerminalReady() {}
 
         @JavascriptInterface
         fun copyText(text: String) {
             val cm = getSystemService(android.content.ClipboardManager::class.java)
-            cm.setPrimaryClip(
-                android.content.ClipData.newPlainText("Claude Output", text)
-            )
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("Claude Output", text))
             runOnUiThread {
-                android.widget.Toast.makeText(
-                    this@TerminalActivity, "Copied", android.widget.Toast.LENGTH_SHORT
-                ).show()
+                android.widget.Toast.makeText(this@TerminalActivity, "Copied", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -420,8 +362,8 @@ class TerminalActivity : AppCompatActivity() {
                 AlertDialog.Builder(this@TerminalActivity)
                     .setTitle("Claude wants to create a file")
                     .setMessage(filename)
-                    .setPositiveButton("Yes, create it") { _, _ -> sendInput("y\n") }
-                    .setNegativeButton("No, skip") { _, _ -> sendInput("n\n") }
+                    .setPositiveButton("Yes, create it") { _, _ -> sendInput("y\r") }
+                    .setNegativeButton("No, skip")       { _, _ -> sendInput("n\r") }
                     .show()
             }
         }

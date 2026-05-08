@@ -9,7 +9,7 @@
 
 html, body {
   width:100%; height:100%;
-  background:#0D1117;
+  background:#1A1A2E;
   overflow:hidden;
   -webkit-tap-highlight-color:transparent;
 }
@@ -17,33 +17,39 @@ html, body {
 #screen {
   position:absolute;
   top:0; left:0; right:0; bottom:0;
-  font-family: 'Fira Code', 'JetBrains Mono', 'Cascadia Code',
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code',
                'Courier New', 'DejaVu Sans Mono', monospace;
-  font-size: 13px;
-  line-height: 1.4;
-  color: #E6EDF3;
-  background: #0D1117;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: #E2E8F0;
+  background: #1A1A2E;
   overflow-y: auto;
-  overflow-x: auto;
-  padding: 4px;
-  white-space: pre;
-  word-wrap: normal;
+  overflow-x: hidden;
+  padding: 10px 8px 8px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
   cursor: text;
   -webkit-user-select: text;
   user-select: text;
+  scroll-behavior: smooth;
 }
 
-/* ANSI color classes */
-.f0{color:#21262D}.f1{color:#F85149}.f2{color:#3FB950}.f3{color:#D29922}
-.f4{color:#58A6FF}.f5{color:#BC8CFF}.f6{color:#39C5CF}.f7{color:#E6EDF3}
-.f8{color:#484F58}.f9{color:#FF7B72}.f10{color:#56D364}.f11{color:#E3B341}
-.f12{color:#79C0FF}.f13{color:#D2A8FF}.f14{color:#56D4DD}.f15{color:#FFFFFF}
-.b0{background:#21262D}.b1{background:#F85149}.b2{background:#3FB950}
-.b3{background:#D29922}.b4{background:#58A6FF}.b5{background:#BC8CFF}
-.b6{background:#39C5CF}.b7{background:#E6EDF3}
+/* Custom scrollbar */
+#screen::-webkit-scrollbar { width: 4px; }
+#screen::-webkit-scrollbar-track { background: transparent; }
+#screen::-webkit-scrollbar-thumb { background: #3A3A55; border-radius: 2px; }
 
-.bold{font-weight:bold}
-.dim{opacity:0.5}
+/* ANSI 16-color classes */
+.f0{color:#21262D}.f1{color:#F28B82}.f2{color:#81C995}.f3{color:#FFD966}
+.f4{color:#82B4FF}.f5{color:#CF9FFF}.f6{color:#5DD6EB}.f7{color:#E2E8F0}
+.f8{color:#555570}.f9{color:#FF8A80}.f10{color:#A8FFB0}.f11{color:#FFE680}
+.f12{color:#A0CFFF}.f13{color:#E0BAFF}.f14{color:#80ECFF}.f15{color:#FFFFFF}
+.b0{background:#21262D}.b1{background:#F28B82}.b2{background:#81C995}
+.b3{background:#FFD966}.b4{background:#82B4FF}.b5{background:#CF9FFF}
+.b6{background:#5DD6EB}.b7{background:#E2E8F0}
+
+.bold{font-weight:700}
+.dim{opacity:0.45}
 .italic{font-style:italic}
 .underline{text-decoration:underline}
 .blink{animation:blink 1s step-end infinite}
@@ -54,15 +60,13 @@ html, body {
 
 #cursor {
   display:inline-block;
-  width:8px; height:1.2em;
-  background:#3FB950;
-  animation: cursorBlink 1s step-end infinite;
+  width:2px; height:1.1em;
+  background:#DA7756;
+  animation: cursorBlink 1.2s step-end infinite;
   vertical-align:text-bottom;
-  margin-left:0;
+  border-radius:1px;
 }
-@keyframes cursorBlink { 0%,100%{opacity:1} 50%{opacity:0} }
-
-/* 256-color palette cache for dynamic classes */
+@keyframes cursorBlink { 0%,66%{opacity:1} 67%,100%{opacity:0} }
 </style>
 </head>
 <body>
@@ -75,8 +79,8 @@ html, body {
 // ── Palette ──────────────────────────────────────────────────────────────────
 
 const BASE_COLORS = [
-  '#21262D','#F85149','#3FB950','#D29922','#58A6FF','#BC8CFF','#39C5CF','#E6EDF3',
-  '#484F58','#FF7B72','#56D364','#E3B341','#79C0FF','#D2A8FF','#56D4DD','#FFFFFF'
+  '#21262D','#F28B82','#81C995','#FFD966','#82B4FF','#CF9FFF','#5DD6EB','#E2E8F0',
+  '#555570','#FF8A80','#A8FFB0','#FFE680','#A0CFFF','#E0BAFF','#80ECFF','#FFFFFF'
 ];
 
 function get256Color(n){
@@ -88,40 +92,20 @@ function get256Color(n){
   return `rgb(${c(r)},${c(g)},${c(b)})`;
 }
 
-const styleCache = {};
-function inlineStyle(fg, bg){
-  const key = `${fg}|${bg}`;
-  if(styleCache[key]) return styleCache[key];
-  let s = '';
-  if(fg !== null) s += `color:${typeof fg==='number'?get256Color(fg):fg};`;
-  if(bg !== null) s += `background:${typeof bg==='number'?get256Color(bg):bg};`;
-  styleCache[key] = s;
-  return s;
-}
-
 // ── State ────────────────────────────────────────────────────────────────────
 
-const ROWS = 50;
-const MAX_SCROLLBACK = 5000;
-
+const MAX_SCROLLBACK = 6000;
 let attrs = resetAttrs();
 let savedAttrs = resetAttrs();
 let savedCursor = {row:0, col:0};
 let curRow = 0, curCol = 0;
 let altMode = false;
-
-// Main screen: array of line strings (raw HTML)
 let lines = [''];
 let altLines = [''];
 
-// Current span accumulation
-let spanBuf = '';
-let spanAttrs = null;
-
 function resetAttrs(){
   return {bold:false,dim:false,italic:false,underline:false,
-          blink:false,inverse:false,strike:false,
-          fg:null,bg:null};
+          blink:false,inverse:false,strike:false,fg:null,bg:null};
 }
 
 function attrsEqual(a,b){
@@ -144,13 +128,13 @@ function attrsToSpan(a, text){
   if(!text) return '';
   const cls = [];
   const style = [];
-  if(a.bold) cls.push('bold');
-  if(a.dim) cls.push('dim');
-  if(a.italic) cls.push('italic');
+  if(a.bold)      cls.push('bold');
+  if(a.dim)       cls.push('dim');
+  if(a.italic)    cls.push('italic');
   if(a.underline) cls.push('underline');
-  if(a.blink) cls.push('blink');
-  if(a.inverse) cls.push('inverse');
-  if(a.strike) cls.push('strikethrough');
+  if(a.blink)     cls.push('blink');
+  if(a.inverse)   cls.push('inverse');
+  if(a.strike)    cls.push('strikethrough');
 
   if(a.fg !== null){
     if(typeof a.fg === 'number' && a.fg < 16) cls.push('f'+a.fg);
@@ -172,13 +156,11 @@ function attrsToSpan(a, text){
   return `<span${c}${s}>${escapedText}</span>`;
 }
 
-// ── Write character to screen buffer ─────────────────────────────────────────
+// ── Write character ───────────────────────────────────────────────────────────
 
 function putChar(ch){
   const ls = currentLines();
   ensureRow(curRow);
-  // For simplicity, append to current line's HTML
-  // This is a "scroll-down" model suitable for Claude Code output
   ls[curRow] += attrsToSpan(attrs, ch);
   curCol++;
 }
@@ -196,7 +178,7 @@ function newLine(){
 
 // ── ANSI escape parser ────────────────────────────────────────────────────────
 
-let escState = 'normal'; // normal | esc | csi | osc | str
+let escState = 'normal';
 let csiParams = '';
 let csiIntermediate = '';
 let oscBuf = '';
@@ -209,15 +191,15 @@ function processByte(ch){
     if(code === 0x0A){ newLine(); return; }
     if(code === 0x0D){ curCol = 0; return; }
     if(code === 0x08){ if(curCol>0) curCol--; return; }
-    if(code === 0x09){ // Tab
+    if(code === 0x09){
       const next = (Math.floor(curCol/8)+1)*8;
       const sp = ' '.repeat(next - curCol);
       currentLines()[curRow] = (currentLines()[curRow]||'') + attrsToSpan(attrs, sp);
       curCol = next;
       return;
     }
-    if(code === 0x07) return; // Bell
-    if(code < 0x20) return;  // Other controls
+    if(code === 0x07) return;
+    if(code < 0x20) return;
     putChar(ch);
     return;
   }
@@ -229,16 +211,15 @@ function processByte(ch){
                     { escState='str'; oscBuf=''; return; }
     if(ch === '7')  { savedCursor={row:curRow,col:curCol}; escState='normal'; return; }
     if(ch === '8')  { curRow=savedCursor.row; curCol=savedCursor.col; escState='normal'; return; }
-    if(ch === 'M')  { if(curRow>0) curRow--; escState='normal'; return; } // Reverse index
+    if(ch === 'M')  { if(curRow>0) curRow--; escState='normal'; return; }
     if(ch === 'c')  { resetTerminal(); escState='normal'; return; }
-    if(ch === '=') { escState='normal'; return; } // DECKPAM
-    if(ch === '>') { escState='normal'; return; } // DECKPNM
+    if(ch === '=' || ch === '>') { escState='normal'; return; }
     escState='normal';
     return;
   }
 
   if(escState === 'osc'){
-    if(code===0x07 || (code===0x1B)){ escState='normal'; return; } // BEL or ESC
+    if(code===0x07 || code===0x1B){ escState='normal'; return; }
     oscBuf += ch;
     return;
   }
@@ -247,11 +228,9 @@ function processByte(ch){
     return;
   }
 
-  // CSI
   if(escState === 'csi'){
-    if(code >= 0x30 && code <= 0x3F){ csiParams += ch; return; } // params
-    if(code >= 0x20 && code <= 0x2F){ csiIntermediate += ch; return; } // intermediate
-    // Final byte
+    if(code >= 0x30 && code <= 0x3F){ csiParams += ch; return; }
+    if(code >= 0x20 && code <= 0x2F){ csiIntermediate += ch; return; }
     escState = 'normal';
     handleCSI(csiParams, csiIntermediate, ch);
   }
@@ -287,30 +266,18 @@ function handleCSI(params, inter, final){
       break;
     }
     case 'K': {
-      const n = parseParams(params,0)[0];
       const ls = currentLines();
       ensureRow(curRow);
-      if(n===1) ls[curRow]='';
-      else if(n===2) ls[curRow]='';
-      else ls[curRow]=''; // erase to EOL (simplified)
+      ls[curRow] = '';
       break;
     }
-    case 'P': { // Delete chars — simplified, clear rest of line
-      const ls = currentLines();
-      ensureRow(curRow);
-      ls[curRow]='';
-      break;
-    }
+    case 'P': { const ls=currentLines(); ensureRow(curRow); ls[curRow]=''; break; }
     case 'S': { const n=parseParams(params,1)[0]||1; for(let i=0;i<n;i++) newLine(); break; }
     case 'T': { const n=parseParams(params,1)[0]||1; curRow=Math.max(0,curRow-n); break; }
     case 's': { savedCursor={row:curRow,col:curCol}; break; }
     case 'u': { curRow=savedCursor.row; curCol=savedCursor.col; break; }
     case 'h': handleMode(params, true); break;
     case 'l': handleMode(params, false); break;
-    case 'r': break; // DECSTBM scroll region — ignore
-    case 'c': break; // Device attributes
-    case 'n': break; // Device status
-    case 't': break; // Window ops
     default:  break;
   }
 }
@@ -319,7 +286,7 @@ function handleMode(params, enable){
   const p = params.startsWith('?') ? params.slice(1) : params;
   const codes = p.split(';').map(Number);
   for(const code of codes){
-    if(code===1049||code===47||code===1047){ // Alternate screen
+    if(code===1049||code===47||code===1047){
       if(enable && !altMode){
         altMode=true; altLines=[''];
         savedCursor={row:curRow,col:curCol};
@@ -329,8 +296,6 @@ function handleMode(params, enable){
         curRow=savedCursor.row; curCol=savedCursor.col;
       }
     }
-    if(code===25){ /* cursor visibility — always show */ }
-    if(code===1){ /* application cursor keys */ }
   }
 }
 
@@ -340,14 +305,14 @@ function handleSGR(params){
   while(i<codes.length){
     const c=codes[i++];
     if(c===0){ attrs=resetAttrs(); }
-    else if(c===1) attrs.bold=true;
-    else if(c===2) attrs.dim=true;
-    else if(c===3) attrs.italic=true;
-    else if(c===4) attrs.underline=true;
+    else if(c===1)  attrs.bold=true;
+    else if(c===2)  attrs.dim=true;
+    else if(c===3)  attrs.italic=true;
+    else if(c===4)  attrs.underline=true;
     else if(c===5||c===6) attrs.blink=true;
-    else if(c===7) attrs.inverse=true;
-    else if(c===8) attrs.dim=true;   // conceal → dim
-    else if(c===9) attrs.strike=true;
+    else if(c===7)  attrs.inverse=true;
+    else if(c===8)  attrs.dim=true;
+    else if(c===9)  attrs.strike=true;
     else if(c===22){ attrs.bold=false; attrs.dim=false; }
     else if(c===23) attrs.italic=false;
     else if(c===24) attrs.underline=false;
@@ -366,7 +331,7 @@ function handleSGR(params){
       else if(codes[i]===2){ i++; const r=codes[i++],g=codes[i++],b=codes[i++]; attrs.bg=`rgb(${r},${g},${b})`; }
     }
     else if(c===49) attrs.bg=null;
-    else if(c>=90&&c<=97) attrs.fg=c-90+8;
+    else if(c>=90&&c<=97)   attrs.fg=c-90+8;
     else if(c>=100&&c<=107) attrs.bg=c-100+8;
   }
 }
@@ -382,7 +347,6 @@ function resetTerminal(){
 // ── Render ────────────────────────────────────────────────────────────────────
 
 let renderQueued = false;
-let pendingData = '';
 
 function scheduleRender(){
   if(renderQueued) return;
@@ -393,32 +357,23 @@ function scheduleRender(){
 function doRender(){
   renderQueued = false;
   const ls = currentLines();
-  const out = document.getElementById('output');
-  out.innerHTML = ls.join('\n');
-  // Scroll to bottom
+  document.getElementById('output').innerHTML = ls.join('\n');
   const screen = document.getElementById('screen');
   screen.scrollTop = screen.scrollHeight;
 }
 
-// ── Public API (called from Kotlin via evaluateJavascript) ────────────────────
+// ── Public API ────────────────────────────────────────────────────────────────
 
 window.termWrite = function(raw){
-  // raw is a JS string that may contain escape sequences
-  // process character by character
-  for(const ch of raw){
-    processByte(ch);
-  }
+  for(const ch of raw) processByte(ch);
   scheduleRender();
 };
 
 window.termCopySelection = function(){
   const sel = window.getSelection();
-  if(sel && sel.toString()){
-    Android.copyText(sel.toString());
-  }
+  if(sel && sel.toString()) Android.copyText(sel.toString());
 };
 
-// Clear all terminal content — called when switching sessions
 window.termClear = function(){
   resetTerminal();
   doRender();
@@ -428,14 +383,11 @@ window.termSendInput = function(text){
   Android.sendInput(text);
 };
 
-// ── Keyboard input ────────────────────────────────────────────────────────────
+// ── Hidden input for Android soft keyboard ────────────────────────────────────
 
 document.getElementById('screen').addEventListener('click', function(){
-  // Focus a hidden input for keyboard on Android
   document.getElementById('hiddenInput').focus();
 });
-
-// ── Hidden input for capturing Android keyboard ───────────────────────────────
 
 const hi = document.createElement('input');
 hi.id = 'hiddenInput';
@@ -448,16 +400,13 @@ document.body.appendChild(hi);
 
 hi.addEventListener('input', function(e){
   const val = e.data || hi.value;
-  if(val){
-    Android.sendInput(val);
-    hi.value='';
-  }
+  if(val){ Android.sendInput(val); hi.value=''; }
 });
 
 hi.addEventListener('keydown', function(e){
-  if(e.key==='Enter') Android.sendInput('\r');
+  if(e.key==='Enter')     Android.sendInput('\r');
   else if(e.key==='Backspace') Android.sendInput('\x7f');
-  else if(e.key==='Tab') Android.sendInput('\t');
+  else if(e.key==='Tab')  { Android.sendInput('\t'); e.preventDefault(); }
   else if(e.key==='Escape') Android.sendInput('\x1b');
   else if(e.ctrlKey){
     const k = e.key.toLowerCase();
@@ -468,13 +417,9 @@ hi.addEventListener('keydown', function(e){
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
-if(typeof Android !== 'undefined'){
-  Android.onTerminalReady();
-}
+if(typeof Android !== 'undefined') Android.onTerminalReady();
 
-// Initial welcome message
-window.termWrite('\x1b[32mClaudeCode Setup\x1b[0m — terminal ready\r\n');
-window.termWrite('\x1b[90mConnecting to Claude Code...\x1b[0m\r\n');
+window.termWrite('\x1b[38;2;218;119;86mClaude Code\x1b[0m \x1b[2m— connecting…\x1b[0m\r\n');
 
 })();
 </script>

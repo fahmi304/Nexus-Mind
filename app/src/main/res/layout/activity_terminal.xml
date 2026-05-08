@@ -1,55 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@color/terminal_bg"
     android:fitsSystemWindows="true">
 
-    <!-- Toolbar -->
-    <androidx.appcompat.widget.Toolbar
-        android:id="@+id/toolbar"
+    <!-- ── Header bar ───────────────────────────────────────────────────── -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="48dp"
+        android:layout_height="52dp"
+        android:orientation="horizontal"
         android:background="@color/toolbar_bg"
-        app:title=""
-        android:elevation="0dp">
+        android:gravity="center_vertical"
+        android:paddingStart="14dp"
+        android:paddingEnd="4dp"
+        android:elevation="2dp">
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingEnd="8dp">
+        <ImageView
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:src="@drawable/ic_terminal"
+            android:tint="@color/accent_orange"
+            android:contentDescription="Claude Code" />
 
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Claude Code"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp"
-                android:textStyle="bold" />
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Claude Code"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:paddingStart="10dp" />
 
-            <Button
-                android:id="@+id/btnSwitchProvider"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Switch"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp" />
+        <ImageButton
+            android:id="@+id/btnSettings"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:src="@drawable/ic_settings"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:tint="@color/text_secondary"
+            android:contentDescription="Settings"
+            android:padding="10dp" />
 
-        </LinearLayout>
+    </LinearLayout>
 
-    </androidx.appcompat.widget.Toolbar>
-
-    <!-- Session tab strip — tabs added programmatically, "+" always last -->
+    <!-- ── Session tab strip ─────────────────────────────────────────────── -->
     <HorizontalScrollView
         android:layout_width="match_parent"
-        android:layout_height="36dp"
-        android:background="@color/surface"
+        android:layout_height="38dp"
+        android:background="@color/bg_dark"
         android:scrollbars="none"
         android:fillViewport="false">
 
@@ -59,11 +60,10 @@
             android:layout_height="match_parent"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingHorizontal="4dp"
+            android:paddingHorizontal="8dp"
             android:paddingVertical="4dp">
 
-            <!-- Session tabs are inserted here programmatically before this button -->
-
+            <!-- Session tabs added programmatically before this "+" button -->
             <Button
                 android:id="@+id/btnNewSession"
                 style="@style/Widget.Material3.Button.TextButton"
@@ -71,89 +71,143 @@
                 android:layout_height="28dp"
                 android:text="+"
                 android:textSize="18sp"
-                android:textColor="@color/accent_green"
+                android:textColor="@color/accent_orange"
                 android:padding="0dp"
                 android:minWidth="0dp"
                 android:minHeight="0dp" />
 
         </LinearLayout>
-
     </HorizontalScrollView>
 
-    <!-- Loading indicator -->
+    <!-- ── Connecting indicator ───────────────────────────────────────────── -->
     <TextView
         android:id="@+id/tvLoading"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Starting terminal..."
+        android:text="Connecting to Claude bridge…"
         android:textColor="@color/text_secondary"
-        android:textSize="13sp"
+        android:textSize="12sp"
         android:gravity="center"
-        android:paddingVertical="8dp"
+        android:paddingVertical="6dp"
         android:background="@color/surface"
         android:visibility="visible" />
 
-    <!-- Terminal WebView — takes all remaining space -->
+    <!-- ── Terminal WebView — takes all remaining space ───────────────────── -->
     <WebView
         android:id="@+id/webViewTerminal"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:background="@color/terminal_bg"
-        android:scrollbars="vertical" />
+        android:scrollbars="none" />
 
-    <!-- Restart button (shown when active session exits) -->
+    <!-- ── Restart button (shown when active session exits) ──────────────── -->
     <Button
         android:id="@+id/btnRestart"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Restart Claude Code"
-        android:backgroundTint="@color/accent_green"
+        android:backgroundTint="@color/accent_orange"
         android:visibility="gone"
         android:layout_margin="8dp" />
 
-    <!-- Quick-action bar — always visible above keyboard -->
-    <HorizontalScrollView
+    <!-- ── Bottom input section ───────────────────────────────────────────── -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="44dp"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
         android:background="@color/toolbar_bg"
-        android:scrollbars="none"
-        android:fillViewport="false">
+        android:paddingTop="4dp"
+        android:paddingBottom="8dp">
 
+        <!-- Quick-action row -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:scrollbars="none"
+            android:fillViewport="false">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:paddingHorizontal="8dp"
+                android:gravity="center_vertical">
+
+                <Button android:id="@+id/btnYes"
+                    style="@style/QuickActionButton"
+                    android:text="Yes" />
+
+                <Button android:id="@+id/btnNo"
+                    style="@style/QuickActionButton"
+                    android:text="No" />
+
+                <Button android:id="@+id/btnCancel"
+                    style="@style/QuickActionButton"
+                    android:text="Ctrl+C" />
+
+                <Button android:id="@+id/btnEsc"
+                    style="@style/QuickActionButton"
+                    android:text="Esc" />
+
+                <Button android:id="@+id/btnTab"
+                    style="@style/QuickActionButton"
+                    android:text="Tab" />
+
+                <Button android:id="@+id/btnEnter"
+                    style="@style/QuickActionButton"
+                    android:text="↵" />
+
+                <Button android:id="@+id/btnArrowUp"
+                    style="@style/QuickActionButton"
+                    android:text="↑" />
+
+                <Button android:id="@+id/btnArrowDown"
+                    style="@style/QuickActionButton"
+                    android:text="↓" />
+
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <!-- Claude.ai-style message input bar -->
         <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:paddingHorizontal="4dp"
+            android:layout_marginHorizontal="10dp"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/bg_input_bar"
             android:gravity="center_vertical">
 
-            <Button
-                android:id="@+id/btnYes"
-                style="@style/QuickActionButton"
-                android:text="Yes" />
+            <EditText
+                android:id="@+id/etInput"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="Message Claude…"
+                android:hintTextColor="#555570"
+                android:textColor="@color/text_primary"
+                android:textSize="15sp"
+                android:paddingStart="16dp"
+                android:paddingEnd="8dp"
+                android:paddingVertical="11dp"
+                android:background="@null"
+                android:maxLines="4"
+                android:inputType="textMultiLine|textNoSuggestions|textNoSuggestions"
+                android:imeOptions="flagNoExtractUi"
+                android:autocomplete="false" />
 
-            <Button
-                android:id="@+id/btnNo"
-                style="@style/QuickActionButton"
-                android:text="No" />
-
-            <Button
-                android:id="@+id/btnCancel"
-                style="@style/QuickActionButton"
-                android:text="Ctrl+C" />
-
-            <Button
-                android:id="@+id/btnEnter"
-                style="@style/QuickActionButton"
-                android:text="Enter" />
-
-            <Button
-                android:id="@+id/btnTab"
-                style="@style/QuickActionButton"
-                android:text="Tab" />
+            <ImageButton
+                android:id="@+id/btnSend"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_marginEnd="5dp"
+                android:src="@drawable/ic_send"
+                android:background="@drawable/bg_send_btn"
+                android:contentDescription="Send"
+                android:padding="9dp" />
 
         </LinearLayout>
-
-    </HorizontalScrollView>
+    </LinearLayout>
 
 </LinearLayout>

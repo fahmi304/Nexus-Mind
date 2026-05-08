@@ -17,7 +17,7 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
 
         val prefs = AppPreferences(context)
-        if (!prefs.isSetupComplete() || !prefs.isProviderConfigured()) return
+        if (!prefs.isTermuxSetupComplete() || !prefs.isProviderConfigured()) return
 
         val openIntent = PendingIntent.getActivity(
             context, 0,
