@@ -169,11 +169,31 @@ function installClaudeCode(onDone) {
         fs.mkdirSync(tmpDir, { recursive: true });
         fs.mkdirSync(path.dirname(destDir), { recursive: true });
 
-        // Android's toybox tar does NOT support --strip-components.
-        // Extract into tmpDir first; npm tarballs always place files under
-        // a 'package/' prefix, so we rename that subdirectory to destDir.
+        // Step 1: decompress .tgz → .tar with Node.js zlib.
+        // Toybox tar on some Android versions lacks gzip support (-z), so we
+        // handle decompression in JS and only use tar for the actual unpack.
+        const tarPath = path.join(FILES_DIR, 'claude-code.tar');
+        try { fs.unlinkSync(tarPath); } catch (_) {}
+
         await new Promise((res, rej) => {
-            const tar = spawn('/system/bin/tar', ['-xzf', tgzPath, '-C', tmpDir], {
+            const zlib = require('zlib');
+            const src  = fs.createReadStream(tgzPath);
+            const gz   = zlib.createGunzip();
+            const dst  = fs.createWriteStream(tarPath);
+            src.on('error', rej);
+            gz.on('error',  rej);
+            dst.on('error', rej);
+            dst.on('finish', res);
+            src.pipe(gz).pipe(dst);
+        });
+
+        try { fs.unlinkSync(tgzPath); } catch (_) {}
+
+        // Step 2: unpack the plain .tar (no -z; gzip already done above).
+        // npm tarballs always place files under a 'package/' prefix, so we
+        // extract to tmpDir then rename that subdirectory to destDir.
+        await new Promise((res, rej) => {
+            const tar = spawn('/system/bin/tar', ['-xf', tarPath, '-C', tmpDir], {
                 env: { PATH: '/system/bin:/system/xbin' }
             });
             tar.stderr.on('data', d => log('tar: ' + d.toString()));
@@ -181,7 +201,7 @@ function installClaudeCode(onDone) {
             tar.on('close', code => code === 0 ? res() : rej(new Error('tar exit ' + code)));
         });
 
-        try { fs.unlinkSync(tgzPath); } catch (_) {}
+        try { fs.unlinkSync(tarPath); } catch (_) {}
 
         const pkgDir = path.join(tmpDir, 'package');
         if (!fs.existsSync(pkgDir)) {
