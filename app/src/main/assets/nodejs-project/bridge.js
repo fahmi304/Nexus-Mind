@@ -19,6 +19,7 @@
  */
 
 const net   = require('net');
+const http  = require('http');
 const path  = require('path');
 const fs    = require('fs');
 const https = require('https');
@@ -40,8 +41,9 @@ const SETUP_LOG    = path.join(FILES_DIR, 'setup.log');
 const SETUP_DONE   = path.join(FILES_DIR, 'setup_done');
 const SETUP_FAILED = path.join(FILES_DIR, 'setup_failed');
 
-const PORT = 8083;
-const HOST = '127.0.0.1';
+const PORT       = 8083;
+const PROXY_PORT = 8082;
+const HOST       = '127.0.0.1';
 
 // ─── Logging ──────────────────────────────────────────────────────────────────
 
@@ -267,6 +269,259 @@ function waitForRetry(callback) {
     setTimeout(tick, 2000);
 }
 
+// ─── Anthropic → OpenAI proxy (port 8082) ────────────────────────────────────
+// Translates Anthropic Messages API calls (what Claude Code emits) into
+// OpenAI Chat Completions format for providers like OpenRouter, NVIDIA NIM,
+// Meta Llama, and Ollama. Handles both streaming and non-streaming responses.
+
+function startProxyServer() {
+    const proxy = http.createServer((req, res) => {
+        if (req.method === 'POST' && req.url.startsWith('/v1/messages')) {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+                try { handleProxyRequest(JSON.parse(body), res); }
+                catch (e) { proxyError(res, 400, e.message); }
+            });
+            req.on('error', e => proxyError(res, 500, e.message));
+        } else {
+            res.writeHead(404);
+            res.end('{"error":"not found"}');
+        }
+    });
+
+    proxy.on('error', err => {
+        log('Proxy error: ' + err.message + ' — retrying in 3 s\n');
+        setTimeout(startProxyServer, 3000);
+    });
+
+    proxy.listen(PROXY_PORT, HOST, () => {
+        log('Proxy ready on ' + HOST + ':' + PROXY_PORT + '\n');
+    });
+}
+
+function proxyError(res, code, msg) {
+    try {
+        res.writeHead(code, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ type: 'error', error: { type: 'api_error', message: msg } }));
+    } catch (_) {}
+}
+
+function handleProxyRequest(anthReq, res) {
+    const cfg  = readConfig();
+    const pUrl = cfg.providerUrl || '';
+    const key  = cfg.apiKey || '';
+    const model = cfg.modelId || anthReq.model || '';
+
+    if (!pUrl) return proxyError(res, 500, 'No provider URL in config — check app settings');
+
+    const oaiReq = anthToOai(anthReq, model);
+    sendToProvider(pUrl, key, oaiReq, !!anthReq.stream, res);
+}
+
+// Convert Anthropic Messages request → OpenAI Chat Completions request
+function anthToOai(a, model) {
+    const msgs = [];
+
+    if (a.system) {
+        const text = typeof a.system === 'string'
+            ? a.system
+            : (a.system || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+        if (text) msgs.push({ role: 'system', content: text });
+    }
+
+    for (const m of (a.messages || [])) {
+        if (typeof m.content === 'string') {
+            msgs.push({ role: m.role, content: m.content });
+        } else {
+            const text = (m.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+            msgs.push({ role: m.role, content: text });
+        }
+    }
+
+    const req = { model, messages: msgs, max_tokens: a.max_tokens || 8096, stream: !!a.stream };
+    if (a.temperature !== undefined) req.temperature = a.temperature;
+    if (a.stop_sequences && a.stop_sequences.length) req.stop = a.stop_sequences;
+    return req;
+}
+
+// Convert OpenAI Chat Completions response → Anthropic Messages response
+function oaiToAnth(oai, model) {
+    const choice = (oai.choices || [])[0] || {};
+    const text   = (choice.message || {}).content || '';
+    const stop   = choice.finish_reason === 'length' ? 'max_tokens' : 'end_turn';
+    return {
+        id: 'msg_' + (oai.id || Date.now()),
+        type: 'message', role: 'assistant',
+        content: [{ type: 'text', text }],
+        model, stop_reason: stop, stop_sequence: null,
+        usage: {
+            input_tokens:  (oai.usage || {}).prompt_tokens    || 0,
+            output_tokens: (oai.usage || {}).completion_tokens || 0,
+        },
+    };
+}
+
+function sendToProvider(baseUrl, apiKey, oaiReq, stream, res) {
+    let targetUrl;
+    try {
+        const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+        targetUrl = new URL(base + '/chat/completions');
+    } catch (e) {
+        return proxyError(res, 500, 'Invalid provider URL: ' + baseUrl);
+    }
+
+    const body    = JSON.stringify(oaiReq);
+    const lib     = targetUrl.protocol === 'https:' ? https : http;
+    const port    = targetUrl.port || (targetUrl.protocol === 'https:' ? 443 : 80);
+    const headers = {
+        'Content-Type':   'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        'Authorization':  'Bearer ' + apiKey,
+    };
+
+    // OpenRouter needs attribution headers to unlock free models
+    if (targetUrl.hostname.includes('openrouter')) {
+        headers['HTTP-Referer'] = 'https://github.com/rektzy9903/ClaudeCodeSetup';
+        headers['X-Title']      = 'ClaudeCodeSetup';
+    }
+
+    const provReq = lib.request({
+        hostname: targetUrl.hostname,
+        port, method: 'POST',
+        path: targetUrl.pathname + (targetUrl.search || ''),
+        headers,
+    }, provRes => {
+        if (!stream) {
+            // Non-streaming: buffer, convert, reply
+            let data = '';
+            provRes.setEncoding('utf8');
+            provRes.on('data', c => { data += c; });
+            provRes.on('end', () => {
+                try {
+                    const parsed = JSON.parse(data);
+                    if (parsed.error) {
+                        return proxyError(res, provRes.statusCode || 500,
+                            parsed.error.message || JSON.stringify(parsed.error));
+                    }
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify(oaiToAnth(parsed, oaiReq.model)));
+                } catch (e) {
+                    proxyError(res, 500, 'Parse error: ' + e.message);
+                }
+            });
+        } else {
+            // Streaming: convert OpenAI SSE → Anthropic SSE on the fly
+            res.writeHead(200, {
+                'Content-Type':  'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection':    'keep-alive',
+            });
+
+            const msgId = 'msg_' + Date.now();
+            let outTokens = 0;
+            let buffer    = '';
+            let headersSent = false;
+
+            function sendEvent(event, data) {
+                try { res.write('event: ' + event + '\ndata: ' + JSON.stringify(data) + '\n\n'); }
+                catch (_) {}
+            }
+
+            provRes.setEncoding('utf8');
+            provRes.on('data', chunk => {
+                buffer += chunk;
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed || !trimmed.startsWith('data:')) continue;
+                    const raw = trimmed.slice(5).trim();
+                    if (raw === '[DONE]') continue;
+
+                    let event;
+                    try { event = JSON.parse(raw); } catch (_) { continue; }
+                    if (event.error) { log('Provider stream error: ' + JSON.stringify(event.error) + '\n'); continue; }
+
+                    if (!headersSent) {
+                        headersSent = true;
+                        sendEvent('message_start', {
+                            type: 'message_start',
+                            message: { id: msgId, type: 'message', role: 'assistant',
+                                       content: [], model: oaiReq.model, stop_reason: null,
+                                       usage: { input_tokens: 0, output_tokens: 0 } },
+                        });
+                        sendEvent('content_block_start', {
+                            type: 'content_block_start', index: 0,
+                            content_block: { type: 'text', text: '' },
+                        });
+                        sendEvent('ping', { type: 'ping' });
+                    }
+
+                    const delta      = ((event.choices || [])[0] || {}).delta || {};
+                    const text       = delta.content || '';
+                    const finishCode = ((event.choices || [])[0] || {}).finish_reason;
+
+                    if (text) {
+                        outTokens++;
+                        sendEvent('content_block_delta', {
+                            type: 'content_block_delta', index: 0,
+                            delta: { type: 'text_delta', text },
+                        });
+                    }
+
+                    if (finishCode) {
+                        const stopReason = finishCode === 'length' ? 'max_tokens' : 'end_turn';
+                        sendEvent('content_block_stop', { type: 'content_block_stop', index: 0 });
+                        sendEvent('message_delta', {
+                            type: 'message_delta',
+                            delta: { stop_reason: stopReason, stop_sequence: null },
+                            usage: { output_tokens: outTokens },
+                        });
+                        sendEvent('message_stop', { type: 'message_stop' });
+                    }
+                }
+            });
+
+            provRes.on('end', () => {
+                if (!headersSent) {
+                    // Provider sent nothing — emit a minimal valid stream
+                    sendEvent('message_start', {
+                        type: 'message_start',
+                        message: { id: msgId, type: 'message', role: 'assistant',
+                                   content: [], model: oaiReq.model, stop_reason: null,
+                                   usage: { input_tokens: 0, output_tokens: 0 } },
+                    });
+                    sendEvent('content_block_start', {
+                        type: 'content_block_start', index: 0,
+                        content_block: { type: 'text', text: '' },
+                    });
+                }
+                sendEvent('content_block_stop',  { type: 'content_block_stop', index: 0 });
+                sendEvent('message_delta', {
+                    type: 'message_delta',
+                    delta: { stop_reason: 'end_turn', stop_sequence: null },
+                    usage: { output_tokens: outTokens },
+                });
+                sendEvent('message_stop', { type: 'message_stop' });
+                try { res.end(); } catch (_) {}
+            });
+        }
+
+        provRes.on('error', err => log('Provider response error: ' + err.message + '\n'));
+    });
+
+    provReq.on('error', err => proxyError(res, 502, 'Provider unreachable: ' + err.message));
+    provReq.setTimeout(120000, () => {
+        provReq.destroy();
+        proxyError(res, 504, 'Provider timeout');
+    });
+
+    provReq.write(body);
+    provReq.end();
+}
+
 // ─── TCP bridge server ────────────────────────────────────────────────────────
 
 function startBridgeServer() {
@@ -320,6 +575,10 @@ function startBridgeServer() {
     server.listen(PORT, HOST, () => {
         log('Bridge ready on ' + HOST + ':' + PORT + '\n');
     });
+
+    // Start the Anthropic→OpenAI proxy alongside the bridge.
+    // Proxy-mode providers (OpenRouter, NVIDIA NIM, etc.) route through port 8082.
+    startProxyServer();
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────

@@ -198,6 +198,93 @@ async function testProviders() {
   return results;
 }
 
+// ─── Test 3: Anthropic → OpenAI proxy conversion logic ───────────────────────
+// Inlines the same conversion functions from bridge.js to test them in CI
+// without needing an Android device or running Node.js bridge.
+
+function anthToOai(a, model) {
+    const msgs = [];
+    if (a.system) {
+        const text = typeof a.system === 'string' ? a.system
+            : (a.system || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+        if (text) msgs.push({ role: 'system', content: text });
+    }
+    for (const m of (a.messages || [])) {
+        if (typeof m.content === 'string') {
+            msgs.push({ role: m.role, content: m.content });
+        } else {
+            msgs.push({ role: m.role, content: (m.content || []).filter(b => b.type === 'text').map(b => b.text).join('') });
+        }
+    }
+    const req = { model, messages: msgs, max_tokens: a.max_tokens || 8096, stream: !!a.stream };
+    if (a.temperature !== undefined) req.temperature = a.temperature;
+    if (a.stop_sequences && a.stop_sequences.length) req.stop = a.stop_sequences;
+    return req;
+}
+
+function oaiToAnth(oai, model) {
+    const choice = (oai.choices || [])[0] || {};
+    const text   = (choice.message || {}).content || '';
+    const stop   = choice.finish_reason === 'length' ? 'max_tokens' : 'end_turn';
+    return {
+        id: 'msg_test', type: 'message', role: 'assistant',
+        content: [{ type: 'text', text }],
+        model, stop_reason: stop, stop_sequence: null,
+        usage: {
+            input_tokens:  (oai.usage || {}).prompt_tokens    || 0,
+            output_tokens: (oai.usage || {}).completion_tokens || 0,
+        },
+    };
+}
+
+function testProxyConversion() {
+    console.log('\n── Test 3: proxy Anthropic ↔ OpenAI conversion ──');
+
+    // Request conversion
+    const anthReq = {
+        model: 'ignored-by-proxy',
+        system: 'You are a helpful assistant.',
+        messages: [{ role: 'user', content: 'Say hello' }],
+        max_tokens: 100, stream: false,
+    };
+    const oai = anthToOai(anthReq, 'qwen/qwen3-coder:free');
+
+    if (oai.model !== 'qwen/qwen3-coder:free') { fail('model substitution', oai.model); return; }
+    ok('model substituted with configured modelId');
+
+    if (!oai.messages.find(m => m.role === 'system')) { fail('system message', 'missing'); return; }
+    ok('system prompt moved to messages[0]');
+
+    if (!oai.messages.find(m => m.role === 'user' && m.content === 'Say hello')) { fail('user message', 'missing'); return; }
+    ok('user message preserved');
+
+    if (oai.stream !== false) { fail('stream flag', oai.stream); return; }
+    ok('stream=false preserved');
+
+    // Response conversion (non-streaming)
+    const oaiRes = {
+        id: 'chatcmpl-123',
+        choices: [{ message: { content: 'Hello there!' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 15, completion_tokens: 3, total_tokens: 18 },
+    };
+    const anth = oaiToAnth(oaiRes, 'qwen/qwen3-coder:free');
+
+    if (!anth.content || anth.content[0].text !== 'Hello there!') { fail('response text', JSON.stringify(anth.content)); return; }
+    ok('response text extracted correctly');
+
+    if (anth.stop_reason !== 'end_turn') { fail('stop_reason', anth.stop_reason); return; }
+    ok('finish_reason "stop" → stop_reason "end_turn"');
+
+    if (anth.usage.input_tokens !== 15 || anth.usage.output_tokens !== 3) { fail('usage tokens', JSON.stringify(anth.usage)); return; }
+    ok('token usage mapped correctly');
+
+    // max_tokens finish reason
+    const oaiLen = { choices: [{ message: { content: 'cut' }, finish_reason: 'length' }], usage: {} };
+    const anthLen = oaiToAnth(oaiLen, 'model');
+    if (anthLen.stop_reason !== 'max_tokens') { fail('length→max_tokens', anthLen.stop_reason); return; }
+    ok('finish_reason "length" → stop_reason "max_tokens"');
+}
+
 // ─── Runner ───────────────────────────────────────────────────────────────────
 
 (async () => {

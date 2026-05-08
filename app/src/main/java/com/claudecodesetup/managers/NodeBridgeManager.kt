@@ -105,12 +105,17 @@ class NodeBridgeManager(private val context: Context) {
             "proxy" -> "http://127.0.0.1:8082"
             else    -> baseUrl
         }
+        // providerUrl carries the real OpenAI-compatible endpoint for proxy-mode
+        // providers (OpenRouter, NVIDIA NIM, etc.) so bridge.js knows where to
+        // forward requests after converting from Anthropic to OpenAI format.
+        val providerUrl = if (mode == "proxy") baseUrl else ""
         val json = JSONObject().apply {
-            put("mode",      mode)
-            put("apiKey",    apiKey)
-            put("modelId",   modelId)
-            put("baseUrl",   effectiveBaseUrl)
-            put("authToken", authToken)
+            put("mode",        mode)
+            put("apiKey",      apiKey)
+            put("modelId",     modelId)
+            put("baseUrl",     effectiveBaseUrl)
+            put("authToken",   authToken)
+            put("providerUrl", providerUrl)
         }
         try {
             File(context.filesDir, CONFIG_FILE).writeText(json.toString())
