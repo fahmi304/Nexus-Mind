@@ -29,6 +29,9 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++17"
+                // c++_shared causes AGP to bundle libc++_shared.so in the APK,
+                // which libnode.so (from nodejs-mobile) requires at runtime.
+                arguments "-DANDROID_STL=c++_shared"
             }
         }
     }
