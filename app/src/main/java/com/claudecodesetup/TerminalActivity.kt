@@ -297,6 +297,8 @@ class TerminalActivity : AppCompatActivity() {
     private fun submitInput() {
         val text = binding.etInput.text?.toString()?.trimEnd() ?: return
         if (text.isEmpty()) return
+        // No PTY → echo the typed text locally so the user can see it
+        writeToTerminal("\r\n[32m❯ $text[0m\r\n")
         sendInput(text + "\r")
         binding.etInput.setText("")
     }

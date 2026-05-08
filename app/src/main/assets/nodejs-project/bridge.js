@@ -546,8 +546,10 @@ function startBridgeServer() {
         if (cfg.apiKey)    env.ANTHROPIC_API_KEY    = cfg.apiKey;
         if (cfg.baseUrl)   env.ANTHROPIC_BASE_URL   = cfg.baseUrl;
         if (cfg.authToken) env.ANTHROPIC_AUTH_TOKEN = cfg.authToken;
-        if (cfg.modelId)   env.ANTHROPIC_MODEL      = cfg.modelId;
-        // Required for Claude Code to accept non-Anthropic models via a gateway proxy.
+        // Only set ANTHROPIC_MODEL for subscription mode (real Anthropic model IDs).
+        // For proxy mode the proxy overwrites the model from cfg.modelId anyway,
+        // and setting a non-Anthropic model ID here causes Claude Code to crash on startup.
+        if (cfg.modelId && !cfg.authToken) env.ANTHROPIC_MODEL = cfg.modelId;
         env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = '1';
         env.DISABLE_AUTOUPDATER = '1';
 
