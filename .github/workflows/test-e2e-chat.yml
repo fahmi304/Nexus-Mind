@@ -1,0 +1,25 @@
+name: E2E Chat Simulation
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/scripts/test-e2e-chat.js'
+      - 'app/src/main/assets/nodejs-project/bridge.js'
+
+jobs:
+  e2e-chat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Send "hello claude" through OpenRouter proxy
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_TEST_KEY }}
+        run: node .github/scripts/test-e2e-chat.js
