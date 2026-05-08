@@ -77,7 +77,7 @@ class BridgeManager(private val context: Context) {
                 putExtra("com.termux.RUN_COMMAND_BACKGROUND", background)
                 putExtra("com.termux.RUN_COMMAND_SESSION_ACTION", "0")
             }
-            context.startForegroundService(intent)
+            context.startService(intent)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send Termux command (background=$background)", e)
         }
