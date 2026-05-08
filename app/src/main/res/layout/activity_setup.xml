@@ -68,7 +68,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="1. Termux will open and run the setup\n2. Ubuntu Linux is installed (~300 MB)\n3. Node.js and Claude Code are installed\n4. A local proxy is installed (free mode)\n5. When done, tap back and this screen advances automatically"
+                    android:text="1. Tap the button — Termux opens automatically\n2. A setup command is copied to your clipboard\n3. In Termux: long-press → Paste → Enter\n4. Ubuntu + Node.js + Claude Code install (~300 MB)\n5. This screen advances automatically when done"
                     android:textColor="@color/text_primary"
                     android:textSize="14sp"
                     android:lineSpacingMultiplier="1.5" />
@@ -91,22 +91,78 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="20dp"
             android:visibility="gone">
 
-            <!-- Current step label -->
+            <!-- PRIMARY ACTION: paste instructions (most prominent) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_provider_card"
+                android:padding="18dp"
+                android:layout_marginBottom="20dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="SETUP COMMAND COPIED TO CLIPBOARD"
+                    android:textColor="@color/accent_orange"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.05"
+                    android:layout_marginBottom="14dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="In the Termux window that opened:"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="1.  Long-press anywhere in the terminal\n2.  Tap  Paste\n3.  Press  Enter"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:lineSpacingMultiplier="1.7" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="The setup will run automatically inside Termux.\nCome back here — this screen advances on its own."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp"
+                    android:lineSpacingMultiplier="1.4" />
+
+                <Button
+                    android:id="@+id/btnCopyCmd"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="Copy command again"
+                    android:textSize="13sp"
+                    android:backgroundTint="@color/accent_orange" />
+
+            </LinearLayout>
+
+            <!-- Step label -->
             <TextView
                 android:id="@+id/tvCurrentStep"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Connecting to Termux..."
+                android:text="Waiting for Termux..."
                 android:textColor="@color/text_primary"
-                android:textSize="15sp"
+                android:textSize="14sp"
                 android:textStyle="bold"
                 android:gravity="center"
-                android:layout_marginBottom="12dp" />
+                android:layout_marginBottom="8dp" />
 
-            <!-- Horizontal determinate progress bar -->
+            <!-- Horizontal progress bar -->
             <ProgressBar
                 android:id="@+id/progressSetup"
                 style="@android:style/Widget.ProgressBar.Horizontal"
@@ -132,7 +188,7 @@
             <ScrollView
                 android:id="@+id/scrollTaskLog"
                 android:layout_width="match_parent"
-                android:layout_height="180dp"
+                android:layout_height="150dp"
                 android:background="@drawable/bg_provider_card"
                 android:scrollbars="vertical">
 
@@ -151,61 +207,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
-                android:text="This page advances automatically when setup completes (usually 5–15 min)."
+                android:text="This page advances automatically when setup completes (5–15 min)."
                 android:textColor="@color/text_secondary"
-                android:textSize="13sp"
-                android:lineSpacingMultiplier="1.4"
+                android:textSize="12sp"
                 android:gravity="center" />
-
-            <!-- Manual fallback card -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginTop="20dp"
-                android:background="@drawable/bg_provider_card"
-                android:padding="16dp">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="IF NOTHING HAPPENS IN TERMUX:"
-                    android:textColor="@color/accent_orange"
-                    android:textSize="12sp"
-                    android:textStyle="bold"
-                    android:letterSpacing="0.05"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="1. Open Termux manually\n2. Copy and run this command:"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp"
-                    android:lineSpacingMultiplier="1.4"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:id="@+id/tvManualCmd"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:background="@drawable/bg_provider_card"
-                    android:padding="10dp"
-                    android:text="proot-distro install ubuntu &amp;&amp; proot-distro login ubuntu"
-                    android:fontFamily="monospace"
-                    android:textColor="@color/accent_orange"
-                    android:textSize="12sp" />
-
-                <Button
-                    android:id="@+id/btnCopyCmd"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:text="Copy command"
-                    android:textSize="13sp"
-                    android:backgroundTint="@color/accent_orange" />
-
-            </LinearLayout>
 
         </LinearLayout>
 

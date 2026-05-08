@@ -54,32 +54,58 @@ class BridgeManager(private val context: Context) {
     }
 
     /**
-     * Run the setup script in a visible Termux terminal session.
-     * Encodes [scriptContent] as base64 to avoid quoting/escaping issues.
+     * Builds a self-contained shell one-liner that can be pasted directly into
+     * a Termux terminal. It:
+     *   1. Writes allow-external-apps = true so future RunCommandService calls work.
+     *   2. Decodes and runs the full setup script inline.
+     * Safe to call before allow-external-apps is set because it runs via user paste,
+     * not via RunCommandService.
      */
-    fun runSetupScript(scriptContent: String) {
+    fun buildSetupPasteCommand(scriptContent: String): String {
         val b64 = Base64.encodeToString(scriptContent.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        val cmd = "printf '%s' '$b64' | base64 -d > ~/.claudesetup.sh && bash ~/.claudesetup.sh"
+        // Idempotent: adds the property only if not already present, then runs setup.
+        return "mkdir -p ~/.termux && " +
+               "grep -q allow-external-apps ~/.termux/termux.properties 2>/dev/null || " +
+               "echo 'allow-external-apps = true' >> ~/.termux/termux.properties; " +
+               "printf '%s' '$b64' | base64 -d | bash"
+    }
+
+    /**
+     * Best-effort: dispatch setup via RunCommandService (works only when
+     * allow-external-apps is already enabled in Termux). Also opens Termux so
+     * the terminal is visible for the user to paste the clipboard command.
+     */
+    fun openTermuxForSetup() {
+        // Open Termux activity — works regardless of allow-external-apps.
+        try {
+            val launchIntent = context.packageManager
+                .getLaunchIntentForPackage(TERMUX_PACKAGE)
+                ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (launchIntent != null) context.startActivity(launchIntent)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not launch Termux activity", e)
+        }
+        Log.i(TAG, "Termux opened for setup")
+    }
+
+    /**
+     * Attempt to trigger setup via RunCommandService. Only succeeds when
+     * allow-external-apps = true is already set in Termux. Safe to call
+     * unconditionally — if rejected, the clipboard-paste path is the fallback.
+     */
+    fun tryRunSetupViaIntent(scriptContent: String) {
+        val b64 = Base64.encodeToString(scriptContent.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val cmd = "mkdir -p ~/.termux && " +
+                  "grep -q allow-external-apps ~/.termux/termux.properties 2>/dev/null || " +
+                  "echo 'allow-external-apps = true' >> ~/.termux/termux.properties; " +
+                  "printf '%s' '$b64' | base64 -d | bash"
         sendTermuxCommand(cmd, background = false)
-        Log.i(TAG, "Setup script dispatched to Termux")
+        Log.i(TAG, "Setup via RunCommandService attempted (best-effort)")
     }
 
     // ─── Private ──────────────────────────────────────────────────────────────
 
     private fun sendTermuxCommand(command: String, background: Boolean) {
-        if (!background) {
-            // Bring Termux to the foreground so the terminal session is visible.
-            // This also ensures Termux's service is running before we send the
-            // RunCommandService intent, which requires Termux to already be up.
-            try {
-                val launchIntent = context.packageManager
-                    .getLaunchIntentForPackage(TERMUX_PACKAGE)
-                    ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                if (launchIntent != null) context.startActivity(launchIntent)
-            } catch (e: Exception) {
-                Log.w(TAG, "Could not launch Termux activity", e)
-            }
-        }
         try {
             val intent = Intent().apply {
                 setClassName(TERMUX_PACKAGE, TERMUX_RUN_COMMAND_SERVICE)
@@ -88,7 +114,6 @@ class BridgeManager(private val context: Context) {
                 putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-c", command))
                 putExtra("com.termux.RUN_COMMAND_WORKDIR", TERMUX_HOME)
                 putExtra("com.termux.RUN_COMMAND_BACKGROUND", background)
-                // Must be Int — Termux uses getIntExtra() and ignores a String extra
                 putExtra("com.termux.RUN_COMMAND_SESSION_ACTION", 0)
             }
             context.startService(intent)
