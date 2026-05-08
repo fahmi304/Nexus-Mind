@@ -10,8 +10,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // Required for nodejs-mobile-android
-        maven { url 'https://jitpack.io' }
     }
 }
 

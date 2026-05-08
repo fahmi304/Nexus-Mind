@@ -23,8 +23,19 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            // x86/x86_64 emulator ABIs dropped — nodejs-mobile only ships arm64 + arm
             abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
+
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++17"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
         }
     }
 
@@ -80,10 +91,6 @@ android {
 }
 
 dependencies {
-    // nodejs-mobile-android — embeds Node.js runtime so no Termux needed.
-    // VERIFY the latest tag at: https://github.com/nodejs-mobile/nodejs-mobile/releases
-    implementation 'com.github.nicktindall:nodejs-mobile-android:0.4.0'
-
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'

@@ -1,30 +1,34 @@
 'use strict';
 
 /**
- * bridge.js — runs inside nodejs-mobile-android.
+ * bridge.js — runs inside the embedded Node.js runtime (libnode.so via JNI).
  *
  * Responsibilities:
- *   1. On first run: install @anthropic-ai/claude-code via npm, write
- *      progress to SETUP_LOG so SetupActivity can show real progress.
- *   2. Once installed: open a TCP server on port 8083. Each incoming
- *      connection spawns one `node cli.js` process (claude-code), piping
- *      its stdin/stdout to the socket — exactly what socat used to do.
+ *   1. First run: download @anthropic-ai/claude-code directly from the npm
+ *      registry (no npm binary needed — uses https + Android's /system/bin/tar).
+ *   2. Once installed: open TCP port 8083. Each connection spawns one
+ *      node cli.js process via the provided launcher binary, piping
+ *      stdin/stdout to the socket.
  *
- * Communication with Android (config):
- *   Android writes <filesDir>/bridge_config.json before starting this
- *   script. bridge.js reads it on every new connection so provider
- *   changes take effect without restarting Node.js.
+ * argv layout (set by NodeBridgeManager.kt):
+ *   argv[0] = "node"          (executable label)
+ *   argv[1] = <path>/bridge.js
+ *   argv[2] = <filesDir>      (app's internal storage path)
+ *   argv[3] = <nativeLibDir>/libnode-launcher.so  (node subprocess binary)
  */
 
 const net    = require('net');
 const path   = require('path');
 const fs     = require('fs');
+const https  = require('https');
 const { spawn } = require('child_process');
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
 
-// Android passes filesDir as argv[2] so debug/release builds both work.
 const FILES_DIR  = process.argv[2] || '/data/data/com.claudecodesetup/files';
+const LAUNCHER   = process.argv[3] || process.execPath;
+const NATIVE_DIR = path.dirname(LAUNCHER);  // dir holding libnode.so for LD_LIBRARY_PATH
+
 const NPM_PREFIX = path.join(FILES_DIR, 'npm-global');
 const CLAUDE_CLI = path.join(
     NPM_PREFIX, 'lib', 'node_modules',
@@ -37,10 +41,10 @@ const SETUP_DONE  = path.join(FILES_DIR, 'setup_done');
 const PORT = 8083;
 const HOST = '127.0.0.1';
 
-// ─── Logging (written to file so Android can poll it) ─────────────────────────
+// ─── Logging ──────────────────────────────────────────────────────────────────
 
 function log(msg) {
-    const line = (msg.endsWith('\n') ? msg : msg + '\n');
+    const line = msg.endsWith('\n') ? msg : msg + '\n';
     try { fs.appendFileSync(SETUP_LOG, line); } catch (_) {}
     process.stdout.write(line);
 }
@@ -58,64 +62,105 @@ function isClaudeInstalled() {
     return fs.existsSync(CLAUDE_CLI);
 }
 
-// ─── npm install ──────────────────────────────────────────────────────────────
+// ─── HTTP helpers (no external deps needed — Node.js built-ins only) ──────────
 
-function findNpmCli() {
-    const nodeDir = path.dirname(process.execPath);
-    const candidates = [
-        // nodejs-mobile bundles npm here
-        path.join(nodeDir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
-        // standard node install layout
-        path.join(nodeDir, 'npm'),
-        path.join(nodeDir, 'npm.js'),
-    ];
-    for (const p of candidates) {
-        try { fs.accessSync(p, fs.constants.R_OK); return p; } catch (_) {}
-    }
-    return null; // fall back to PATH 'npm'
+function httpsGet(url, opts) {
+    return new Promise((resolve, reject) => {
+        https.get(url, opts || {}, res => {
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                return httpsGet(res.headers.location, opts).then(resolve).catch(reject);
+            }
+            resolve(res);
+        }).on('error', reject);
+    });
 }
 
-function runNpmInstall(onDone) {
-    try { fs.mkdirSync(NPM_PREFIX, { recursive: true }); } catch (_) {}
-    try { fs.mkdirSync(path.join(FILES_DIR, 'npm-cache'), { recursive: true }); } catch (_) {}
-
-    const npmCli  = findNpmCli();
-    const isScript = npmCli && npmCli.endsWith('.js');
-    const exe  = isScript ? process.execPath : (npmCli || 'npm');
-    const args = isScript ? [npmCli] : [];
-    args.push(
-        'install', '-g', '@anthropic-ai/claude-code',
-        '--prefix', NPM_PREFIX,
-        '--no-audit', '--no-fund',
-        '--loglevel', 'warn'
-    );
-
-    const env = {
-        HOME: FILES_DIR,
-        PATH: process.env.PATH || '/system/bin:/system/xbin',
-        npm_config_cache: path.join(FILES_DIR, 'npm-cache'),
-        npm_config_prefix: NPM_PREFIX,
-    };
-
-    log('Running npm install -g @anthropic-ai/claude-code ...\n');
-
-    const child = spawn(exe, args, { env, cwd: FILES_DIR });
-    child.stdout.on('data', d => log(d.toString()));
-    child.stderr.on('data', d => log(d.toString()));
-
-    child.on('close', code => {
-        if (code === 0 && isClaudeInstalled()) {
-            log('\n✓ Claude Code installed successfully!\n');
-            try { fs.writeFileSync(SETUP_DONE, 'true'); } catch (_) {}
-            onDone(true);
-        } else {
-            log(`\n✗ npm install failed (exit ${code}). Check your internet connection and retry.\n`);
-            onDone(false);
-        }
+function fetchJson(url) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const res = await httpsGet(url, { headers: { 'Accept': 'application/json' } });
+            let body = '';
+            res.setEncoding('utf8');
+            res.on('data', c => { body += c; });
+            res.on('end', () => {
+                try { resolve(JSON.parse(body)); }
+                catch (e) { reject(new Error('JSON parse failed: ' + e.message)); }
+            });
+            res.on('error', reject);
+        } catch (e) { reject(e); }
     });
+}
 
-    child.on('error', err => {
-        log(`\n✗ Could not run npm: ${err.message}\n`);
+function downloadFile(url, dest) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const res = await httpsGet(url);
+            const out = fs.createWriteStream(dest);
+            res.pipe(out);
+            out.on('finish', () => out.close(resolve));
+            out.on('error', err => { fs.unlink(dest, () => {}); reject(err); });
+            res.on('error', err => { fs.unlink(dest, () => {}); reject(err); });
+        } catch (e) { reject(e); }
+    });
+}
+
+// ─── Install claude-code directly from npm registry ──────────────────────────
+// Avoids needing an npm binary — downloads the tarball and extracts with
+// Android's /system/bin/tar (part of toybox, available API 24+).
+
+function installClaudeCode(onDone) {
+    fs.mkdirSync(NPM_PREFIX, { recursive: true });
+
+    (async () => {
+        log('Fetching @anthropic-ai/claude-code package metadata...\n');
+
+        // npm registry endpoint for scoped packages
+        const meta = await fetchJson(
+            'https://registry.npmjs.org/@anthropic-ai/claude-code/latest'
+        );
+        const tarball = meta.dist && meta.dist.tarball;
+        if (!tarball) throw new Error('No tarball URL in registry response');
+
+        const sizeMB = Math.round((meta.dist.unpackedSize || 0) / 1e6) || '~50';
+        log(`Downloading ${tarball.split('/').pop()} (${sizeMB} MB)...\n`);
+
+        const tgzPath = path.join(FILES_DIR, 'claude-code.tgz');
+        await downloadFile(tarball, tgzPath);
+        log('Download complete. Extracting...\n');
+
+        const destDir = path.join(
+            NPM_PREFIX, 'lib', 'node_modules', '@anthropic-ai', 'claude-code'
+        );
+        fs.mkdirSync(destDir, { recursive: true });
+
+        // Android toybox tar is at /system/bin/tar (API 24+ / Android 7+)
+        const tarEnv = { PATH: '/system/bin:/system/xbin' };
+        const tarChild = spawn('/system/bin/tar', [
+            '-xzf', tgzPath, '-C', destDir, '--strip-components=1'
+        ], { env: tarEnv, cwd: FILES_DIR });
+
+        tarChild.stderr.on('data', d => log(d.toString()));
+        tarChild.on('error', err => {
+            fs.unlink(tgzPath, () => {});
+            throw new Error('tar error: ' + err.message);
+        });
+
+        await new Promise((res, rej) => {
+            tarChild.on('close', code => code === 0 ? res() : rej(new Error(`tar exit ${code}`)));
+        });
+
+        fs.unlink(tgzPath, () => {});
+
+        if (!isClaudeInstalled()) {
+            throw new Error('cli.js not found after extraction');
+        }
+
+        log('\n✓ Claude Code installed successfully!\n');
+        fs.writeFileSync(SETUP_DONE, 'true');
+        onDone(true);
+    })().catch(err => {
+        log(`\n✗ Installation failed: ${err.message}\n`);
+        try { fs.writeFileSync(path.join(FILES_DIR, 'setup_failed'), 'true'); } catch (_) {}
         onDone(false);
     });
 }
@@ -125,7 +170,7 @@ function runNpmInstall(onDone) {
 function startBridgeServer() {
     const server = net.createServer(socket => {
         if (!isClaudeInstalled()) {
-            socket.write('\r\n\x1b[31mClaude Code not installed — please run Setup from the app.\x1b[0m\r\n');
+            socket.write('\r\n\x1b[31mClaude Code not installed — run Setup from the app.\x1b[0m\r\n');
             socket.end();
             return;
         }
@@ -138,19 +183,18 @@ function startBridgeServer() {
             LANG: 'en_US.UTF-8',
             LINES: '50',
             COLUMNS: '160',
-            PATH: process.env.PATH || '/system/bin',
+            PATH: process.env.PATH || '/system/bin:/system/xbin',
+            // libnode.so lives alongside the launcher; child processes need it
+            LD_LIBRARY_PATH: NATIVE_DIR,
         };
 
-        // Provider-specific env vars — only set non-empty values
         if (cfg.apiKey)    env.ANTHROPIC_API_KEY    = cfg.apiKey;
         if (cfg.baseUrl)   env.ANTHROPIC_BASE_URL   = cfg.baseUrl;
         if (cfg.authToken) env.ANTHROPIC_AUTH_TOKEN = cfg.authToken;
         if (cfg.modelId)   env.ANTHROPIC_MODEL      = cfg.modelId;
 
-        const child = spawn(process.execPath, [CLAUDE_CLI], {
-            env,
-            cwd: FILES_DIR,
-        });
+        // Spawn a child Node.js process via the standalone launcher binary
+        const child = spawn(LAUNCHER, [CLAUDE_CLI], { env, cwd: FILES_DIR });
 
         socket.on('data', d => { try { child.stdin.write(d); } catch (_) {} });
         child.stdout.on('data', d => { try { socket.write(d); } catch (_) {} });
@@ -164,7 +208,9 @@ function startBridgeServer() {
         child.on('close', () => { try { socket.end(); } catch (_) {} });
         child.on('error', err => {
             try {
-                socket.write(`\r\n\x1b[31mFailed to start Claude: ${err.message}\x1b[0m\r\n`);
+                socket.write(
+                    `\r\n\x1b[31mFailed to start Claude: ${err.message}\x1b[0m\r\n`
+                );
             } catch (_) {}
             cleanup();
         });
@@ -175,7 +221,6 @@ function startBridgeServer() {
 
     server.on('error', err => {
         process.stderr.write('Bridge server error: ' + err.message + '\n');
-        // Retry after 3 s (e.g. if port was briefly occupied)
         setTimeout(startBridgeServer, 3000);
     });
 
@@ -186,10 +231,9 @@ function startBridgeServer() {
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
-// Clear previous setup log on each start so Android gets a fresh view
 try { fs.writeFileSync(SETUP_LOG, ''); } catch (_) {}
 
-log('Node.js bridge starting...\n');
+log(`Node.js bridge starting (launcher: ${LAUNCHER})\n`);
 
 if (isClaudeInstalled()) {
     log('Claude Code found — starting bridge server.\n');
@@ -197,14 +241,12 @@ if (isClaudeInstalled()) {
     startBridgeServer();
 } else {
     log('Claude Code not found — running first-time install.\n');
-    log('Downloading ~50 MB, please keep the app open...\n\n');
-    runNpmInstall(ok => {
+    log('Downloading from npm registry (~50 MB), please keep the app open...\n\n');
+    installClaudeCode(ok => {
         if (ok) {
             startBridgeServer();
         } else {
             log('\nSetup failed. Tap "Try again" in the app.\n');
-            // Write a sentinel so SetupActivity can detect failure
-            try { fs.writeFileSync(path.join(FILES_DIR, 'setup_failed'), 'true'); } catch (_) {}
         }
     });
 }

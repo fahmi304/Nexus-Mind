@@ -2,16 +2,16 @@ package com.claudecodesetup.managers
 
 import android.content.Context
 import android.util.Log
-import com.janeasystems.nodejs_mobile_android.NodeJsMobile
+import com.claudecodesetup.NodeEngine
 import org.json.JSONObject
 import java.io.File
 import java.net.Socket
 
 /**
- * Manages the embedded Node.js bridge (replaces Termux-based BridgeManager).
+ * Manages the embedded Node.js bridge.
  *
- * The bridge is a Node.js script (assets/nodejs-project/bridge.js) that:
- *   - On first run: installs @anthropic-ai/claude-code via npm (~50 MB download)
+ * The bridge is bridge.js (assets/nodejs-project/bridge.js) which:
+ *   - On first run: downloads and installs @anthropic-ai/claude-code from npm
  *   - After install: opens TCP port 8083; each connection gets its own claude process
  *
  * Config is passed via a JSON file in filesDir so provider changes propagate
@@ -24,10 +24,10 @@ class NodeBridgeManager(private val context: Context) {
         const val BRIDGE_HOST = "127.0.0.1"
         private const val TAG = "NodeBridgeManager"
 
-        private const val CONFIG_FILE  = "bridge_config.json"
-        const val SETUP_LOG_FILE       = "setup.log"
-        const val SETUP_DONE_FILE      = "setup_done"
-        const val SETUP_FAILED_FILE    = "setup_failed"
+        private const val CONFIG_FILE   = "bridge_config.json"
+        const val SETUP_LOG_FILE        = "setup.log"
+        const val SETUP_DONE_FILE       = "setup_done"
+        const val SETUP_FAILED_FILE     = "setup_failed"
     }
 
     // ─── Bridge reachability ──────────────────────────────────────────────────
@@ -54,31 +54,20 @@ class NodeBridgeManager(private val context: Context) {
     fun clearSetupFailedFlag() =
         File(context.filesDir, SETUP_FAILED_FILE).delete()
 
-    /** Read all lines written so far by bridge.js during npm install. */
     fun readSetupLog(): String = try {
         File(context.filesDir, SETUP_LOG_FILE).readText()
     } catch (_: Exception) { "" }
 
     // ─── Start Node.js ────────────────────────────────────────────────────────
 
-    /**
-     * Write provider config to disk and (re)start Node.js if not already running.
-     * Safe to call multiple times — NodeJsMobile ignores duplicate start calls.
-     */
     fun startBridge(mode: String, apiKey: String, modelId: String, baseUrl: String) {
         writeConfig(mode, apiKey, modelId, baseUrl)
         startNodeEngine()
     }
 
-    /**
-     * Called on first launch (setup screen). Clears any previous failure marker,
-     * writes an empty config (provider chosen later), and starts Node.js so
-     * bridge.js can run the npm install.
-     */
     fun startSetup() {
         clearSetupFailedFlag()
         File(context.filesDir, SETUP_DONE_FILE).delete()
-        // Clear previous log so the UI starts fresh
         try { File(context.filesDir, SETUP_LOG_FILE).writeText("") } catch (_: Exception) {}
         startNodeEngine()
     }
@@ -86,13 +75,24 @@ class NodeBridgeManager(private val context: Context) {
     // ─── Private ──────────────────────────────────────────────────────────────
 
     private fun startNodeEngine() {
-        try {
-            NodeJsMobile.startNodeWithArguments(
-                arrayOf("node", "bridge.js", context.filesDir.absolutePath)
-            )
-            Log.i(TAG, "NodeJsMobile started (or already running)")
+        val bridgeFile = ensureBridgeJs() ?: return
+        val nativeLibDir = context.applicationInfo.nativeLibraryDir
+        val launcherPath = "$nativeLibDir/libnode-launcher.so"
+        NodeEngine.startWithArguments(
+            arrayOf("node", bridgeFile.absolutePath, context.filesDir.absolutePath, launcherPath)
+        )
+    }
+
+    private fun ensureBridgeJs(): File? {
+        val dest = File(context.filesDir, "bridge.js")
+        return try {
+            context.assets.open("nodejs-project/bridge.js").use { src ->
+                dest.outputStream().use { src.copyTo(it) }
+            }
+            dest
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start Node.js engine", e)
+            Log.e(TAG, "Failed to copy bridge.js from assets", e)
+            null
         }
     }
 

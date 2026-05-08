@@ -12,8 +12,8 @@ class ClaudeApp : Application() {
         super.onCreate()
         createNotificationChannels()
         // Start Node.js engine as early as possible so the bridge is warm
-        // by the time the user reaches the terminal. This is a no-op if
-        // Node.js is already running (NodeJsMobile ignores duplicate starts).
+        // by the time the user reaches the terminal. NodeEngine guards
+        // against duplicate starts via its started flag.
         val prefs = AppPreferences(this)
         if (prefs.isNodeSetupComplete()) {
             NodeBridgeManager(this).startBridge(
