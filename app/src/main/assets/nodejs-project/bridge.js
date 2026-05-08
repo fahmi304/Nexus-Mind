@@ -160,23 +160,39 @@ function installClaudeCode(onDone) {
         const destDir = path.join(
             NPM_PREFIX, 'lib', 'node_modules', '@anthropic-ai', 'claude-code'
         );
-        fs.mkdirSync(destDir, { recursive: true });
+        // tmpDir sits next to destDir on the same filesystem so renameSync works
+        const tmpDir = destDir + '.tmp';
 
-        // Android toybox tar is available at /system/bin/tar (API 24+ / Android 7+)
+        // Clean up any leftovers from a previous failed attempt
+        try { fs.rmSync(destDir, { recursive: true, force: true }); } catch (_) {}
+        try { fs.rmSync(tmpDir,  { recursive: true, force: true }); } catch (_) {}
+        fs.mkdirSync(tmpDir, { recursive: true });
+        fs.mkdirSync(path.dirname(destDir), { recursive: true });
+
+        // Android's toybox tar does NOT support --strip-components.
+        // Extract into tmpDir first; npm tarballs always place files under
+        // a 'package/' prefix, so we rename that subdirectory to destDir.
         await new Promise((res, rej) => {
-            const tar = spawn('/system/bin/tar', [
-                '-xzf', tgzPath, '-C', destDir, '--strip-components=1'
-            ], { env: { PATH: '/system/bin:/system/xbin' }, cwd: FILES_DIR });
-
+            const tar = spawn('/system/bin/tar', ['-xzf', tgzPath, '-C', tmpDir], {
+                env: { PATH: '/system/bin:/system/xbin' }
+            });
             tar.stderr.on('data', d => log('tar: ' + d.toString()));
-            tar.on('error', err => rej(new Error('/system/bin/tar error: ' + err.message)));
+            tar.on('error', err => rej(new Error('tar: ' + err.message)));
             tar.on('close', code => code === 0 ? res() : rej(new Error('tar exit ' + code)));
         });
 
         try { fs.unlinkSync(tgzPath); } catch (_) {}
 
+        const pkgDir = path.join(tmpDir, 'package');
+        if (!fs.existsSync(pkgDir)) {
+            const found = fs.readdirSync(tmpDir).join(', ');
+            throw new Error('package/ not found in tarball; found: [' + found + ']');
+        }
+        fs.renameSync(pkgDir, destDir);
+        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+
         if (!isClaudeInstalled()) {
-            throw new Error('cli.js not found after extraction — package may have changed layout');
+            throw new Error('cli.js not found after extraction — package layout may have changed');
         }
 
         log('\n✓ Claude Code installed successfully!\n');
