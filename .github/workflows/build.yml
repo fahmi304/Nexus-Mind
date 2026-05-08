@@ -65,11 +65,16 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      # ── 7. Build debug APK ───────────────────────────────────────────────────
+      # ── 7. Install NDK ───────────────────────────────────────────────────────
+      - name: Install NDK 25.1.8937393
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;25.1.8937393"
+
+      # ── 8. Build debug APK ───────────────────────────────────────────────────
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      # ── 8. Upload APK artifact ───────────────────────────────────────────────
+      # ── 9. Upload APK artifact ───────────────────────────────────────────────
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -78,7 +83,7 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      # ── 9. Show APK info ─────────────────────────────────────────────────────
+      # ── 10. Show APK info ────────────────────────────────────────────────────
       - name: Show APK info
         run: |
           APK=app/build/outputs/apk/debug/app-debug.apk
