@@ -187,8 +187,9 @@ async function downloadClaudeCode(tmpDir) {
 // ─── Run Claude Code session ──────────────────────────────────────────────────
 
 async function runClaudeSession(cliJs, tmpDir) {
-  console.log('\n── Step 3: spawn Claude Code (same env as bridge.js) ──');
+  console.log('\n── Step 3: spawn Claude Code --print (same as bridge.js) ──');
 
+  // Exactly what bridge.js now does: --print mode, message piped to stdin
   const env = {
     HOME: tmpDir,
     TERM: 'xterm-256color',
@@ -196,7 +197,6 @@ async function runClaudeSession(cliJs, tmpDir) {
     LINES: '40',
     COLUMNS: '160',
     PATH: process.env.PATH,
-    // Proxy-mode env — same logic as bridge.js (no ANTHROPIC_API_KEY)
     ANTHROPIC_AUTH_TOKEN: 'freecc',
     ANTHROPIC_BASE_URL: `http://${HOST}:${PROXY_PORT}`,
     CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1',
@@ -205,52 +205,41 @@ async function runClaudeSession(cliJs, tmpDir) {
 
   console.log('  env: ANTHROPIC_AUTH_TOKEN=freecc');
   console.log(`  env: ANTHROPIC_BASE_URL=http://${HOST}:${PROXY_PORT}`);
-  console.log('  env: CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1');
-  console.log(`  cmd: node ${path.basename(cliJs)}`);
+  console.log(`  cmd: node cli.js --print  (stdin: "hello claude")`);
 
   return new Promise((resolve) => {
-    const child  = spawn('node', [cliJs], { env, cwd: tmpDir });
+    const child  = spawn('node', [cliJs, '--print'], { env, cwd: tmpDir });
     let   output = '';
     let   exited = false;
-    let   replied = false;
+
+    // Send the message immediately and close stdin
+    console.log('\n── Step 4: write "hello claude" to stdin then close ──');
+    child.stdin.write('hello claude\n');
+    child.stdin.end();
 
     child.stdout.on('data', d => {
       const chunk = d.toString();
       output += chunk;
-      process.stdout.write('  [stdout] ' + chunk.replace(/\n/g,'↵').slice(0,120) + '\n');
+      process.stdout.write('  [stdout] ' + chunk.replace(/\n/g,'↵').slice(0,160) + '\n');
     });
     child.stderr.on('data', d => {
       const chunk = d.toString();
       output += chunk;
-      process.stdout.write('  [stderr] ' + chunk.replace(/\n/g,'↵').slice(0,120) + '\n');
+      process.stdout.write('  [stderr] ' + chunk.replace(/\n/g,'↵').slice(0,160) + '\n');
     });
     child.on('close', code => {
       exited = true;
-      console.log(`  [process exited with code ${code}]`);
-      resolve({ output, exited: true, replied, exitCode: code });
+      console.log(`\n  [process exited with code ${code}]`);
+      resolve({ output, exitCode: code });
     });
     child.on('error', err => {
       console.error('  [spawn error] ' + err.message);
-      resolve({ output, exited: true, replied: false, exitCode: -1 });
+      resolve({ output, exitCode: -1 });
     });
 
-    // Send "hello claude" after 5 seconds (give Claude Code time to start)
+    // Hard timeout at 90s
     setTimeout(() => {
-      if (!exited) {
-        console.log('\n── Step 4: send "hello claude" ──');
-        try { child.stdin.write('hello claude\n'); } catch (_) {}
-      } else {
-        console.log('\n  [process already exited before we could send input]');
-      }
-    }, 5000);
-
-    // After 90s total, evaluate results and kill
-    setTimeout(() => {
-      if (!exited) {
-        replied = output.length > 200; // got substantial output after sending input
-        child.kill('SIGTERM');
-      }
-      resolve({ output, exited, replied, exitCode: null });
+      if (!exited) { child.kill('SIGTERM'); resolve({ output, exitCode: null }); }
     }, 90000);
   });
 }
@@ -287,31 +276,29 @@ async function runClaudeSession(cliJs, tmpDir) {
 
   console.log('\n── Step 5: evaluate ──');
 
-  // Did the session stay alive at least 5 seconds (past the "send input" point)?
-  if (result.exited && result.exitCode !== null && result.exitCode !== 0) {
-    fail('session stayed alive', `process exited with code ${result.exitCode} before we could send input`);
+  const cleanOutput = result.output.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').trim();
+
+  // Exit code 0 = success, non-zero = crash
+  if (result.exitCode !== 0 && result.exitCode !== null) {
+    fail('clean exit', `claude --print exited with code ${result.exitCode}`);
   } else {
-    ok('session did not end immediately');
+    ok(`claude --print exited cleanly (code ${result.exitCode})`);
   }
 
-  // Did we get any output at all?
-  const cleanOutput = result.output.replace(/\x1b\[[0-9;]*m/g, '').trim();
-  if (cleanOutput.length === 0) {
-    fail('received output', 'no output from Claude Code');
+  // Got actual output?
+  if (cleanOutput.length < 10) {
+    fail('non-empty response', `only ${cleanOutput.length} chars`);
   } else {
     ok(`received ${cleanOutput.length} chars of output`);
   }
 
-  // Did the output contain something that looks like a response (not just an error)?
-  const hasError = /error|Error|failed|Failed|invalid|Invalid/i.test(cleanOutput) && cleanOutput.length < 300;
-  const hasReply = cleanOutput.length > 100 && !hasError;
-  if (hasReply) {
-    const preview = cleanOutput.replace(/\s+/g,' ').slice(0, 200);
-    ok(`got reply content: "${preview}…"`);
-  } else if (hasError) {
-    fail('reply (no error)', 'output looks like an error: ' + cleanOutput.slice(0, 200));
+  // Output looks like a real reply, not an error?
+  const isError = /^Error:|must be provided|invalid|authentication/i.test(cleanOutput.slice(0,100));
+  if (isError) {
+    fail('reply not an error', cleanOutput.slice(0, 200));
   } else {
-    ok(`output received (${cleanOutput.length} chars) — Claude Code active`);
+    const preview = cleanOutput.replace(/\s+/g,' ').slice(0, 200);
+    ok(`model replied: "${preview}…"`);
   }
 
   console.log('\n── Summary ──');

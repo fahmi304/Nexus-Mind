@@ -536,6 +536,50 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res) {
 }
 
 // ─── TCP bridge server ────────────────────────────────────────────────────────
+// Claude Code has no interactive mode without a real PTY. We use --print mode:
+// each complete message the user sends spawns one `claude --print` process,
+// which reads the message from stdin, calls the API, streams the response back,
+// and exits. The socket stays open for the next message.
+
+function buildEnv() {
+    const cfg = readConfig();
+    const env = {
+        HOME: FILES_DIR,
+        TERM: 'xterm-256color',
+        LANG: 'en_US.UTF-8',
+        LINES: '50',
+        COLUMNS: '160',
+        PATH: process.env.PATH || '/system/bin:/system/xbin',
+        LD_LIBRARY_PATH: NATIVE_DIR,
+    };
+    if (cfg.authToken) {
+        env.ANTHROPIC_AUTH_TOKEN = cfg.authToken;
+    } else if (cfg.apiKey) {
+        env.ANTHROPIC_API_KEY = cfg.apiKey;
+    }
+    if (cfg.baseUrl)                   env.ANTHROPIC_BASE_URL = cfg.baseUrl;
+    if (cfg.modelId && !cfg.authToken) env.ANTHROPIC_MODEL    = cfg.modelId;
+    env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = '1';
+    env.DISABLE_AUTOUPDATER = '1';
+    return env;
+}
+
+function runMessage(message, socket) {
+    const env   = buildEnv();
+    const child = spawn(LAUNCHER, [CLAUDE_CLI, '--print'], { env, cwd: FILES_DIR });
+
+    child.stdin.write(message + '\n');
+    child.stdin.end();
+
+    child.stdout.on('data', d => { try { socket.write(d); } catch (_) {} });
+    child.stderr.on('data', d => { try { socket.write(d); } catch (_) {} });
+
+    child.on('error', err => {
+        try { socket.write('\r\n\x1b[31mError: ' + err.message + '\x1b[0m\r\n'); } catch (_) {}
+    });
+
+    return child;
+}
 
 function openTcpBridge() {
     const server = net.createServer(socket => {
@@ -545,49 +589,44 @@ function openTcpBridge() {
             return;
         }
 
-        const cfg = readConfig();
-        const env = {
-            HOME: FILES_DIR,
-            TERM: 'xterm-256color',
-            LANG: 'en_US.UTF-8',
-            LINES: '50',
-            COLUMNS: '160',
-            PATH: process.env.PATH || '/system/bin:/system/xbin',
-            LD_LIBRARY_PATH: NATIVE_DIR,  // needed by libnode-launcher.so child processes
-        };
+        let   inputBuf = '';
+        let   busy     = false;
+        let   current  = null;
 
-        if (cfg.authToken) {
-            // Proxy mode: Claude Code authenticates with the local proxy using a dummy
-            // token. The real provider key is used by the proxy directly — never pass
-            // it to Claude Code because it will validate the format (expects sk-ant-...)
-            // and exit immediately if the key is from another provider.
-            env.ANTHROPIC_AUTH_TOKEN = cfg.authToken;
-        } else if (cfg.apiKey) {
-            // Subscription mode: pass the real Anthropic key directly.
-            env.ANTHROPIC_API_KEY = cfg.apiKey;
-        }
-        if (cfg.baseUrl)                    env.ANTHROPIC_BASE_URL = cfg.baseUrl;
-        if (cfg.modelId && !cfg.authToken)  env.ANTHROPIC_MODEL    = cfg.modelId;
-        env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = '1';
-        env.DISABLE_AUTOUPDATER = '1';
+        socket.write('\r\n\x1b[32mClaude Code ready.\x1b[0m Type a message and press Enter.\r\n\r\n');
 
-        const child = spawn(LAUNCHER, [CLAUDE_CLI], { env, cwd: FILES_DIR });
+        socket.on('data', d => {
+            inputBuf += d.toString();
 
-        socket.on('data',    d => { try { child.stdin.write(d);  } catch (_) {} });
-        child.stdout.on('data', d => { try { socket.write(d);    } catch (_) {} });
-        child.stderr.on('data', d => { try { socket.write(d);    } catch (_) {} });
+            // Process all complete lines in the buffer
+            let nl;
+            while ((nl = inputBuf.search(/[\r\n]/)) !== -1) {
+                const line = inputBuf.slice(0, nl).replace(/[\x00-\x1f\x7f]/g, '').trim();
+                inputBuf   = inputBuf.slice(nl + 1);
 
-        const cleanup = () => {
-            try { child.kill('SIGTERM'); } catch (_) {}
-            try { socket.destroy();     } catch (_) {}
-        };
-        child.on('close', () => { try { socket.end(); } catch (_) {} });
-        child.on('error', err => {
-            try { socket.write('\r\n\x1b[31mFailed to start Claude: ' + err.message + '\x1b[0m\r\n'); } catch (_) {}
-            cleanup();
+                if (!line) continue;
+                if (busy) {
+                    // Interrupt running request
+                    try { if (current) current.kill('SIGTERM'); } catch (_) {}
+                    busy = false;
+                }
+
+                busy = true;
+                current = runMessage(line, socket);
+                current.on('close', () => {
+                    busy    = false;
+                    current = null;
+                    try { socket.write('\r\n'); } catch (_) {}
+                });
+            }
         });
-        socket.on('close', cleanup);
-        socket.on('error', cleanup);
+
+        socket.on('close', () => {
+            try { if (current) current.kill('SIGTERM'); } catch (_) {}
+        });
+        socket.on('error', () => {
+            try { if (current) current.kill('SIGTERM'); } catch (_) {}
+        });
     });
 
     server.on('error', err => {
