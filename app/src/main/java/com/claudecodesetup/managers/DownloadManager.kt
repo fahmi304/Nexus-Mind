@@ -114,6 +114,6 @@ class DownloadManager {
     }
 
     companion object {
-        const val PINNED_CLAUDE_VERSION = "2.1.128"
+        const val PINNED_CLAUDE_VERSION = "2.1.112"
     }
 }

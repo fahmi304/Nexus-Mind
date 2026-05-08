@@ -139,9 +139,11 @@ function installClaudeCode(onDone) {
     (async () => {
         log('Fetching @anthropic-ai/claude-code package info from npm registry...\n');
 
-        // Scoped package — use %2F so registry routes correctly
+        // Pinned to the last Node.js-native version (v2.1.112).
+        // v2.1.113+ switched to pre-compiled native binaries that require glibc
+        // and are not compatible with Android's Bionic runtime + libnode.so.
         const meta = await fetchJson(
-            'https://registry.npmjs.org/@anthropic-ai%2Fclaude-code/latest'
+            'https://registry.npmjs.org/@anthropic-ai%2Fclaude-code/2.1.112'
         );
 
         const tarball = meta.dist && meta.dist.tarball;
@@ -220,7 +222,12 @@ function installClaudeCode(onDone) {
         onDone(true);
     })().catch(err => {
         log('\n✗ Installation failed: ' + err.message + '\n');
-        log('Check your internet connection and tap "Try again".\n');
+        const isNetworkErr = /ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|HTTP [45]/.test(err.message);
+        if (isNetworkErr) {
+            log('Network error — check your internet connection and tap "Try again".\n');
+        } else {
+            log('Tap "Try again" to retry.\n');
+        }
         try { fs.writeFileSync(SETUP_FAILED, 'true'); } catch (_) {}
         onDone(false);
     });

@@ -43,7 +43,7 @@ class SetupActivity : AppCompatActivity() {
                     when {
                         ready  -> onSetupComplete()
                         failed -> onSetupFailed(
-                            "Installation failed.\nCheck your internet connection and tap Try again."
+                            "Installation failed. See the log above for details.\nTap Try again to retry."
                         )
                         else   -> handler.postDelayed(this, POLL_MS)
                     }
