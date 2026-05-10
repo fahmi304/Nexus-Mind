@@ -31,7 +31,7 @@ html, body {
   cursor: text;
   -webkit-user-select: text;
   user-select: text;
-  scroll-behavior: smooth;
+  transition: bottom 0.15s ease;
 }
 
 /* Custom scrollbar */
@@ -58,6 +58,15 @@ html, body {
 
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
 
+/* Input line at the bottom of terminal content */
+#input-line {
+  display: inline;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.prompt-char { color: #DA7756; }
+
 #cursor {
   display:inline-block;
   width:2px; height:1.1em;
@@ -67,10 +76,66 @@ html, body {
   border-radius:1px;
 }
 @keyframes cursorBlink { 0%,66%{opacity:1} 67%,100%{opacity:0} }
+
+/* Special-keys toolbar — fixed at bottom, shown when keyboard is open */
+#toolbar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 44px;
+  background: #1E2030;
+  border-top: 1px solid #3A3A55;
+  display: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  overflow-x: auto;
+  z-index: 100;
+  -webkit-overflow-scrolling: touch;
+}
+#toolbar::-webkit-scrollbar { display: none; }
+
+.tb-btn {
+  background: #2A2A45;
+  color: #C8C8E0;
+  border: 1px solid #3A3A60;
+  border-radius: 6px;
+  padding: 5px 11px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: rgba(218,119,86,0.25);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tb-btn:active { background: #3A3A60; }
+
+.tb-btn-accent {
+  background: #2E1E14;
+  color: #DA7756;
+  border-color: #5A3A28;
+}
 </style>
 </head>
 <body>
-<div id="screen"><span id="output"></span><span id="cursor"></span></div>
+
+<div id="screen">
+  <span id="output"></span><span id="input-line"><span class="prompt-char">❯ </span><span id="typed-text"></span><span id="cursor"></span></span>
+</div>
+
+<div id="toolbar">
+  <button class="tb-btn tb-btn-accent" id="btn-yes">Yes</button>
+  <button class="tb-btn tb-btn-accent" id="btn-no">No</button>
+  <button class="tb-btn" id="btn-ctrl-c">Ctrl+C</button>
+  <button class="tb-btn" id="btn-tab">Tab</button>
+  <button class="tb-btn" id="btn-enter">↵</button>
+  <button class="tb-btn" id="btn-up">↑</button>
+  <button class="tb-btn" id="btn-down">↓</button>
+  <button class="tb-btn" id="btn-esc">Esc</button>
+  <button class="tb-btn" id="btn-backspace">⌫</button>
+</div>
 
 <script>
 (function(){
@@ -92,7 +157,7 @@ function get256Color(n){
   return `rgb(${c(r)},${c(g)},${c(b)})`;
 }
 
-// ── State ────────────────────────────────────────────────────────────────────
+// ── ANSI Parser State ─────────────────────────────────────────────────────────
 
 const MAX_SCROLLBACK = 6000;
 let attrs = resetAttrs();
@@ -358,9 +423,120 @@ function doRender(){
   renderQueued = false;
   const ls = currentLines();
   document.getElementById('output').innerHTML = ls.join('\n');
+  scrollToBottom();
+}
+
+function scrollToBottom(){
   const screen = document.getElementById('screen');
   screen.scrollTop = screen.scrollHeight;
 }
+
+// ── Input buffer ──────────────────────────────────────────────────────────────
+
+let inputBuffer = '';
+
+function updateInputLine(){
+  document.getElementById('typed-text').textContent = inputBuffer;
+  scrollToBottom();
+}
+
+function submitLine(text){
+  const msg = (text !== undefined ? text : inputBuffer).trim();
+  inputBuffer = '';
+  ghost.value = '';
+  updateInputLine();
+  if(!msg) return;
+  // Echo into terminal output before handing off to Android
+  window.termWrite('\r\n\x1b[32m❯ ' + msg + '\x1b[0m\r\n');
+  if(typeof Android !== 'undefined') Android.submitMessage(msg);
+}
+
+// ── Ghost textarea (captures Android IME input) ───────────────────────────────
+
+const ghost = document.createElement('textarea');
+ghost.id = 'ghost';
+ghost.rows = 1;
+ghost.style.cssText =
+  'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;' +
+  'opacity:0;resize:none;border:none;outline:none;font-size:16px;';
+ghost.setAttribute('autocomplete', 'off');
+ghost.setAttribute('autocorrect', 'off');
+ghost.setAttribute('autocapitalize', 'none');
+ghost.setAttribute('spellcheck', 'false');
+ghost.setAttribute('enterkeyhint', 'send');
+document.body.appendChild(ghost);
+
+let toolbarVisible = false;
+
+ghost.addEventListener('focus', function(){
+  toolbarVisible = true;
+  document.getElementById('toolbar').style.display = 'flex';
+  document.getElementById('screen').style.bottom = '44px';
+  setTimeout(scrollToBottom, 50);
+});
+
+ghost.addEventListener('blur', function(){
+  // Delay so toolbar button taps have time to re-focus ghost first
+  setTimeout(function(){
+    if(toolbarVisible && document.activeElement !== ghost){
+      toolbarVisible = false;
+      document.getElementById('toolbar').style.display = 'none';
+      document.getElementById('screen').style.bottom = '0';
+    }
+  }, 200);
+});
+
+ghost.addEventListener('input', function(e){
+  const val = ghost.value;
+  // Detect newline (Enter on soft keyboard fires insertLineBreak or appends \n)
+  if(val.includes('\n')){
+    ghost.value = val.replace(/\n/g, '');
+    inputBuffer = ghost.value;
+    updateInputLine();
+    submitLine();
+    return;
+  }
+  inputBuffer = val;
+  updateInputLine();
+});
+
+ghost.addEventListener('keydown', function(e){
+  if(e.key === 'Enter'){
+    e.preventDefault();
+    submitLine();
+  }
+});
+
+// ── Screen tap → open keyboard ────────────────────────────────────────────────
+
+document.getElementById('screen').addEventListener('click', function(){
+  ghost.focus();
+  scrollToBottom();
+});
+
+// ── Toolbar buttons ───────────────────────────────────────────────────────────
+
+function tbRaw(key){
+  if(typeof Android !== 'undefined') Android.sendInput(key);
+  ghost.focus();
+}
+
+document.getElementById('btn-yes').addEventListener('click', function(){ submitLine('y'); });
+document.getElementById('btn-no').addEventListener('click', function(){ submitLine('n'); });
+document.getElementById('btn-ctrl-c').addEventListener('click', function(){ tbRaw('\x03'); });
+document.getElementById('btn-tab').addEventListener('click', function(){ tbRaw('\t'); });
+document.getElementById('btn-enter').addEventListener('click', function(){ tbRaw('\r'); });
+document.getElementById('btn-up').addEventListener('click', function(){ tbRaw('\x1b[A'); });
+document.getElementById('btn-down').addEventListener('click', function(){ tbRaw('\x1b[B'); });
+document.getElementById('btn-esc').addEventListener('click', function(){ tbRaw('\x1b'); });
+document.getElementById('btn-backspace').addEventListener('click', function(){
+  if(inputBuffer.length > 0){
+    inputBuffer = inputBuffer.slice(0, -1);
+    ghost.value = inputBuffer;
+    updateInputLine();
+  }
+  ghost.focus();
+});
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -379,41 +555,10 @@ window.termClear = function(){
   doRender();
 };
 
+// Legacy — kept so any existing sendInput calls from bridge still work
 window.termSendInput = function(text){
-  Android.sendInput(text);
+  if(typeof Android !== 'undefined') Android.sendInput(text);
 };
-
-// ── Hidden input for Android soft keyboard ────────────────────────────────────
-
-document.getElementById('screen').addEventListener('click', function(){
-  document.getElementById('hiddenInput').focus();
-});
-
-const hi = document.createElement('input');
-hi.id = 'hiddenInput';
-hi.style.cssText = 'position:absolute;left:-9999px;top:-9999px;opacity:0;width:1px;height:1px;';
-hi.setAttribute('autocomplete','off');
-hi.setAttribute('autocorrect','off');
-hi.setAttribute('autocapitalize','off');
-hi.setAttribute('spellcheck','false');
-document.body.appendChild(hi);
-
-hi.addEventListener('input', function(e){
-  const val = e.data || hi.value;
-  if(val){ Android.sendInput(val); hi.value=''; }
-});
-
-hi.addEventListener('keydown', function(e){
-  if(e.key==='Enter')     Android.sendInput('\r');
-  else if(e.key==='Backspace') Android.sendInput('\x7f');
-  else if(e.key==='Tab')  { Android.sendInput('\t'); e.preventDefault(); }
-  else if(e.key==='Escape') Android.sendInput('\x1b');
-  else if(e.ctrlKey){
-    const k = e.key.toLowerCase();
-    if(k>='a'&&k<='z') Android.sendInput(String.fromCharCode(k.charCodeAt(0)-96));
-    e.preventDefault();
-  }
-});
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 

@@ -93,59 +93,109 @@ function oaiToAnth(oai, model) {
   };
 }
 
+// Full streaming SSE conversion (mirrors bridge.js sendToProvider exactly)
+function forwardToProvider(oaiReq, res) {
+  const body   = JSON.stringify(oaiReq);
+  const target = new URL(PROVIDER.replace(/\/$/, '') + '/chat/completions');
+  const stream = !!oaiReq.stream;
+
+  const provReq = https.request({
+    hostname: target.hostname, port: 443, method: 'POST', path: target.pathname,
+    headers: {
+      'Content-Type':   'application/json',
+      'Content-Length': Buffer.byteLength(body),
+      'Authorization':  'Bearer ' + API_KEY,
+      'HTTP-Referer':   'https://github.com/rektzy9903/ClaudeCodeSetup',
+      'X-Title':        'ClaudeCodeSetup',
+    },
+  }, provRes => {
+    if (!stream) {
+      let data = '';
+      provRes.setEncoding('utf8');
+      provRes.on('data', c => data += c);
+      provRes.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.error) {
+            res.writeHead(500, {'Content-Type':'application/json'});
+            return res.end(JSON.stringify({type:'error',error:{type:'api_error',message:parsed.error.message||JSON.stringify(parsed.error)}}));
+          }
+          res.writeHead(200, {'Content-Type':'application/json'});
+          res.end(JSON.stringify(oaiToAnth(parsed, MODEL_ID)));
+        } catch(e) { try { res.writeHead(500); res.end('{}'); } catch(_) {} }
+      });
+      return;
+    }
+
+    // Streaming: convert OpenAI SSE → Anthropic SSE (same as bridge.js)
+    res.writeHead(200, {'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});
+    const msgId = 'msg_' + Date.now();
+    let buf = '', headersSent = false, outTokens = 0;
+    function ev(name, data) { try { res.write('event: '+name+'\ndata: '+JSON.stringify(data)+'\n\n'); } catch(_) {} }
+
+    provRes.setEncoding('utf8');
+    provRes.on('data', chunk => {
+      buf += chunk;
+      const lines = buf.split('\n'); buf = lines.pop();
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t.startsWith('data:')) continue;
+        const raw = t.slice(5).trim();
+        if (raw === '[DONE]') continue;
+        let evt; try { evt = JSON.parse(raw); } catch(_) { continue; }
+        if (evt.error) continue;
+
+        if (!headersSent) {
+          headersSent = true;
+          ev('message_start', {type:'message_start',message:{id:msgId,type:'message',role:'assistant',content:[],model:MODEL_ID,stop_reason:null,usage:{input_tokens:0,output_tokens:0}}});
+          ev('content_block_start', {type:'content_block_start',index:0,content_block:{type:'text',text:''}});
+          ev('ping', {type:'ping'});
+        }
+        const delta = ((evt.choices||[])[0]||{}).delta||{};
+        const text  = delta.content||'';
+        const fin   = ((evt.choices||[])[0]||{}).finish_reason;
+        if (text) { outTokens++; ev('content_block_delta',{type:'content_block_delta',index:0,delta:{type:'text_delta',text}}); }
+        if (fin) {
+          ev('content_block_stop',{type:'content_block_stop',index:0});
+          ev('message_delta',{type:'message_delta',delta:{stop_reason:fin==='length'?'max_tokens':'end_turn',stop_sequence:null},usage:{output_tokens:outTokens}});
+          ev('message_stop',{type:'message_stop'});
+        }
+      }
+    });
+    provRes.on('end', () => {
+      if (!headersSent) {
+        ev('message_start',{type:'message_start',message:{id:msgId,type:'message',role:'assistant',content:[],model:MODEL_ID,stop_reason:null,usage:{input_tokens:0,output_tokens:0}}});
+        ev('content_block_start',{type:'content_block_start',index:0,content_block:{type:'text',text:''}});
+      }
+      ev('content_block_stop',{type:'content_block_stop',index:0});
+      ev('message_delta',{type:'message_delta',delta:{stop_reason:'end_turn',stop_sequence:null},usage:{output_tokens:outTokens}});
+      ev('message_stop',{type:'message_stop'});
+      try { res.end(); } catch(_) {}
+    });
+    provRes.on('error', () => { try { res.end(); } catch(_) {} });
+  });
+
+  provReq.setTimeout(90000, () => { provReq.destroy(); });
+  provReq.on('error', err => { try { res.writeHead(502); res.end('{}'); } catch(_) {} });
+  provReq.write(body); provReq.end();
+}
+
 function startProxy() {
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
-      // GET /v1/models — Claude Code startup check
       if (req.method === 'GET' && req.url.includes('/models')) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ data: [{ id: MODEL_ID, display_name: MODEL_ID, created_at: '' }] }));
-        return;
+        res.writeHead(200, {'Content-Type':'application/json'});
+        return res.end(JSON.stringify({data:[{id:MODEL_ID,display_name:MODEL_ID,created_at:''}]}));
       }
-      // POST /v1/messages — chat
       if (req.method === 'POST' && req.url.includes('/messages')) {
         let body = '';
         req.on('data', c => body += c);
         req.on('end', () => {
-          try {
-            const anthReq = JSON.parse(body);
-            const oaiReq  = anthToOai(anthReq, MODEL_ID);
-            const reqBody = JSON.stringify(oaiReq);
-            const target  = new URL(PROVIDER.replace(/\/$/, '') + '/chat/completions');
-            const provReq = https.request({
-              hostname: target.hostname, port: 443, method: 'POST', path: target.pathname,
-              headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(reqBody),
-                'Authorization': 'Bearer ' + API_KEY,
-                'HTTP-Referer': 'https://github.com/rektzy9903/ClaudeCodeSetup',
-                'X-Title': 'ClaudeCodeSetup',
-              },
-            }, provRes => {
-              let data = '';
-              provRes.setEncoding('utf8');
-              provRes.on('data', c => data += c);
-              provRes.on('end', () => {
-                try {
-                  const parsed = JSON.parse(data);
-                  if (parsed.error) {
-                    res.writeHead(500, {'Content-Type':'application/json'});
-                    res.end(JSON.stringify({type:'error',error:{type:'api_error',message:parsed.error.message||JSON.stringify(parsed.error)}}));
-                    return;
-                  }
-                  res.writeHead(200, {'Content-Type':'application/json'});
-                  res.end(JSON.stringify(oaiToAnth(parsed, MODEL_ID)));
-                } catch(e) { res.writeHead(500); res.end('{}'); }
-              });
-            });
-            provReq.setTimeout(90000, () => { provReq.destroy(); });
-            provReq.on('error', () => { res.writeHead(502); res.end('{}'); });
-            provReq.write(reqBody); provReq.end();
-          } catch(e) { res.writeHead(400); res.end('{}'); }
+          try { forwardToProvider(anthToOai(JSON.parse(body), MODEL_ID), res); }
+          catch(e) { try { res.writeHead(400); res.end('{}'); } catch(_) {} }
         });
         return;
       }
-      // Anything else — 200 so Claude Code doesn't abort
       res.writeHead(200, {'Content-Type':'application/json'}); res.end('{}');
     });
     server.listen(PROXY_PORT, HOST, () => resolve(server));

@@ -12,7 +12,6 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.view.View
-import android.view.inputmethod.EditorInfo
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -85,8 +84,7 @@ class TerminalActivity : AppCompatActivity() {
         prefs = AppPreferences(this)
 
         setupWebView()
-        setupQuickActions()
-        setupInputBar()
+        setupRestartButton()
         setupHeaderButtons()
         setupStatusBar()
         startAndBindService()
@@ -158,7 +156,6 @@ class TerminalActivity : AppCompatActivity() {
     private fun attachServiceCallbacks() {
         claudeService!!.onOutput = { sessionId, chunk ->
             if (sessionId == activeSessionId) writeToTerminal(chunk)
-            // First output chunk means the bridge responded — cancel the thinking indicator
             if (sessionBusy[sessionId] == true) {
                 sessionBusy[sessionId] = false
                 if (sessionId == activeSessionId) {
@@ -179,7 +176,6 @@ class TerminalActivity : AppCompatActivity() {
                 updateTabAlive(sessionId, false)
                 if (sessionId == activeSessionId) {
                     if (wasBusy) {
-                        // Died while waiting for a reply — surface an error with Retry
                         showStatusError("Connection lost — tap Retry or Restart")
                     }
                     writeToTerminal("\r\n[33m[Claude Code session ended][0m\r\n")
@@ -255,7 +251,6 @@ class TerminalActivity : AppCompatActivity() {
     private fun switchToSession(id: Int, replay: Boolean) {
         if (id == activeSessionId && !replay) return
 
-        // Cancel any running timeout for the old session before switching
         cancelThinkingTimeout()
 
         activeSessionId = id
@@ -311,18 +306,9 @@ class TerminalActivity : AppCompatActivity() {
         }
     }
 
-    // ─── Quick-action buttons ─────────────────────────────────────────────────
+    // ─── Restart / New-session buttons ────────────────────────────────────────
 
-    private fun setupQuickActions() {
-        binding.btnYes.setOnClickListener    { sendInput("y\r") }
-        binding.btnNo.setOnClickListener     { sendInput("n\r") }
-        binding.btnCancel.setOnClickListener { sendInput("") }   // Ctrl+C
-        binding.btnEsc.setOnClickListener    { sendInput("") }   // Escape
-        binding.btnTab.setOnClickListener    { sendInput("\t") }
-        binding.btnEnter.setOnClickListener  { sendInput("\r") }
-        binding.btnArrowUp.setOnClickListener   { sendInput("[A") }
-        binding.btnArrowDown.setOnClickListener { sendInput("[B") }
-
+    private fun setupRestartButton() {
         binding.btnRestart.setOnClickListener {
             binding.btnRestart.visibility = View.GONE
             hideStatus()
@@ -334,32 +320,6 @@ class TerminalActivity : AppCompatActivity() {
             val id = claudeService?.createSession(prefs.getLoginMode()) ?: return@setOnClickListener
             if (id >= 0) runOnUiThread { switchToSession(id, replay = false) }
         }
-    }
-
-    // ─── Input bar ────────────────────────────────────────────────────────────
-
-    private fun setupInputBar() {
-        binding.btnSend.setOnClickListener { submitInput() }
-
-        binding.etInput.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_SEND) { submitInput(); true } else false
-        }
-    }
-
-    private fun submitInput() {
-        val text = binding.etInput.text?.toString()?.trimEnd() ?: return
-        if (text.isEmpty()) return
-
-        // Local echo so the user immediately sees what they typed
-        writeToTerminal("\r\n[32m❯ $text[0m\r\n")
-        sendInput(text + "\r")
-        binding.etInput.setText("")
-
-        // Mark this session as busy and start the 15 s thinking-timeout
-        lastSentMessage[activeSessionId] = text
-        sessionBusy[activeSessionId] = true
-        showStatusThinking()
-        startThinkingTimeout()
     }
 
     // ─── Header buttons ───────────────────────────────────────────────────────
@@ -401,7 +361,6 @@ class TerminalActivity : AppCompatActivity() {
         binding.llStatus.visibility = View.GONE
     }
 
-    /** Restore correct status bar state after switching to a different session. */
     private fun updateStatusForSession(sessionId: Int) {
         if (sessionBusy[sessionId] == true) showStatusThinking() else hideStatus()
     }
@@ -425,16 +384,10 @@ class TerminalActivity : AppCompatActivity() {
         if (text.isNullOrEmpty()) return
         hideStatus()
         writeToTerminal("\r\n[32m❯ $text[0m  [33m[retry][0m\r\n")
-        sendInput(text + "\r")
+        claudeService?.sendInput(text + "\r")
         sessionBusy[activeSessionId] = true
         showStatusThinking()
         startThinkingTimeout()
-    }
-
-    // ─── Input routing ────────────────────────────────────────────────────────
-
-    private fun sendInput(text: String) {
-        claudeService?.sendInput(text)
     }
 
     // ─── Service binding ──────────────────────────────────────────────────────
@@ -449,6 +402,20 @@ class TerminalActivity : AppCompatActivity() {
 
     inner class TerminalBridge {
 
+        /** Called by JS when user presses Enter on the inline terminal input. */
+        @JavascriptInterface
+        fun submitMessage(text: String) {
+            if (text.isEmpty()) return
+            lastSentMessage[activeSessionId] = text
+            sessionBusy[activeSessionId] = true
+            runOnUiThread {
+                showStatusThinking()
+                startThinkingTimeout()
+            }
+            claudeService?.sendInput(text + "\r")
+        }
+
+        /** Called by JS toolbar buttons that send raw control characters. */
         @JavascriptInterface
         fun sendInput(text: String) {
             claudeService?.sendInput(text)
@@ -472,8 +439,8 @@ class TerminalActivity : AppCompatActivity() {
                 AlertDialog.Builder(this@TerminalActivity)
                     .setTitle("Claude wants to create a file")
                     .setMessage(filename)
-                    .setPositiveButton("Yes, create it") { _, _ -> sendInput("y\r") }
-                    .setNegativeButton("No, skip")       { _, _ -> sendInput("n\r") }
+                    .setPositiveButton("Yes, create it") { _, _ -> claudeService?.sendInput("y\r") }
+                    .setNegativeButton("No, skip")       { _, _ -> claudeService?.sendInput("n\r") }
                     .show()
             }
         }

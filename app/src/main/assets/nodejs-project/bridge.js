@@ -417,6 +417,10 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res) {
                         return proxyError(res, provRes.statusCode || 500,
                             parsed.error.message || JSON.stringify(parsed.error));
                     }
+                    if (provRes.statusCode !== 200) {
+                        return proxyError(res, provRes.statusCode,
+                            'Provider HTTP ' + provRes.statusCode);
+                    }
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify(oaiToAnth(parsed, oaiReq.model)));
                 } catch (e) {
@@ -424,6 +428,31 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res) {
                 }
             });
         } else {
+            // Streaming: surface non-200 errors before writing any headers
+            if (provRes.statusCode !== 200) {
+                let errBody = '';
+                provRes.setEncoding('utf8');
+                provRes.on('data', c => { errBody += c; });
+                provRes.on('end', () => {
+                    let msg = 'Provider returned HTTP ' + provRes.statusCode;
+                    if (provRes.statusCode === 429)
+                        msg = 'Rate limited (HTTP 429) — wait a moment or switch models in Settings';
+                    else if (provRes.statusCode === 401 || provRes.statusCode === 403)
+                        msg = 'Invalid or unauthorised API key (HTTP ' + provRes.statusCode + ') — check Settings';
+                    else if (provRes.statusCode >= 500)
+                        msg = 'Provider server error (HTTP ' + provRes.statusCode + ') — try again';
+                    try {
+                        const e = JSON.parse(errBody);
+                        const detail = e.error?.message || e.message;
+                        if (detail) msg += ': ' + detail;
+                    } catch (_) {}
+                    log('Provider error: ' + msg + '\n');
+                    proxyError(res, provRes.statusCode, msg);
+                });
+                provRes.on('error', err => proxyError(res, 502, err.message));
+                return;
+            }
+
             // Streaming: convert OpenAI SSE → Anthropic SSE on the fly
             res.writeHead(200, {
                 'Content-Type':  'text/event-stream',
