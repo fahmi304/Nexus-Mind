@@ -95,6 +95,40 @@ object ProvidersRepository {
         else     -> MalaysiaStatus.YELLOW
     }
 
+    /**
+     * Fetch live free models from OpenRouter's public models endpoint.
+     * Filters to models where both prompt and completion pricing == "0",
+     * or whose ID ends with ":free".
+     * Throws on network error or bad API key — caller should show a toast.
+     */
+    suspend fun fetchOpenRouterFreeModels(apiKey: String): List<AiModel> =
+        withContext(Dispatchers.IO) {
+            val req = Request.Builder()
+                .url("https://openrouter.ai/api/v1/models")
+                .header("Authorization", "Bearer $apiKey")
+                .header("Accept", "application/json")
+                .build()
+            val body = http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
+                resp.body?.string() ?: throw Exception("Empty response")
+            }
+            val data = JSONObject(body).getJSONArray("data")
+            val free = mutableListOf<AiModel>()
+            for (i in 0 until data.length()) {
+                val m       = data.getJSONObject(i)
+                val id      = m.getString("id")
+                val pricing = m.optJSONObject("pricing")
+                val prompt  = pricing?.optString("prompt", "1") ?: "1"
+                val compl   = pricing?.optString("completion", "1") ?: "1"
+                val isFree  = id.endsWith(":free") || (prompt == "0" && compl == "0")
+                if (isFree) {
+                    val name = m.optString("name", "").ifEmpty { id }
+                    free.add(AiModel(name, id))
+                }
+            }
+            free.sortedBy { it.modelId }
+        }
+
     // Update REMOTE_URL at runtime (e.g. from settings)
     fun remoteUrl(): String = REMOTE_URL
 }

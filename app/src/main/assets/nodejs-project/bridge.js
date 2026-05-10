@@ -276,13 +276,60 @@ function waitForRetry(callback) {
 
 function startProxyServer(onReady) {
     const proxy = http.createServer((req, res) => {
-        // POST /v1/messages — main Anthropic chat endpoint
-        if (req.method === 'POST' && req.url.startsWith('/v1/messages')) {
+        // POST /v1/messages/count_tokens — estimate locally, no API call needed
+        if (req.method === 'POST' && req.url.includes('/count_tokens')) {
             let body = '';
             req.on('data', chunk => { body += chunk; });
             req.on('end', () => {
-                try { handleProxyRequest(JSON.parse(body), res); }
-                catch (e) { proxyError(res, 400, e.message); }
+                let tokens = 1000;
+                try { tokens = estimateTokens(JSON.parse(body)); } catch (_) {}
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ input_tokens: tokens }));
+            });
+            req.on('error', () => {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ input_tokens: 1000 }));
+            });
+            return;
+        }
+
+        // HEAD / OPTIONS on any /messages endpoint — CORS probe support
+        if ((req.method === 'HEAD' || req.method === 'OPTIONS') && req.url.includes('/messages')) {
+            res.writeHead(200, {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin':  '*',
+                'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, HEAD',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key, anthropic-version, anthropic-beta',
+            });
+            res.end('{}');
+            return;
+        }
+
+        // POST /v1/messages — main Anthropic chat endpoint
+        if (req.method === 'POST' && req.url.includes('/v1/messages')) {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+                try {
+                    const anthReq = JSON.parse(body);
+
+                    // Short-circuit internal housekeeping requests locally
+                    const mockText = tryOptimize(anthReq);
+                    if (mockText !== null) {
+                        const cfg   = readConfig();
+                        const model = cfg.modelId || anthReq.model || '';
+                        log('[opt] short-circuit internal request (model=' + (anthReq.model || '?') + ')\n');
+                        if (anthReq.stream) {
+                            sendMockStream(mockText, model, res);
+                        } else {
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify(mockAnthResponse(mockText, model)));
+                        }
+                        return;
+                    }
+
+                    handleProxyRequest(anthReq, res);
+                } catch (e) { proxyError(res, 400, e.message); }
             });
             req.on('error', e => proxyError(res, 500, e.message));
             return;
@@ -318,6 +365,86 @@ function proxyError(res, code, msg) {
         res.writeHead(code, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ type: 'error', error: { type: 'api_error', message: msg } }));
     } catch (_) {}
+}
+
+// ─── Optimization helpers ─────────────────────────────────────────────────────
+// Short-circuit internal claude-code requests (title generation, follow-up
+// suggestions, file-path extraction) locally — no API call, no quota spent.
+// Mirrors the optimisation_handlers from the original free-claude-code project.
+
+function getSystemText(anthReq) {
+    if (!anthReq.system) return '';
+    if (typeof anthReq.system === 'string') return anthReq.system;
+    return (anthReq.system || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+}
+
+function estimateTokens(anthReq) {
+    const sys  = getSystemText(anthReq);
+    const msgs = (anthReq.messages || []).map(m =>
+        typeof m.content === 'string' ? m.content :
+        (m.content || []).filter(b => b.type === 'text').map(b => b.text).join('')
+    ).join('');
+    return Math.max(1, Math.ceil((sys.length + msgs.length) / 3.5));
+}
+
+function mockAnthResponse(text, model) {
+    return {
+        id: 'msg_opt_' + Date.now(), type: 'message', role: 'assistant',
+        content: [{ type: 'text', text }],
+        model: model || '',
+        stop_reason: 'end_turn', stop_sequence: null,
+        usage: { input_tokens: 10, output_tokens: Math.max(1, Math.ceil(text.length / 4)) },
+    };
+}
+
+function sendMockStream(text, model, res) {
+    const msgId = 'msg_opt_' + Date.now();
+    const ev = (name, data) => {
+        try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch (_) {}
+    };
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
+    ev('message_start', { type: 'message_start', message: { id: msgId, type: 'message', role: 'assistant', content: [], model: model || '', stop_reason: null, usage: { input_tokens: 10, output_tokens: 0 } } });
+    ev('content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } });
+    ev('ping', { type: 'ping' });
+    if (text) ev('content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } });
+    ev('content_block_stop',  { type: 'content_block_stop', index: 0 });
+    ev('message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: Math.max(1, Math.ceil(text.length / 4)) } });
+    ev('message_stop', { type: 'message_stop' });
+    try { res.end(); } catch (_) {}
+}
+
+/**
+ * Returns a mock reply string if the request is an internal claude-code
+ * housekeeping call, or null if it should be forwarded to the provider.
+ */
+function tryOptimize(anthReq) {
+    const sys = getSystemText(anthReq).toLowerCase();
+
+    // Title generation — claude-code asks for a short conversation title
+    if ((sys.includes('title') && (sys.includes('generate') || sys.includes('concise') || sys.includes('create'))) ||
+        sys.includes('short title') || sys.includes('conversation title')) {
+        return 'Claude Code Session';
+    }
+
+    // Follow-up / suggestion mode
+    if ((sys.includes('follow-up') || sys.includes('follow up')) && sys.includes('question')) {
+        return '';
+    }
+    if (sys.includes('suggest') && sys.includes('next action')) {
+        return '';
+    }
+
+    // File-path extraction
+    if (sys.includes('file path') && (sys.includes('extract') || sys.includes('identify'))) {
+        return '[]';
+    }
+
+    // Conversation compaction
+    if (sys.includes('compact') && (sys.includes('conversation') || sys.includes('context'))) {
+        return '';
+    }
+
+    return null; // forward to provider
 }
 
 function handleProxyRequest(anthReq, res) {

@@ -26,6 +26,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
+// current live model list for the open model spinner (updated by refresh button)
+private var liveOpenRouterModels: List<AiModel>? = null
+
 class LoginFlowActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityLoginFlowBinding
@@ -177,23 +180,65 @@ class LoginFlowActivity : AppCompatActivity() {
                 }
             }
 
-            // Model spinner
-            val modelNames = provider.models.map { it.name }
-            val spinAdapter = ArrayAdapter(
-                this@LoginFlowActivity,
-                android.R.layout.simple_spinner_item,
-                modelNames
-            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-            spinnerModel.adapter = spinAdapter
-            spinnerModel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                    selectedModel = provider.models[pos]
-                    tvModelId.text = provider.models[pos].modelId
+            // Model spinner — seeded from static list; OpenRouter can refresh live
+            fun populateModelSpinner(models: List<AiModel>) {
+                val names = models.map { it.name }
+                val spinAdapter = ArrayAdapter(
+                    this@LoginFlowActivity,
+                    android.R.layout.simple_spinner_item, names
+                ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+                spinnerModel.adapter = spinAdapter
+                spinnerModel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                        selectedModel = models[pos]
+                        tvModelId.text = models[pos].modelId
+                    }
+                    override fun onNothingSelected(p: AdapterView<*>?) {}
                 }
-                override fun onNothingSelected(p: AdapterView<*>?) {}
+                selectedModel = models.firstOrNull()
+                tvModelId.text = selectedModel?.modelId ?: ""
             }
-            selectedModel = provider.models.firstOrNull()
+
+            val initialModels = (liveOpenRouterModels ?: provider.models)
+            populateModelSpinner(initialModels)
+            selectedModel = initialModels.firstOrNull()
             tvModelId.text = selectedModel?.modelId ?: ""
+
+            // Refresh button — only for OpenRouter; fetches live free model list
+            if (provider.id == "openrouter") {
+                btnRefreshModels.visibility = View.VISIBLE
+                btnRefreshModels.setOnClickListener {
+                    val key = etApiKey.text.toString().trim()
+                    if (key.isEmpty()) {
+                        etApiKey.error = "Enter your API key first, then refresh"
+                        return@setOnClickListener
+                    }
+                    btnRefreshModels.isEnabled = false
+                    btnRefreshModels.text = "Refreshing…"
+                    lifecycleScope.launch {
+                        try {
+                            val fetched = ProvidersRepository.fetchOpenRouterFreeModels(key)
+                            if (fetched.isNotEmpty()) {
+                                liveOpenRouterModels = fetched
+                                populateModelSpinner(fetched)
+                                btnRefreshModels.text = "✓ ${fetched.size} free models"
+                            } else {
+                                btnRefreshModels.text = "↻ Refresh free models"
+                                Toast.makeText(this@LoginFlowActivity,
+                                    "No free models found — check API key", Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: Exception) {
+                            btnRefreshModels.text = "↻ Refresh free models"
+                            Toast.makeText(this@LoginFlowActivity,
+                                "Refresh failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                        } finally {
+                            btnRefreshModels.isEnabled = true
+                        }
+                    }
+                }
+            } else {
+                btnRefreshModels.visibility = View.GONE
+            }
 
             // Show hint for providers that don't need an API key
             if (!provider.requiresApiKey) {

@@ -230,6 +230,20 @@
                     android:textColor="@color/text_secondary"
                     android:textSize="11sp" />
 
+                <!-- Shown only for OpenRouter — fetches live free model list -->
+                <Button
+                    android:id="@+id/btnRefreshModels"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:layout_marginTop="8dp"
+                    android:text="↻ Refresh free models"
+                    android:textSize="12sp"
+                    android:textColor="@color/accent_green"
+                    android:minHeight="0dp"
+                    android:paddingHorizontal="12dp"
+                    android:visibility="gone" />
+
                 <Button
                     android:id="@+id/btnConfirm"
                     android:layout_width="match_parent"
