@@ -758,9 +758,9 @@ function runMessage(message, socket) {
         ' model=' + (cfg.modelId || '?') +
         ' providerUrl=' + (cfg.providerUrl || '(direct)') + '\n');
 
-    const child = spawn(LAUNCHER, [CLAUDE_CLI, '--print'], { env, cwd: FILES_DIR });
-
-    child.stdin.write(message + '\n');
+    // Pass the message as a positional argument, not via stdin.
+    // claude --print reads its input as argv, not from stdin.
+    const child = spawn(LAUNCHER, [CLAUDE_CLI, '--print', message], { env, cwd: FILES_DIR });
     child.stdin.end();
 
     // Collect stderr separately so we can include it in error messages

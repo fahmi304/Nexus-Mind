@@ -254,16 +254,14 @@ async function runClaudeSession(cliJs, tmpDir) {
 
   console.log('  env: ANTHROPIC_API_KEY=sk-ant-proxy000 (fake key — proxy ignores it)');
   console.log(`  env: ANTHROPIC_BASE_URL=http://${HOST}:${PROXY_PORT}`);
-  console.log(`  cmd: node cli.js --print  (stdin: "hello claude")`);
+  console.log(`  cmd: node cli.js --print "hello claude"`);
 
   return new Promise((resolve) => {
-    const child  = spawn('node', [cliJs, '--print'], { env, cwd: tmpDir });
+    const child  = spawn('node', [cliJs, '--print', 'hello claude'], { env, cwd: tmpDir });
     let   output = '';
     let   exited = false;
 
-    // Send the message immediately and close stdin
-    console.log('\n── Step 4: write "hello claude" to stdin then close ──');
-    child.stdin.write('hello claude\n');
+    console.log('\n── Step 4: message passed as positional arg ──');
     child.stdin.end();
 
     child.stdout.on('data', d => {
