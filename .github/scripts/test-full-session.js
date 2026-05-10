@@ -247,13 +247,12 @@ async function runClaudeSession(cliJs, tmpDir) {
     LINES: '40',
     COLUMNS: '160',
     PATH: process.env.PATH,
-    ANTHROPIC_AUTH_TOKEN: 'freecc',
+    ANTHROPIC_API_KEY: 'sk-ant-proxy000',
     ANTHROPIC_BASE_URL: `http://${HOST}:${PROXY_PORT}`,
-    CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1',
     DISABLE_AUTOUPDATER: '1',
   };
 
-  console.log('  env: ANTHROPIC_AUTH_TOKEN=freecc');
+  console.log('  env: ANTHROPIC_API_KEY=sk-ant-proxy000 (fake key — proxy ignores it)');
   console.log(`  env: ANTHROPIC_BASE_URL=http://${HOST}:${PROXY_PORT}`);
   console.log(`  cmd: node cli.js --print  (stdin: "hello claude")`);
 

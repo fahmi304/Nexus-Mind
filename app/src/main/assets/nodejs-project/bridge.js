@@ -716,20 +716,29 @@ function buildEnv() {
         if (cfg.apiKey) env.ANTHROPIC_API_KEY = cfg.apiKey;
     } else {
         // Proxy mode: all claude-code traffic goes to our local proxy on port 8082.
-        // We use ANTHROPIC_AUTH_TOKEN (not API_KEY) because claude-code v2.1.112
-        // validates that ANTHROPIC_API_KEY starts with 'sk-ant-' before making any
-        // request — a provider key (sk-or-..., AIza..., etc.) fails that check and
-        // causes silent exit 1. AUTH_TOKEN has no format validation.
-        // The proxy receives this token in the Bearer header but discards it,
-        // using cfg.apiKey to authenticate with the real provider.
-        env.ANTHROPIC_AUTH_TOKEN = cfg.apiKey || 'proxy-session';
-        env.ANTHROPIC_BASE_URL   = cfg.baseUrl || 'http://127.0.0.1:8082';
+        //
+        // IMPORTANT: we must use ANTHROPIC_API_KEY (not ANTHROPIC_AUTH_TOKEN) and
+        // it must start with 'sk-ant-'. Here's why:
+        //
+        // 1. claude-code v2.1.112 validates that ANTHROPIC_API_KEY starts with
+        //    'sk-ant-' before any network call. A provider key (sk-or-..., AIza...)
+        //    fails that check → silent exit code 1 with zero output.
+        //
+        // 2. ANTHROPIC_AUTH_TOKEN triggers claude-code's OAuth session-validation
+        //    path. It calls auth/account endpoints expecting specific JSON fields
+        //    (user_id, session data). Our proxy returns {} for unknown endpoints,
+        //    which fails the validation → silent exit code 1 with zero output.
+        //
+        // Solution: use a fake 'sk-ant-' key that passes format check and avoids
+        // OAuth. The proxy ignores the Bearer token claude-code sends; it always
+        // uses cfg.apiKey to authenticate with the real provider.
+        env.ANTHROPIC_API_KEY  = 'sk-ant-proxy000';
+        env.ANTHROPIC_BASE_URL = cfg.baseUrl || 'http://127.0.0.1:8082';
     }
 
     // Always set the model explicitly — prevents an extra model-discovery round-trip
     if (cfg.modelId) env.ANTHROPIC_MODEL = cfg.modelId;
 
-    env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = '1';
     env.DISABLE_AUTOUPDATER = '1';
     return env;
 }
