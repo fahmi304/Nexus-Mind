@@ -7,6 +7,9 @@ import android.text.method.LinkMovementMethod
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.JavascriptInterface
+import android.webkit.WebSettings
+import android.webkit.WebView
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -49,13 +52,114 @@ class LoginFlowActivity : AppCompatActivity() {
         binding = ActivityLoginFlowBinding.inflate(layoutInflater)
         setContentView(binding.root)
         prefs = AppPreferences(this)
+        setupRegistryWebView()
         showHasSubscription()
+    }
+
+    // ─── Provider registry WebView ────────────────────────────────────────────
+
+    private fun setupRegistryWebView() {
+        val wv = binding.providerWebView
+        wv.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            allowFileAccess = true
+            cacheMode = WebSettings.LOAD_DEFAULT
+        }
+        wv.addJavascriptInterface(ProviderBridge(), "Android")
+    }
+
+    private fun showRegistryWebView() {
+        binding.scrollContent.visibility = View.GONE
+        binding.providerWebView.visibility = View.VISIBLE
+        binding.providerWebView.loadUrl("file:///android_asset/provider_registry.html")
+    }
+
+    private fun hideRegistryWebView() {
+        binding.providerWebView.visibility = View.GONE
+        binding.scrollContent.visibility = View.VISIBLE
+    }
+
+    // ─── Provider visual metadata (presentation-only, by provider ID) ─────────
+
+    private data class ProviderVisuals(
+        val emoji: String, val color: String, val badge: String,
+        val category: String, val tokens: String, val speed: Int, val power: Int
+    )
+
+    private fun providerVisuals(id: String): ProviderVisuals = when (id) {
+        "gemini"     -> ProviderVisuals("🌐", "#4285f4", "Best Free",   "Multimodal",  "1M",    88, 92)
+        "openrouter" -> ProviderVisuals("🔀", "#8b5cf6", "Aggregator",  "Multi-Model", "128K+", 85, 88)
+        "deepseek"   -> ProviderVisuals("🧠", "#06b6d4", "Reasoning",   "Reasoning",   "64K",   94, 90)
+        "kimi"       -> ProviderVisuals("🌙", "#f59e0b", "Long CTX",    "Long Context","128K",  82, 85)
+        "nvidia_nim" -> ProviderVisuals("⚡", "#76b900", "40 req/min",  "GPU Cloud",   "128K",  95, 87)
+        "meta_llama" -> ProviderVisuals("🦙", "#0467df", "Open Source", "Open Source", "128K",  90, 84)
+        "ollama"     -> ProviderVisuals("💻", "#ef4444", "Unlimited",   "Local Model", "∞",     99, 78)
+        "anthropic"  -> ProviderVisuals("🧬", "#da7756", "Subscription","Official",    "200K",  92, 98)
+        else         -> ProviderVisuals("🤖", "#6440ff", "Free",        "AI Provider", "128K",  80, 80)
+    }
+
+    private fun escapeJson(s: String): String =
+        s.replace("\\", "\\\\").replace("\"", "\\\"")
+         .replace("\n", " ").replace("\r", "")
+
+    // ─── JS bridge for provider registry ─────────────────────────────────────
+
+    inner class ProviderBridge {
+
+        @JavascriptInterface
+        fun getProviders(): String {
+            val items = Providers.ALL.map { p ->
+                val v = providerVisuals(p.id)
+                val warnField = if (p.warningNote != null)
+                    "\"${escapeJson(p.warningNote!!)}\"" else "null"
+                """{
+                  "id":"${p.id}",
+                  "name":"${escapeJson(p.name)}",
+                  "emoji":"${escapeJson(v.emoji)}",
+                  "color":"${v.color}",
+                  "badge":"${escapeJson(v.badge)}",
+                  "category":"${escapeJson(v.category)}",
+                  "tokens":"${v.tokens}",
+                  "speed":${v.speed},
+                  "power":${v.power},
+                  "models":${p.models.size},
+                  "rateLimit":"${escapeJson(p.rateLimit)}",
+                  "malaysiaStatus":"${p.malaysiaStatus.name}",
+                  "malaysiaNote":"${escapeJson(p.malaysiaNote)}",
+                  "warning":$warnField
+                }"""
+            }
+            return "[${items.joinToString(",")}]"
+        }
+
+        @JavascriptInterface
+        fun selectProvider(id: String) {
+            val provider = Providers.byId(id) ?: return
+            runOnUiThread {
+                hideRegistryWebView()
+                selectedProvider = provider
+                showApiKeyEntry(provider)
+            }
+        }
+
+        @JavascriptInterface
+        fun onRegistryReady() { /* no-op */ }
+
+        @JavascriptInterface
+        fun goBack() {
+            runOnUiThread {
+                hideRegistryWebView()
+                showMalaysiaCheck()
+            }
+        }
     }
 
     // ─── Screen 1: Has subscription? ──────────────────────────────────────────
 
     private fun showHasSubscription() {
         currentScreen = Screen.HAS_SUBSCRIPTION
+        hideRegistryWebView()
         with(binding) {
             tvQuestion.text = "Do you have a Claude subscription or free trial?"
             tvSubtitle.visibility = View.GONE
@@ -76,6 +180,7 @@ class LoginFlowActivity : AppCompatActivity() {
 
     private fun showMalaysiaCheck() {
         currentScreen = Screen.MALAYSIA_CHECK
+        hideRegistryWebView()
         with(binding) {
             tvQuestion.text = "Are you in Malaysia?"
             tvSubtitle.visibility = View.GONE
@@ -95,6 +200,7 @@ class LoginFlowActivity : AppCompatActivity() {
 
     private fun showGeminiRecommend() {
         currentScreen = Screen.GEMINI_RECOMMEND
+        hideRegistryWebView()
         val gemini = Providers.GEMINI
         with(binding) {
             tvQuestion.text = "We recommend Google Gemini"
@@ -115,47 +221,18 @@ class LoginFlowActivity : AppCompatActivity() {
         }
     }
 
-    // ─── Screen 4: Provider list (async — fetches from assets / remote) ──────
+    // ─── Screen 4: Provider registry (glassmorphic WebView grid) ─────────────
 
     private fun showProviderList() {
         currentScreen = Screen.PROVIDER_LIST
-        with(binding) {
-            tvQuestion.text = "Choose your AI provider"
-            tvSubtitle.text = "Loading providers…"
-            tvSubtitle.visibility = View.VISIBLE
-            btnPrimary.visibility = View.GONE
-            btnSecondary.visibility = View.GONE
-            geminiRecommendCard.visibility = View.GONE
-            apiKeyContainer.visibility = View.GONE
-            providerContainer.visibility = View.VISIBLE
-            providerLoadingBar.visibility = View.VISIBLE
-            btnRefreshProviders.visibility = View.GONE
-            providerRecycler.adapter = null
-        }
-
-        lifecycleScope.launch {
-            val result = ProvidersRepository.load(this@LoginFlowActivity)
-            with(binding) {
-                providerLoadingBar.visibility = View.GONE
-                tvSubtitle.text = if (result.fromRemote) "Live list" else "All providers below are free"
-                btnRefreshProviders.visibility = View.VISIBLE
-
-                val adapter = ProviderListAdapter(result.providers) { provider ->
-                    selectedProvider = provider
-                    showApiKeyEntry(provider)
-                }
-                providerRecycler.layoutManager = LinearLayoutManager(this@LoginFlowActivity)
-                providerRecycler.adapter = adapter
-            }
-        }
-
-        binding.btnRefreshProviders.setOnClickListener { showProviderList() }
+        showRegistryWebView()
     }
 
     // ─── Screen 5: API key entry ──────────────────────────────────────────────
 
     private fun showApiKeyEntry(provider: Provider) {
         currentScreen = Screen.API_KEY_ENTRY
+        hideRegistryWebView()
         with(binding) {
             tvQuestion.text = "Enter your ${provider.name} API key"
             tvSubtitle.text = "Get a free key at ${provider.signupUrl}"
