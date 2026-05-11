@@ -45,6 +45,57 @@ const PORT       = 8083;
 const PROXY_PORT = 8082;
 const HOST       = '127.0.0.1';
 
+// ─── Eval bootstrap shims ─────────────────────────────────────────────────────
+// These are injected as strings into every LAUNCHER -e evalCode bootstrap,
+// before import(cli.js). Defined at module scope so both runMessage() and
+// the !test-cli diagnostic handler can reference them without a ReferenceError.
+
+// Runtime RegExp shim: catches dynamic new RegExp(p,'u') with \p{} patterns
+// that nodejs-mobile v18 V8 doesn't support. Logs pattern, falls back to /(?:)/.
+const regexpShim =
+    '(function(){' +
+    'var _R=RegExp,_lp=' + JSON.stringify(SETUP_LOG) + ';' +
+    'function Rc(p,f){' +
+    'try{return new _R(p,f);}' +
+    'catch(e){' +
+    'if(typeof f==="string"&&f.indexOf("u")>-1&&' +
+    '/Invalid|property/i.test(String(e.message||e))){' +
+    'try{require("fs").appendFileSync(_lp,"[regex-compat] "+String(p).slice(0,120)+"\\n");}catch(_){}' +
+    'var ff=String(f).replace(/u/g,"");' +
+    'try{return new _R("(?:)",ff);}catch(_){return new _R("(?:)");}' +
+    '}throw e;}' +
+    '}' +
+    'Rc.prototype=_R.prototype;' +
+    'try{Rc[Symbol.hasInstance]=function(v){return _R[Symbol.hasInstance](v);};}catch(_){}' +
+    'global.RegExp=Rc;' +
+    '})();';
+
+// Intl shim: nodejs-mobile v18.20.4 is built without ICU so global.Intl is
+// undefined. cli.js uses Intl.NumberFormat, DateTimeFormat, Collator, etc.
+// All constructors share one stub; new Intl.X() and bare Intl.X() both work.
+const intlShim =
+    '(function(){' +
+    'if(typeof Intl!=="undefined"&&Intl.NumberFormat)return;' +
+    'try{require("fs").appendFileSync(' + JSON.stringify(SETUP_LOG) + ',"[intl-shim] installing\\n");}catch(_){}' +
+    'var s={format:function(n){return""+n;},resolvedOptions:function(){return{locale:"en-US",timeZone:"UTC"};},formatToParts:function(){return[];},compare:function(a,b){return a<b?-1:a>b?1:0;},select:function(n){return n===1?"one":"other";},segment:function(t){var a=[],i=0;for(var c of(""+t)){a.push({segment:c,index:i++,isWordLike:/[a-zA-Z0-9_]/.test(c)});}return{[Symbol.iterator]:function(){var j=0;return{next:function(){return j<a.length?{value:a[j++],done:false}:{done:true};}};}};},toString:function(){return"[object Intl]";},valueOf:function(){return"[object Intl]";}};' +
+    'function mk(){return s;}mk.prototype=s;mk.supportedLocalesOf=function(){return[];};' +
+    'if(!global.Intl)global.Intl={};' +
+    'var I=global.Intl;' +
+    'I.NumberFormat=I.NumberFormat||mk;' +
+    'I.DateTimeFormat=I.DateTimeFormat||mk;' +
+    'I.Collator=I.Collator||mk;' +
+    'I.PluralRules=I.PluralRules||mk;' +
+    'I.ListFormat=I.ListFormat||mk;' +
+    'I.RelativeTimeFormat=I.RelativeTimeFormat||mk;' +
+    'I.Segmenter=I.Segmenter||mk;' +
+    'I.getCanonicalLocales=I.getCanonicalLocales||function(l){return[].concat(l||[]);};' +
+    'I.supportedValuesOf=I.supportedValuesOf||function(){return[];};' +
+    '})();';
+
+// Tracks last provider HTTP 429 timestamp so the TCP close handler can show
+// a rate-limit notification even when cli.js exits silently with code 0.
+let lastRateLimitMs = 0;
+
 // ─── Logging ──────────────────────────────────────────────────────────────────
 
 function log(msg) {
@@ -626,6 +677,7 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res) {
                             parsed.error.message || JSON.stringify(parsed.error));
                     }
                     if (provRes.statusCode !== 200) {
+                        if (provRes.statusCode === 429) lastRateLimitMs = Date.now();
                         return proxyError(res, provRes.statusCode,
                             'Provider HTTP ' + provRes.statusCode);
                     }
@@ -643,8 +695,10 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res) {
                 provRes.on('data', c => { errBody += c; });
                 provRes.on('end', () => {
                     let msg = 'Provider returned HTTP ' + provRes.statusCode;
-                    if (provRes.statusCode === 429)
+                    if (provRes.statusCode === 429) {
+                        lastRateLimitMs = Date.now();
                         msg = 'Rate limited (HTTP 429) — wait a moment or switch models in Settings';
+                    }
                     else if (provRes.statusCode === 401 || provRes.statusCode === 403)
                         msg = 'Invalid or unauthorised API key (HTTP ' + provRes.statusCode + ') — check Settings';
                     else if (provRes.statusCode >= 500)
@@ -909,36 +963,7 @@ function runMessage(message, socket) {
     // who called process.exit, so this always runs.
     // Also write [eval-ok] to stderr immediately so we know the eval string ran.
     const exitLogPath = JSON.stringify(SETUP_LOG);
-    // Runtime RegExp shim — installed BEFORE importing cli.js.
-    //
-    // patchCliJsForAndroid() patches static regex literals in cli.js at install
-    // time, but cli.js also has dynamic `new RegExp(pattern, 'u')` calls inside
-    // function bodies that only run during --print mode initialization (not during
-    // --version). Android's nodejs-mobile v18.20.4 V8 has no Unicode property
-    // escape support, so these throw "Invalid regular expression: \p{...}: Invalid
-    // property name" at runtime. The error propagates as an unhandled rejection
-    // and cli.js's own handler calls process.exit(1) with no output.
-    //
-    // Fix: wrap global.RegExp so any new RegExp(p, '...u...') that fails gets a
-    // safe fallback (/(?:)/ = matches empty string). The failing pattern is also
-    // appended to setup.log so we can add it to patchCliJsForAndroid() later.
-    const regexpShim =
-        '(function(){' +
-        'var _R=RegExp,_lp=' + exitLogPath + ';' +
-        'function Rc(p,f){' +
-        'try{return new _R(p,f);}' +
-        'catch(e){' +
-        'if(typeof f==="string"&&f.indexOf("u")>-1&&' +
-        '/Invalid|property/i.test(String(e.message||e))){' +
-        'try{require("fs").appendFileSync(_lp,"[regex-compat] "+String(p).slice(0,120)+"\\n");}catch(_){}' +
-        'var ff=String(f).replace(/u/g,"");' +
-        'try{return new _R("(?:)",ff);}catch(_){return new _R("(?:)");}' +
-        '}throw e;}' +
-        '}' +
-        'Rc.prototype=_R.prototype;' +
-        'try{Rc[Symbol.hasInstance]=function(v){return _R[Symbol.hasInstance](v);};}catch(_){}' +
-        'global.RegExp=Rc;' +
-        '})();';
+    // regexpShim and intlShim are module-level constants (defined near the top).
     const evalCode =
         'process.stderr.write("[eval-ok]\\n");' +
         'process.on("exit",function(code){' +
@@ -952,6 +977,7 @@ function runMessage(message, socket) {
         '"[unhandledRejection] "+String(r&&(r.stack||r.message)||r).slice(0,600)+"\\n");}' +
         'catch(_){}});' +
         regexpShim +
+        intlShim +
         'process.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';' +
         'process.argv[2]="--print";' +
         'process.argv[3]=' + JSON.stringify(message) + ';' +
@@ -1171,6 +1197,7 @@ function openTcpBridge() {
                         'try{require("fs").appendFileSync(' + JSON.stringify(SETUP_LOG) + ',' +
                         '"[unhandledRejection] "+String(r&&(r.stack||r.message)||r).slice(0,600)+"\\n");}catch(_){}});' +
                         regexpShim +
+                        intlShim +
                         'process.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';' +
                         'process.argv[2]="--print";process.argv[3]="hello";process.argv.length=4;' +
                         'import(' + JSON.stringify(cliUrl2) + ')' +
@@ -1219,7 +1246,16 @@ function openTcpBridge() {
                     const stderr = current && current._stderrBuf ? current._stderrBuf() : '';
                     busy = false; current = null;
 
-                    if (code !== 0 && code !== null && !responseStarted) {
+                    const rateLimited = (Date.now() - lastRateLimitMs) < 15000;
+                    if (!responseStarted && rateLimited) {
+                        lastRateLimitMs = 0;
+                        try {
+                            socket.write(
+                                '\r\n\x1b[33m⚠ Rate limited by provider (HTTP 429).\x1b[0m\r\n' +
+                                '\x1b[2mModel is busy. Wait ~30 s or switch models in Settings.\x1b[0m\r\n'
+                            );
+                        } catch (_) {}
+                    } else if (code !== 0 && code !== null && !responseStarted) {
                         // Log the full stderr so it ends up in setup.log
                         if (stderr) log('[stderr] ' + stderr.trim() + '\n');
                         log('[exit] code=' + code + ' responseStarted=false\n');
