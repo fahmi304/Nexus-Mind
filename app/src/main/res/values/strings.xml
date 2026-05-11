@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">ClaudeCode Setup</string>
+    <string name="app_name">Claude Code Proxy</string>
 
     <!-- Setup -->
     <string name="setup_title">Setting up Claude Code for you…</string>

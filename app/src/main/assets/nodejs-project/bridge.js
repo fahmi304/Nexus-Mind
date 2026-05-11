@@ -1020,7 +1020,16 @@ function runMessage(message, socket, history) {
         const s = d.toString();
         stderrBuf += s;
         log('[claude-stderr] ' + s.slice(0, 800) + '\n');
-        try { socket.write(d); } catch (_) {}
+        // Strip diagnostic bootstrap lines — log only, don't show in terminal.
+        // Users see errors via the close-handler hint; raw eval hooks are noise.
+        const out = s.split('\n').filter(l => {
+            const t = l.trim();
+            if (!t) return false;
+            return !t.startsWith('[eval-ok]') && !t.startsWith('[import-resolved]') &&
+                   !t.startsWith('[exit-event]')  && !t.startsWith('[regex-compat]') &&
+                   !t.startsWith('[intl-shim]')    && !t.startsWith('[unhandledRejection]');
+        }).join('\n');
+        if (out) { try { socket.write(out); } catch (_) {} }
     });
 
     child.on('error', err => {
@@ -1253,8 +1262,8 @@ function openTcpBridge() {
                     busy = false;
                 }
 
-                // Immediate feedback so the user knows the message was received
-                try { socket.write('\r\n\x1b[33m⏳ Thinking…\x1b[0m\r\n'); } catch (_) {}
+                // Signal terminal HTML to show animated thinking indicator
+                try { socket.write('\x1b]9;thinking-start\x07'); } catch (_) {}
 
                 busy = true;
                 let responseStarted = false;
@@ -1275,6 +1284,7 @@ function openTcpBridge() {
                     try { if (current) current.kill('SIGTERM'); } catch (_) {}
                     try {
                         socket.write(
+                            '\x1b]9;thinking-done\x07' +
                             '\r\n\x1b[31m✗ Request timed out after 60 s.\x1b[0m\r\n' +
                             '\x1b[33mThe provider may be slow or down. Type your message again to retry.\x1b[0m\r\n'
                         );
@@ -1284,6 +1294,8 @@ function openTcpBridge() {
 
                 current.on('close', code => {
                     if (currentTid) { clearTimeout(currentTid); currentTid = null; }
+                    // Always dismiss the thinking indicator regardless of outcome
+                    try { socket.write('\x1b]9;thinking-done\x07'); } catch (_) {}
                     const stderr = current && current._stderrBuf ? current._stderrBuf() : '';
                     busy = false; current = null;
 

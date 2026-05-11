@@ -9,7 +9,7 @@
 
 html, body {
   width:100%; height:100%;
-  background:#1A1A2E;
+  background:#12121e;
   overflow:hidden;
   -webkit-tap-highlight-color:transparent;
 }
@@ -19,13 +19,13 @@ html, body {
   top:0; left:0; right:0; bottom:0;
   font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code',
                'Courier New', 'DejaVu Sans Mono', monospace;
-  font-size: 13.5px;
-  line-height: 1.45;
-  color: #E2E8F0;
-  background: #1A1A2E;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #dde1f0;
+  background: #12121e;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 10px 8px 8px 8px;
+  padding: 14px 12px 12px 12px;
   white-space: pre-wrap;
   word-break: break-all;
   cursor: text;
@@ -34,10 +34,10 @@ html, body {
   transition: bottom 0.15s ease;
 }
 
-/* Custom scrollbar */
-#screen::-webkit-scrollbar { width: 4px; }
+/* Scrollbar */
+#screen::-webkit-scrollbar { width: 3px; }
 #screen::-webkit-scrollbar-track { background: transparent; }
-#screen::-webkit-scrollbar-thumb { background: #3A3A55; border-radius: 2px; }
+#screen::-webkit-scrollbar-thumb { background: rgba(218,119,86,0.25); border-radius: 2px; }
 
 /* ANSI 16-color classes */
 .f0{color:#21262D}.f1{color:#F28B82}.f2{color:#81C995}.f3{color:#FFD966}
@@ -49,7 +49,7 @@ html, body {
 .b6{background:#5DD6EB}.b7{background:#E2E8F0}
 
 .bold{font-weight:700}
-.dim{opacity:0.45}
+.dim{opacity:0.42}
 .italic{font-style:italic}
 .underline{text-decoration:underline}
 .blink{animation:blink 1s step-end infinite}
@@ -58,14 +58,9 @@ html, body {
 
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
 
-/* Input line at the bottom of terminal content */
-#input-line {
-  display: inline;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.prompt-char { color: #DA7756; }
+/* Input line */
+#input-line { display:inline; white-space:pre-wrap; word-break:break-all; }
+.prompt-char { color:#DA7756; }
 
 #cursor {
   display:inline-block;
@@ -77,13 +72,63 @@ html, body {
 }
 @keyframes cursorBlink { 0%,66%{opacity:1} 67%,100%{opacity:0} }
 
-/* Special-keys toolbar — fixed at bottom, shown when keyboard is open */
+/* ── Thinking indicator ─────────────────────────────────────────────────── */
+#thinking-bar {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: 0;          /* JS sets this above toolbar when needed */
+  height: 46px;
+  display: none;
+  align-items: center;
+  gap: 7px;
+  padding: 0 16px;
+  background: linear-gradient(135deg, rgba(26,22,40,0.97) 0%, rgba(20,18,36,0.97) 100%);
+  border-top: 1px solid rgba(218,119,86,0.18);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 60;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  color: rgba(218,119,86,0.85);
+  letter-spacing: 0.01em;
+}
+#thinking-bar.show { display: flex; }
+
+/* Bouncing dots */
+.td {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: #DA7756;
+  opacity: 0.25;
+  flex-shrink: 0;
+  animation: td-anim 1.4s ease-in-out infinite;
+}
+.td:nth-child(2) { animation-delay: 0.18s; }
+.td:nth-child(3) { animation-delay: 0.36s; }
+
+@keyframes td-anim {
+  0%, 60%, 100% { transform: translateY(0);    opacity: 0.25; }
+  30%            { transform: translateY(-5px); opacity: 1;    }
+}
+
+/* Pulsing ring around dots group */
+#thinking-dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(218,119,86,0.08);
+  border: 1px solid rgba(218,119,86,0.2);
+  border-radius: 20px;
+  padding: 5px 9px;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
 #toolbar {
   position: fixed;
   bottom: 0; left: 0; right: 0;
-  height: 44px;
-  background: #1E2030;
-  border-top: 1px solid #3A3A55;
+  height: 46px;
+  background: linear-gradient(135deg, rgba(26,22,40,0.98) 0%, rgba(20,18,36,0.98) 100%);
+  border-top: 1px solid rgba(255,255,255,0.06);
   display: none;
   flex-direction: row;
   align-items: center;
@@ -96,33 +141,44 @@ html, body {
 #toolbar::-webkit-scrollbar { display: none; }
 
 .tb-btn {
-  background: #2A2A45;
-  color: #C8C8E0;
-  border: 1px solid #3A3A60;
-  border-radius: 6px;
-  padding: 5px 11px;
-  font-size: 12px;
+  background: rgba(255,255,255,0.06);
+  color: #b8bcd8;
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 12.5px;
   font-family: inherit;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
-  -webkit-tap-highlight-color: rgba(218,119,86,0.25);
+  -webkit-tap-highlight-color: rgba(218,119,86,0.2);
   user-select: none;
   -webkit-user-select: none;
+  transition: background 0.1s, border-color 0.1s;
 }
-.tb-btn:active { background: #3A3A60; }
+.tb-btn:active { background: rgba(255,255,255,0.12); border-color: rgba(218,119,86,0.4); }
 
 .tb-btn-accent {
-  background: #2E1E14;
+  background: rgba(218,119,86,0.12);
   color: #DA7756;
-  border-color: #5A3A28;
+  border-color: rgba(218,119,86,0.28);
 }
+.tb-btn-accent:active { background: rgba(218,119,86,0.22); }
 </style>
 </head>
 <body>
 
 <div id="screen">
   <span id="output"></span><span id="input-line"><span class="prompt-char">❯ </span><span id="typed-text"></span><span id="cursor"></span></span>
+</div>
+
+<div id="thinking-bar">
+  <div id="thinking-dots">
+    <div class="td"></div>
+    <div class="td"></div>
+    <div class="td"></div>
+  </div>
+  <span>Claude is thinking…</span>
 </div>
 
 <div id="toolbar">
@@ -140,6 +196,37 @@ html, body {
 <script>
 (function(){
 'use strict';
+
+// ── Layout helpers ────────────────────────────────────────────────────────────
+
+const screen       = document.getElementById('screen');
+const toolbar      = document.getElementById('toolbar');
+const thinkingBar  = document.getElementById('thinking-bar');
+const TB_H         = 46;   // toolbar height px
+
+let toolbarOpen  = false;
+let thinkingOpen = false;
+
+function updateLayout(){
+  const baseBottom = toolbarOpen ? TB_H : 0;
+  screen.style.bottom      = (baseBottom + (thinkingOpen ? TB_H : 0)) + 'px';
+  thinkingBar.style.bottom = baseBottom + 'px';
+}
+
+function showThinking(){
+  if(thinkingOpen) return;
+  thinkingOpen = true;
+  thinkingBar.classList.add('show');
+  updateLayout();
+  scrollToBottom();
+}
+
+function hideThinking(){
+  if(!thinkingOpen) return;
+  thinkingOpen = false;
+  thinkingBar.classList.remove('show');
+  updateLayout();
+}
 
 // ── Palette ──────────────────────────────────────────────────────────────────
 
@@ -173,13 +260,6 @@ function resetAttrs(){
           blink:false,inverse:false,strike:false,fg:null,bg:null};
 }
 
-function attrsEqual(a,b){
-  return a.bold===b.bold && a.dim===b.dim && a.italic===b.italic &&
-         a.underline===b.underline && a.blink===b.blink &&
-         a.inverse===b.inverse && a.strike===b.strike &&
-         a.fg===b.fg && a.bg===b.bg;
-}
-
 function currentLines(){ return altMode ? altLines : lines; }
 
 function ensureRow(r){
@@ -210,15 +290,11 @@ function attrsToSpan(a, text){
     else style.push(`background:${typeof a.bg==='number'?get256Color(a.bg):a.bg}`);
   }
 
-  const escapedText = text
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;');
-
-  if(!cls.length && !style.length) return escapedText;
+  const escaped = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  if(!cls.length && !style.length) return escaped;
   const c = cls.length ? ` class="${cls.join(' ')}"` : '';
   const s = style.length ? ` style="${style.join(';')}"` : '';
-  return `<span${c}${s}>${escapedText}</span>`;
+  return `<span${c}${s}>${escaped}</span>`;
 }
 
 // ── Write character ───────────────────────────────────────────────────────────
@@ -239,6 +315,13 @@ function newLine(){
     ls.splice(0, ls.length - MAX_SCROLLBACK);
     curRow = Math.max(0, curRow - 1);
   }
+}
+
+// ── OSC handler ───────────────────────────────────────────────────────────────
+
+function handleOSC(content){
+  if(content === '9;thinking-start')  showThinking();
+  else if(content === '9;thinking-done') hideThinking();
 }
 
 // ── ANSI escape parser ────────────────────────────────────────────────────────
@@ -284,7 +367,8 @@ function processByte(ch){
   }
 
   if(escState === 'osc'){
-    if(code===0x07 || code===0x1B){ escState='normal'; return; }
+    if(code === 0x07){ handleOSC(oscBuf); escState='normal'; return; }
+    if(code === 0x1B){ handleOSC(oscBuf); escState='normal'; return; }
     oscBuf += ch;
     return;
   }
@@ -330,12 +414,7 @@ function handleCSI(params, inter, final){
       else { for(let i=curRow;i<ls.length;i++) ls[i]=''; }
       break;
     }
-    case 'K': {
-      const ls = currentLines();
-      ensureRow(curRow);
-      ls[curRow] = '';
-      break;
-    }
+    case 'K': { const ls=currentLines(); ensureRow(curRow); ls[curRow]=''; break; }
     case 'P': { const ls=currentLines(); ensureRow(curRow); ls[curRow]=''; break; }
     case 'S': { const n=parseParams(params,1)[0]||1; for(let i=0;i<n;i++) newLine(); break; }
     case 'T': { const n=parseParams(params,1)[0]||1; curRow=Math.max(0,curRow-n); break; }
@@ -421,13 +500,11 @@ function scheduleRender(){
 
 function doRender(){
   renderQueued = false;
-  const ls = currentLines();
-  document.getElementById('output').innerHTML = ls.join('\n');
+  document.getElementById('output').innerHTML = currentLines().join('\n');
   scrollToBottom();
 }
 
 function scrollToBottom(){
-  const screen = document.getElementById('screen');
   screen.scrollTop = screen.scrollHeight;
 }
 
@@ -446,12 +523,11 @@ function submitLine(text){
   ghost.value = '';
   updateInputLine();
   if(!msg) return;
-  // Echo into terminal output before handing off to Android
-  window.termWrite('\r\n\x1b[32m❯ ' + msg + '\x1b[0m\r\n');
+  window.termWrite('\r\n\x1b[38;2;218;119;86m❯\x1b[0m \x1b[1m' + msg + '\x1b[0m\r\n');
   if(typeof Android !== 'undefined') Android.submitMessage(msg);
 }
 
-// ── Ghost textarea (captures Android IME input) ───────────────────────────────
+// ── Ghost textarea ────────────────────────────────────────────────────────────
 
 const ghost = document.createElement('textarea');
 ghost.id = 'ghost';
@@ -466,29 +542,25 @@ ghost.setAttribute('spellcheck', 'false');
 ghost.setAttribute('enterkeyhint', 'send');
 document.body.appendChild(ghost);
 
-let toolbarVisible = false;
-
 ghost.addEventListener('focus', function(){
-  toolbarVisible = true;
-  document.getElementById('toolbar').style.display = 'flex';
-  document.getElementById('screen').style.bottom = '44px';
+  toolbarOpen = true;
+  toolbar.style.display = 'flex';
+  updateLayout();
   setTimeout(scrollToBottom, 50);
 });
 
 ghost.addEventListener('blur', function(){
-  // Delay so toolbar button taps have time to re-focus ghost first
   setTimeout(function(){
-    if(toolbarVisible && document.activeElement !== ghost){
-      toolbarVisible = false;
-      document.getElementById('toolbar').style.display = 'none';
-      document.getElementById('screen').style.bottom = '0';
+    if(toolbarOpen && document.activeElement !== ghost){
+      toolbarOpen = false;
+      toolbar.style.display = 'none';
+      updateLayout();
     }
   }, 200);
 });
 
-ghost.addEventListener('input', function(e){
+ghost.addEventListener('input', function(){
   const val = ghost.value;
-  // Detect newline (Enter on soft keyboard fires insertLineBreak or appends \n)
   if(val.includes('\n')){
     ghost.value = val.replace(/\n/g, '');
     inputBuffer = ghost.value;
@@ -501,18 +573,12 @@ ghost.addEventListener('input', function(e){
 });
 
 ghost.addEventListener('keydown', function(e){
-  if(e.key === 'Enter'){
-    e.preventDefault();
-    submitLine();
-  }
+  if(e.key === 'Enter'){ e.preventDefault(); submitLine(); }
 });
 
-// ── Screen tap → open keyboard ────────────────────────────────────────────────
+// ── Screen tap ────────────────────────────────────────────────────────────────
 
-document.getElementById('screen').addEventListener('click', function(){
-  ghost.focus();
-  scrollToBottom();
-});
+screen.addEventListener('click', function(){ ghost.focus(); scrollToBottom(); });
 
 // ── Toolbar buttons ───────────────────────────────────────────────────────────
 
@@ -555,7 +621,6 @@ window.termClear = function(){
   doRender();
 };
 
-// Legacy — kept so any existing sendInput calls from bridge still work
 window.termSendInput = function(text){
   if(typeof Android !== 'undefined') Android.sendInput(text);
 };
@@ -564,7 +629,10 @@ window.termSendInput = function(text){
 
 if(typeof Android !== 'undefined') Android.onTerminalReady();
 
-window.termWrite('\x1b[38;2;218;119;86mClaude Code\x1b[0m \x1b[2m— connecting…\x1b[0m\r\n');
+window.termWrite(
+  '\x1b[38;2;218;119;86m\x1b[1mClaude Code Proxy\x1b[0m' +
+  '\x1b[2m — connecting…\x1b[0m\r\n'
+);
 
 })();
 </script>
