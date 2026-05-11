@@ -193,6 +193,9 @@ Providers are defined in two places:
 - Providers: Gemini (recommended for Malaysia), OpenRouter, DeepSeek, Kimi, NVIDIA NIM, Meta Llama, Ollama, Anthropic subscription.
 - Malaysian user UX path (Gemini fast-track recommendation).
 - Language support: English + Bahasa Malaysia (strings partially translated).
+- Diagnostic commands in terminal: `!log` (last 80 lines of setup.log), `!test` (launcher self-test), `!ver` (config dump).
+- Verbose stderr logging and actionable error hints on claude exit code 1.
+- **Fixed: proxy mode silent exit code 1** — `ANTHROPIC_MODEL` now always uses a valid Claude model name (`claude-3-5-sonnet-20241022`) in proxy mode instead of the provider model ID (e.g. `openai/gpt-oss-120b:free`). Claude-code v2.1.112 validates ANTHROPIC_MODEL against known Claude model names before any network call; a non-Claude model ID caused a silent exit. The proxy already substitutes `cfg.modelId` (the real provider model) when forwarding, so the actual API call still uses the correct model.
 
 ### Known gaps / TODO
 - `DownloadManager.kt` exists with resumable download + npm version fetching, but `fetchLatestClaudeVersion()` is not used — version is always the pinned constant. The class is partially unused.

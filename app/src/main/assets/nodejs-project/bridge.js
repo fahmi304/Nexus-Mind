@@ -334,10 +334,10 @@ function startProxyServer(onReady) {
             req.on('error', e => proxyError(res, 500, e.message));
             return;
         }
-        // GET /v1/models — Claude Code checks this on startup; return a fake list
+        // GET /v1/models — Claude Code checks this on startup; return a valid Claude model
+        // so it matches the ANTHROPIC_MODEL env var we set (always a claude-* name in proxy mode).
         if (req.method === 'GET' && req.url.startsWith('/v1/models')) {
-            const cfg = readConfig();
-            const modelId = cfg.modelId || 'claude-3-5-sonnet-20241022';
+            const modelId = 'claude-3-5-sonnet-20241022';
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
                 data: [{ id: modelId, display_name: modelId, created_at: '' }]
@@ -736,8 +736,14 @@ function buildEnv() {
         env.ANTHROPIC_BASE_URL = cfg.baseUrl || 'http://127.0.0.1:8082';
     }
 
-    // Always set the model explicitly — prevents an extra model-discovery round-trip
-    if (cfg.modelId) env.ANTHROPIC_MODEL = cfg.modelId;
+    // In subscription mode, pass the real model. In proxy mode, claude-code validates
+    // ANTHROPIC_MODEL against known Claude model names at startup (before any API call).
+    // A provider model ID like "openai/gpt-oss-120b:free" fails that check → silent
+    // exit code 1. Use a valid Claude name instead; the proxy substitutes cfg.modelId
+    // (the real provider model) when it forwards the request to the provider.
+    env.ANTHROPIC_MODEL = isSubscription
+        ? (cfg.modelId || 'claude-3-5-sonnet-20241022')
+        : 'claude-3-5-sonnet-20241022';
 
     env.DISABLE_AUTOUPDATER = '1';
     return env;
