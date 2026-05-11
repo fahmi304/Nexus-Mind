@@ -133,6 +133,70 @@ function downloadFile(url, dest) {
     });
 }
 
+// ─── Patch cli.js for Android (no Unicode property escape support) ───────────
+
+function patchCliJsForAndroid(cliPath) {
+    log('Patching cli.js for Android (removing \\p{} regex property escapes)...\n');
+    let src;
+    try { src = fs.readFileSync(cliPath, 'utf8'); } catch (e) {
+        log('Patch skipped: could not read cli.js — ' + e.message + '\n');
+        return;
+    }
+    let n = 0;
+
+    function rep(from, to) {
+        if (!src.includes(from)) return;
+        while (src.includes(from)) { src = src.replace(from, to); n++; }
+    }
+
+    // Markdown text-processor (U54 block)
+    rep('/^\\p{Default_Ignorable_Code_Point}$/u',
+        '/^[\\u00AD\\u034F\\u061C\\u115F\\u1160\\u17B4\\u17B5\\u180B-\\u180F\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u206F\\u3164\\uFFA0\\uFFF0-\\uFFFB]$/');
+    rep('/^[\\p{L}\\p{N}\\p{M}_]$/u',
+        '/^[a-zA-Z0-9\\xC0-\\u024F\\u0300-\\u036F\\u0370-\\u03FF\\u0400-\\u04FF\\u4E00-\\u9FFF_]$/');
+    rep('/[\\p{L}\\p{N}]/u',
+        '/[a-zA-Z0-9\\xC0-\\u024F\\u0370-\\u03FF\\u0400-\\u04FF\\u4E00-\\u9FFF]/');
+    var PS = '!"#$%&\'()*+,\\-./:;<=>?@\\[\\\\\\]^_`{|}~\\xA2-\\xBF';
+    rep('/[\\p{P}\\p{S}]/u',           '/[' + PS + ']/');
+    rep('/[\\s\\p{P}\\p{S}]/u',        '/[\\s' + PS + ']/');
+    rep('/[^\\s\\p{P}\\p{S}]/u',       '/[^\\s' + PS + ']/');
+    rep('/(?!~)[\\p{P}\\p{S}]/u',      '/(?!~)[' + PS + ']/');
+    rep('/(?!~)[\\s\\p{P}\\p{S}]/u',   '/(?!~)[\\s' + PS + ']/');
+    rep('/(?:[^\\s\\p{P}\\p{S}]|~)/u', '/(?:[^\\s' + PS + ']|~)/');
+    rep('/\\p{L}/u',
+        '/[a-zA-Z\\xC0-\\u024F\\u0370-\\u03FF\\u0400-\\u04FF\\u4E00-\\u9FFF]/');
+    rep('/[\\p{L}\\p{N}_]/u',
+        '/[a-zA-Z0-9\\xC0-\\u024F\\u0370-\\u03FF\\u0400-\\u04FF\\u4E00-\\u9FFF_]/');
+    rep('/[\\p{Cf}\\p{Co}\\p{Cn}]/gu',
+        '/[\\u00AD\\u034F\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u206F\\uFEFF\\uFFFE\\uFFFF]/g');
+    rep("/^[\\p{L}\\p{M}\\p{N}_ .&'()+-]+$/u",
+        "/^[a-zA-Z0-9\\xC0-\\u024F\\u0300-\\u036F\\u0370-\\u03FF\\u0400-\\u04FF\\u4E00-\\u9FFF_ .&'()+-]+$/");
+
+    // CSS-like syntax highlighter (KE8 block) — / inside char class
+    rep('/[\\p{L}\\p{N}_/.\\-+~\\\\]/u',
+        '/[a-zA-Z0-9\\xC0-\\u024F\\u0370-\\u03FF\\u0400-\\u04FF\\u4E00-\\u9FFF_\\/+.~\\\\-]/');
+
+    // @ mention regexes (IM7 block) — / and ] inside char class
+    var M = 'a-zA-Z0-9\\xC0-\\u024F\\u0300-\\u036F\\u0370-\\u03FF\\u0400-\\u04FF\\u4E00-\\u9FFF_\\-.\\/\\\\()[\\]~:';
+    rep('/^@[\\p{L}\\p{N}\\p{M}_\\-./\\\\()[\\]~:]*/u',  '/^@[' + M + ']*/');
+    rep('/^[\\p{L}\\p{N}\\p{M}_\\-./\\\\()[\\]~:]+/u',   '/^[' + M + ']+/');
+    rep('/(@[\\p{L}\\p{N}\\p{M}_\\-./\\\\()[\\]~:]*|[\\p{L}\\p{N}\\p{M}_\\-./\\\\()[\\]~:]+)$/u',
+        '/(@[' + M + ']*|[' + M + ']+)$/');
+    rep('/[\\p{L}\\p{N}\\p{M}_\\-./\\\\()[\\]~:]+$/u',   '/[' + M + ']+$/');
+    rep('/(^|[\\s。、？！])@([\\p{L}\\p{N}\\p{M}_\\-./\\\\()[\\]~:]*|"[^"]*"?)$/u',
+        '/(^|[\\s。、？！])@([' + M + ']*|"[^"]*"?)$/');
+
+    // Emoji detection — new RegExp at runtime, wrap in try-catch
+    rep('function Tq1(){return new RegExp("^(\\\\p{Extended_Pictographic}|\\\\p{Emoji_Component})+$","u")}',
+        'function Tq1(){try{return new RegExp("^(\\\\p{Extended_Pictographic}|\\\\p{Emoji_Component})+$","u")}' +
+        'catch(_e){return /[\\uD83C-\\uDBFF\\uDC00-\\uDFFF\\u2600-\\u27BF\\u2300-\\u23FF]/}}');
+
+    try { fs.writeFileSync(cliPath, src); } catch (e) {
+        log('Patch write failed: ' + e.message + '\n'); return;
+    }
+    log('Patch complete: ' + n + ' replacements applied to cli.js\n');
+}
+
 // ─── Install claude-code directly from npm registry ──────────────────────────
 
 function installClaudeCode(onDone) {
@@ -219,6 +283,11 @@ function installClaudeCode(onDone) {
             throw new Error('cli.js not found after extraction — package layout may have changed');
         }
 
+        // Android's nodejs-mobile v18 build has no Unicode property escape
+        // support (\p{...} in regex with /u flag). cli.js uses them throughout
+        // its markdown parser, text normalizer, and @ mention detector.
+        // Patch every occurrence with equivalent explicit character ranges.
+        patchCliJsForAndroid(CLAUDE_CLI);
         log('\n✓ Claude Code installed successfully!\n');
         try { fs.writeFileSync(SETUP_DONE, 'true'); } catch (_) {}
         onDone(true);
