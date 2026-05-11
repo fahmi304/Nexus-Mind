@@ -53,13 +53,30 @@
                     android:textSize="16sp"
                     android:textStyle="bold" />
 
-                <Button
-                    android:id="@+id/btnChangeProvider"
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    android:text="Change provider"
-                    android:backgroundTint="@color/accent_green" />
+                    android:orientation="horizontal"
+                    android:gravity="start">
+
+                    <Button
+                        android:id="@+id/btnChangeProvider"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:text="Change provider"
+                        android:backgroundTint="@color/accent_green" />
+
+                    <Button
+                        android:id="@+id/btnChangeModel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Change model"
+                        android:backgroundTint="@color/accent_blue"
+                        android:visibility="gone" />
+
+                </LinearLayout>
 
             </LinearLayout>
 

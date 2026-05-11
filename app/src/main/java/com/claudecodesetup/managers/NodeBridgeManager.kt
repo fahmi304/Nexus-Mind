@@ -66,6 +66,18 @@ class NodeBridgeManager(private val context: Context) {
         startNodeEngine()
     }
 
+    /** Re-write bridge_config.json from current prefs without restarting Node.js.
+     *  bridge.js reads the config fresh on every spawn, so the next message picks
+     *  up the new model immediately. */
+    fun refreshConfig(prefs: AppPreferences) {
+        writeConfig(
+            mode    = prefs.getLoginMode(),
+            apiKey  = prefs.getApiKey(),
+            modelId = prefs.getModelId(),
+            baseUrl = prefs.getBaseUrl()
+        )
+    }
+
     fun startSetup() {
         // Clearing setup_failed is the "retry" signal that bridge.js polls for.
         // Do NOT clear the log here — bridge.js owns the log and clears it at
