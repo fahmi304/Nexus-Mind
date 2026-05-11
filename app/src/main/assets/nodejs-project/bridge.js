@@ -909,12 +909,43 @@ function runMessage(message, socket) {
     // who called process.exit, so this always runs.
     // Also write [eval-ok] to stderr immediately so we know the eval string ran.
     const exitLogPath = JSON.stringify(SETUP_LOG);
+    // Runtime RegExp shim — installed BEFORE importing cli.js.
+    //
+    // patchCliJsForAndroid() patches static regex literals in cli.js at install
+    // time, but cli.js also has dynamic `new RegExp(pattern, 'u')` calls inside
+    // function bodies that only run during --print mode initialization (not during
+    // --version). Android's nodejs-mobile v18.20.4 V8 has no Unicode property
+    // escape support, so these throw "Invalid regular expression: \p{...}: Invalid
+    // property name" at runtime. The error propagates as an unhandled rejection
+    // and cli.js's own handler calls process.exit(1) with no output.
+    //
+    // Fix: wrap global.RegExp so any new RegExp(p, '...u...') that fails gets a
+    // safe fallback (/(?:)/ = matches empty string). The failing pattern is also
+    // appended to setup.log so we can add it to patchCliJsForAndroid() later.
+    const regexpShim =
+        '(function(){' +
+        'var _R=RegExp,_lp=' + exitLogPath + ';' +
+        'function Rc(p,f){' +
+        'try{return new _R(p,f);}' +
+        'catch(e){' +
+        'if(typeof f==="string"&&f.indexOf("u")>-1&&' +
+        '/Invalid|property/i.test(String(e.message||e))){' +
+        'try{require("fs").appendFileSync(_lp,"[regex-compat] "+String(p).slice(0,120)+"\\n");}catch(_){}' +
+        'var ff=String(f).replace(/u/g,"");' +
+        'try{return new _R("(?:)",ff);}catch(_){return new _R("(?:)");}' +
+        '}throw e;}' +
+        '}' +
+        'Rc.prototype=_R.prototype;' +
+        'try{Rc[Symbol.hasInstance]=function(v){return _R[Symbol.hasInstance](v);};}catch(_){}' +
+        'global.RegExp=Rc;' +
+        '})();';
     const evalCode =
         'process.stderr.write("[eval-ok]\\n");' +
         'process.on("exit",function(code){' +
         'try{var fs=require("fs");' +
         'fs.appendFileSync(' + exitLogPath + ',"[exit-event] code="+code+"\\n");}' +
         'catch(_e){}});' +
+        regexpShim +
         'process.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';' +
         'process.argv[2]="--print";' +
         'process.argv[3]=' + JSON.stringify(message) + ';' +
@@ -1124,10 +1155,11 @@ function openTcpBridge() {
                         'process.argv[2]="--version";process.argv.length=3;' +
                         'import(' + JSON.stringify(cliUrl2) + ')' +
                         '.catch(function(e){process.stderr.write("ERR:"+String(e)+"\\n");process.exit(1)});',
-                    () => runEvalStep('[5] -e import(cli.js) --print hello',
+                    () => runEvalStep('[5] -e import(cli.js) --print hello (+RegExp shim)',
                         'process.stderr.write("[eval-ok]\\n");' +
                         'process.on("exit",function(code){' +
                         'try{var fs=require("fs");fs.appendFileSync(' + JSON.stringify(SETUP_LOG) + ',"[exit-event] code="+code+"\\n");}catch(_e){}});' +
+                        regexpShim +
                         'process.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';' +
                         'process.argv[2]="--print";process.argv[3]="hello";process.argv.length=4;' +
                         'import(' + JSON.stringify(cliUrl2) + ')' +
