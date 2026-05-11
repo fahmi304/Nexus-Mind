@@ -812,28 +812,26 @@ function runMessage(message, socket) {
     log('[spawn] CLAUDE_CLI_exists=' + fs.existsSync(CLAUDE_CLI) + '\n');
     log('[spawn] message=' + message.slice(0, 80) + '\n');
 
-    // The launcher binary has no ESM support: it runs scripts in CJS-only mode
-    // and the C++ layer silently swallows import SyntaxErrors (exit code 1,
-    // no output). Dynamic import() from a CJS wrapper also fails.
+    // cli.js is an ES module ("type":"module" in its package.json) and uses
+    // top-level await. Node.js always treats .mjs files as ESM regardless of
+    // any surrounding package.json, so we write a tiny .mjs bootstrap that
+    // fixes process.argv and dynamically imports cli.js.
     //
-    // Fix: pass --input-type=module so Node.js reads an ES module from stdin.
-    // This bypasses all file-type / package.json detection and tells the runtime
-    // to treat the stdin bytes directly as ESM, which supports top-level await
-    // and all static import syntax.
-    //
-    // The bootstrap (written to stdin) sets process.argv so cli.js sees itself
-    // as argv[1] and gets '--print' + message in argv[2..], then awaits the
-    // dynamic import of cli.js via a file:// URL.
+    // Approaches that failed:
+    //   • Passing cli.js directly → CJS SyntaxError (silent exit 1)
+    //   • .cjs wrapper with import() → import() also failed silently
+    //   • --input-type=module + stdin → exit 1, no output (stdin pipe issue?)
     const cliUrl = 'file://' + CLAUDE_CLI;
-    const bootstrap =
+    const BOOT_MJS = path.join(FILES_DIR, 'claude-boot.mjs');
+    fs.writeFileSync(BOOT_MJS,
         'process.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';\n' +
         'process.argv[2]="--print";\n' +
         'process.argv[3]=' + JSON.stringify(message) + ';\n' +
         'process.argv.length=4;\n' +
-        'await import(' + JSON.stringify(cliUrl) + ');\n';
+        'await import(' + JSON.stringify(cliUrl) + ');\n'
+    );
 
-    const child = spawn(LAUNCHER, ['--input-type=module'], { env, cwd: FILES_DIR });
-    child.stdin.write(bootstrap);
+    const child = spawn(LAUNCHER, [BOOT_MJS], { env, cwd: FILES_DIR });
     child.stdin.end();
 
     // Collect stderr separately so we can include it in error messages
@@ -940,19 +938,20 @@ function openTcpBridge() {
                 }
                 // !test-cli — run cli.js --version (no API call) to check if the module loads
                 if (line === '!test-cli') {
-                    socket.write('\r\n\x1b[33mTesting cli.js load via --input-type=module (--version)…\x1b[0m\r\n');
+                    socket.write('\r\n\x1b[33mTesting cli.js load via .mjs bootstrap (--version)…\x1b[0m\r\n');
                     const env2 = buildEnv();
                     const cliUrl2 = 'file://' + CLAUDE_CLI;
-                    const bootstrap2 =
+                    const boot2 = path.join(FILES_DIR, 'claude-boot-test.mjs');
+                    fs.writeFileSync(boot2,
                         'process.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';\n' +
                         'process.argv[2]="--version";\n' +
                         'process.argv.length=3;\n' +
-                        'await import(' + JSON.stringify(cliUrl2) + ');\n';
+                        'await import(' + JSON.stringify(cliUrl2) + ');\n'
+                    );
                     let out2 = '', err2 = '';
                     let c2;
                     try {
-                        c2 = spawn(LAUNCHER, ['--input-type=module'], { env: env2, cwd: FILES_DIR });
-                        c2.stdin.write(bootstrap2);
+                        c2 = spawn(LAUNCHER, [boot2], { env: env2, cwd: FILES_DIR });
                         c2.stdin.end();
                     } catch (e) {
                         try { socket.write('\x1b[31mSpawn error: ' + e.message + '\x1b[0m\r\n'); } catch (_) {}
