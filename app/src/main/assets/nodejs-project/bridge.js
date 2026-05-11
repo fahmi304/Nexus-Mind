@@ -812,8 +812,23 @@ function runMessage(message, socket) {
     log('[spawn] CLAUDE_CLI_exists=' + fs.existsSync(CLAUDE_CLI) + '\n');
     log('[spawn] message=' + message.slice(0, 80) + '\n');
 
-    // Try passing message as positional arg (primary) — claude --print <msg>
-    const child = spawn(LAUNCHER, [CLAUDE_CLI, '--print', message], { env, cwd: FILES_DIR });
+    // The launcher binary runs scripts in CJS mode and does not honour the
+    // package.json "type":"module" field that cli.js requires. Passing cli.js
+    // directly → SyntaxError on the top-level `import` statements → silent
+    // exit code 1 (the launcher's C++ layer swallows the error).
+    //
+    // Fix: write a tiny CJS bootstrap (runner.cjs) that:
+    //  1. Corrects process.argv[1] so cli.js sees itself as the entry script.
+    //  2. Uses dynamic import() — which CAN load ESM from CJS — to start cli.js.
+    const RUNNER = path.join(FILES_DIR, 'claude-runner.cjs');
+    fs.writeFileSync(RUNNER,
+        '"use strict";\n' +
+        'process.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';\n' +
+        'import(' + JSON.stringify('file://' + CLAUDE_CLI) + ')' +
+        '.catch(function(e){process.stderr.write("runner-import-error: "+String(e)+"\n");process.exit(1)});\n'
+    );
+
+    const child = spawn(LAUNCHER, [RUNNER, '--print', message], { env, cwd: FILES_DIR });
     child.stdin.end();
 
     // Collect stderr separately so we can include it in error messages
@@ -920,12 +935,18 @@ function openTcpBridge() {
                 }
                 // !test-cli — run cli.js --version (no API call) to check if the module loads
                 if (line === '!test-cli') {
-                    socket.write('\r\n\x1b[33mTesting cli.js module load (--version)…\x1b[0m\r\n');
+                    socket.write('\r\n\x1b[33mTesting cli.js load via CJS runner (--version)…\x1b[0m\r\n');
                     const env2 = buildEnv();
+                    const runner2 = path.join(FILES_DIR, 'claude-runner.cjs');
+                    fs.writeFileSync(runner2,
+                        '"use strict";\nprocess.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';\n' +
+                        'import(' + JSON.stringify('file://' + CLAUDE_CLI) + ')' +
+                        '.catch(function(e){process.stderr.write("runner-import-error: "+String(e)+"\n");process.exit(1)});\n'
+                    );
                     let out2 = '', err2 = '';
                     let c2;
                     try {
-                        c2 = spawn(LAUNCHER, [CLAUDE_CLI, '--version'], { env: env2, cwd: FILES_DIR });
+                        c2 = spawn(LAUNCHER, [runner2, '--version'], { env: env2, cwd: FILES_DIR });
                     } catch (e) {
                         try { socket.write('\x1b[31mSpawn error: ' + e.message + '\x1b[0m\r\n'); } catch (_) {}
                         continue;
