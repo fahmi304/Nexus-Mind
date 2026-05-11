@@ -345,6 +345,9 @@ function waitForRetry(callback) {
 
 function startProxyServer(onReady) {
     const proxy = http.createServer((req, res) => {
+        // Log every incoming request so we can see if cli.js reaches the proxy at all.
+        log('[proxy] ' + req.method + ' ' + req.url + '\n');
+
         // POST /v1/messages/count_tokens — estimate locally, no API call needed
         if (req.method === 'POST' && req.url.includes('/count_tokens')) {
             let body = '';
@@ -900,24 +903,24 @@ function runMessage(message, socket) {
     // So we pass the entire bootstrap as a -e string: set process.argv,
     // then import cli.js as a file:// URL (which honours "type":"module").
     const cliUrl = 'file://' + CLAUDE_CLI;
-    // Intercept process.exit so we can log the call site before the process dies.
-    // This is the only reliable way to see WHERE a silent exit(1) originates.
+    // Use process.on('exit', ...) instead of wrapping process.exit:
+    // cli.js overwrites process.exit during its own initialization, which silently
+    // swallows our wrapper. The 'exit' event fires at the OS level regardless of
+    // who called process.exit, so this always runs.
+    // Also write [eval-ok] to stderr immediately so we know the eval string ran.
     const exitLogPath = JSON.stringify(SETUP_LOG);
     const evalCode =
-        '(function(){' +
-        'var _origExit=process.exit.bind(process);' +
-        'process.exit=function(code){' +
+        'process.stderr.write("[eval-ok]\\n");' +
+        'process.on("exit",function(code){' +
         'try{var fs=require("fs");' +
-        'fs.appendFileSync(' + exitLogPath + ',"[exit-intercept] code="+code+" stack="+new Error().stack.slice(0,600)+"\\n");}' +
-        'catch(_e){}' +
-        '_origExit(code);};' +
-        '})();' +
+        'fs.appendFileSync(' + exitLogPath + ',"[exit-event] code="+code+"\\n");}' +
+        'catch(_e){}});' +
         'process.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';' +
         'process.argv[2]="--print";' +
         'process.argv[3]=' + JSON.stringify(message) + ';' +
         'process.argv.length=4;' +
         'import(' + JSON.stringify(cliUrl) + ')' +
-        '.catch(function(e){process.stderr.write("import-err:"+String(e)+"\n");process.exit(1)});';
+        '.catch(function(e){process.stderr.write("import-err:"+String(e)+"\\n");process.exit(1)});';
 
     const child = spawn(LAUNCHER, ['-e', evalCode], { env, cwd: FILES_DIR });
     child.stdin.end();
@@ -1100,6 +1103,16 @@ function openTcpBridge() {
                     const t2 = path.join(FILES_DIR, 'diag2.mjs');
                     const t3 = path.join(FILES_DIR, 'diag3.mjs');
 
+                    // Step 6: net connectivity test — probe port 8082 from inside the child.
+                    // If the child process can't connect to the proxy, this will say FAIL.
+                    var netTestCode =
+                        'var net=require("net");' +
+                        'var c=net.connect(' + PROXY_PORT + ',"' + HOST + '",function(){' +
+                        'process.stdout.write("net-ok\\n");c.destroy();process.exit(0);});' +
+                        'c.on("error",function(e){' +
+                        'process.stdout.write("net-fail:"+e.message+"\\n");process.exit(1);});' +
+                        'setTimeout(function(){process.stdout.write("net-timeout\\n");process.exit(1);},5000);';
+
                     runFileStep('[1] CJS .js file', t1,
                         '"use strict"; process.stdout.write("cjs-ok\\n");\n',
                     () => runFileStep('[2] .mjs (no await)', t2,
@@ -1112,11 +1125,16 @@ function openTcpBridge() {
                         'import(' + JSON.stringify(cliUrl2) + ')' +
                         '.catch(function(e){process.stderr.write("ERR:"+String(e)+"\\n");process.exit(1)});',
                     () => runEvalStep('[5] -e import(cli.js) --print hello',
+                        'process.stderr.write("[eval-ok]\\n");' +
+                        'process.on("exit",function(code){' +
+                        'try{var fs=require("fs");fs.appendFileSync(' + JSON.stringify(SETUP_LOG) + ',"[exit-event] code="+code+"\\n");}catch(_e){}});' +
                         'process.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';' +
                         'process.argv[2]="--print";process.argv[3]="hello";process.argv.length=4;' +
                         'import(' + JSON.stringify(cliUrl2) + ')' +
                         '.catch(function(e){process.stderr.write("ERR:"+String(e)+"\\n");process.exit(1)});',
-                    () => { socket.write('\x1b[33mDone. Check !log for details.\x1b[0m\r\n'); })))));
+                    () => runEvalStep('[6] net: connect to proxy port ' + PROXY_PORT,
+                        netTestCode,
+                    () => { socket.write('\x1b[33mDone. Check !log for details.\x1b[0m\r\n'); }))))));
                     continue;
                 }
 
