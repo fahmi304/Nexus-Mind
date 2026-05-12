@@ -104,6 +104,198 @@ function log(msg) {
     process.stdout.write(line);
 }
 
+// ─── Agentic mode ─────────────────────────────────────────────────────────────
+// When enabled, user messages go through a direct tool-calling loop instead of
+// claude --print. Tools: bash, read_file, write_file, list_dir.
+
+let agenticEnabled = false;
+
+const AGENTIC_TOOLS = [
+    {
+        name: 'bash',
+        description: 'Run a shell command on the Android device. Use for file ops, git, npm, etc.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                command: { type: 'string', description: 'Shell command to execute' },
+                cwd: { type: 'string', description: 'Working directory (optional)' }
+            },
+            required: ['command']
+        }
+    },
+    {
+        name: 'read_file',
+        description: 'Read the contents of a file on the device',
+        input_schema: {
+            type: 'object',
+            properties: { path: { type: 'string', description: 'File path (absolute or relative to cwd)' } },
+            required: ['path']
+        }
+    },
+    {
+        name: 'write_file',
+        description: 'Write content to a file (creates or overwrites)',
+        input_schema: {
+            type: 'object',
+            properties: {
+                path: { type: 'string', description: 'File path' },
+                content: { type: 'string', description: 'Content to write' }
+            },
+            required: ['path', 'content']
+        }
+    },
+    {
+        name: 'list_dir',
+        description: 'List files and folders in a directory',
+        input_schema: {
+            type: 'object',
+            properties: { path: { type: 'string', description: 'Directory path' } },
+            required: ['path']
+        }
+    }
+];
+
+function executeTool(name, input, cwd) {
+    return new Promise(resolve => {
+        const env = buildEnv();
+        if (name === 'bash') {
+            const cmd = input.command || '';
+            const workDir = input.cwd ? path.resolve(cwd, input.cwd) : cwd;
+            let out = '', err = '';
+            let child;
+            try { child = spawn('/system/bin/sh', ['-c', cmd], { env, cwd: workDir }); }
+            catch(e) { resolve({ content: 'spawn error: ' + e.message, isError: true }); return; }
+            const tid = setTimeout(() => {
+                try { child.kill(); } catch(_) {}
+                resolve({ content: (out + err).trim() + '\n[timeout 30s]', isError: true });
+            }, 30000);
+            child.stdout.on('data', d => { out += d.toString(); });
+            child.stderr.on('data', d => { err += d.toString(); });
+            child.on('close', code => {
+                clearTimeout(tid);
+                const combined = (out + (err ? '\nstderr:\n' + err : '')).trim();
+                resolve({ content: combined || '[exit ' + code + ']', isError: code !== 0 });
+            });
+        } else if (name === 'read_file') {
+            try {
+                const fp = path.resolve(cwd, input.path);
+                const content = fs.readFileSync(fp, 'utf8');
+                resolve({ content: content.slice(0, 50000), isError: false });
+            } catch(e) { resolve({ content: 'Error: ' + e.message, isError: true }); }
+        } else if (name === 'write_file') {
+            try {
+                const fp = path.resolve(cwd, input.path);
+                fs.mkdirSync(path.dirname(fp), { recursive: true });
+                fs.writeFileSync(fp, input.content, 'utf8');
+                resolve({ content: 'Wrote ' + fp, isError: false });
+            } catch(e) { resolve({ content: 'Error: ' + e.message, isError: true }); }
+        } else if (name === 'list_dir') {
+            try {
+                const dp = path.resolve(cwd, input.path);
+                const entries = fs.readdirSync(dp, { withFileTypes: true });
+                const lines = entries.map(e => (e.isDirectory() ? 'd ' : 'f ') + e.name).join('\n');
+                resolve({ content: lines || '(empty)', isError: false });
+            } catch(e) { resolve({ content: 'Error: ' + e.message, isError: true }); }
+        } else {
+            resolve({ content: 'Unknown tool: ' + name, isError: true });
+        }
+    });
+}
+
+function callProxyOnce(messages, tools) {
+    return new Promise((resolve, reject) => {
+        const cfg  = readConfig();
+        const body = JSON.stringify({
+            model: 'claude-3-5-sonnet-20241022',
+            max_tokens: 4096,
+            messages,
+            tools,
+            stream: false
+        });
+        const apiKey = cfg.mode === 'subscription'
+            ? (cfg.apiKey || 'sk-ant-key')
+            : 'sk-ant-proxy000';
+        const options = {
+            hostname: HOST, port: PROXY_PORT,
+            path: '/v1/messages', method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+                'Content-Length': Buffer.byteLength(body)
+            }
+        };
+        const req = http.request(options, res => {
+            let data = '';
+            res.on('data', d => { data += d; });
+            res.on('end', () => {
+                try { resolve(JSON.parse(data)); }
+                catch(e) { reject(new Error('Bad JSON: ' + data.slice(0, 200))); }
+            });
+        });
+        const tid = setTimeout(() => { req.destroy(); reject(new Error('Proxy timeout')); }, 90000);
+        req.on('error', e => { clearTimeout(tid); reject(e); });
+        req.on('close', () => clearTimeout(tid));
+        req.write(body); req.end();
+    });
+}
+
+async function runAgentic(socket, userMessage, history, shellCwd) {
+    const MAX_TURNS = 12;
+    const messages = history.map(h => ({ role: h.role, content: h.content }));
+    messages.push({ role: 'user', content: userMessage });
+
+    try { socket.write('\x1b]9;thinking-start\x07'); } catch(_) {}
+    let thinkingDone = false;
+    let assistantText = '';
+
+    try {
+        for (let turn = 0; turn < MAX_TURNS; turn++) {
+            const resp = await callProxyOnce(messages, AGENTIC_TOOLS);
+            if (!resp || !resp.content) throw new Error('Empty response from proxy');
+
+            messages.push({ role: 'assistant', content: resp.content });
+
+            for (const block of resp.content) {
+                if (block.type === 'text' && block.text) {
+                    if (!thinkingDone) {
+                        thinkingDone = true;
+                        try { socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
+                    }
+                    try { socket.write(block.text); } catch(_) {}
+                    assistantText += block.text;
+                }
+            }
+
+            if (resp.stop_reason === 'end_turn' || resp.stop_reason === 'stop_sequence') break;
+
+            const toolUses = resp.content.filter(b => b.type === 'tool_use');
+            if (!toolUses.length) break;
+
+            const toolResults = [];
+            for (const tu of toolUses) {
+                try { socket.write('\r\n\x1b[36m▶ ' + tu.name + '  ' + JSON.stringify(tu.input) + '\x1b[0m\r\n'); } catch(_) {}
+                const result = await executeTool(tu.name, tu.input, shellCwd);
+                const preview = result.content.slice(0, 2000);
+                try { socket.write('\x1b[2m' + preview + '\x1b[0m\r\n'); } catch(_) {}
+                log('[agentic] tool=' + tu.name + ' isError=' + result.isError + '\n');
+                toolResults.push({
+                    type: 'tool_result', tool_use_id: tu.id,
+                    content: result.content.slice(0, 8000),
+                    is_error: result.isError
+                });
+            }
+            messages.push({ role: 'user', content: toolResults });
+        }
+    } catch(e) {
+        log('[agentic] error: ' + e.message + '\n');
+        try { socket.write('\r\n\x1b[31m[agentic error] ' + e.message + '\x1b[0m\r\n'); } catch(_) {}
+    }
+
+    if (!thinkingDone) { try { socket.write('\x1b]9;thinking-done\x07'); } catch(_) {} }
+    return assistantText;
+}
+
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 function readConfig() {
@@ -1271,6 +1463,47 @@ function openTcpBridge() {
                     } catch (_) {}
                     continue;
                 }
+                // !gh-auth [token] — store/show GitHub PAT for git push/clone authentication
+                if (line.startsWith('!gh-auth')) {
+                    const token = line.slice(8).trim();
+                    const tokenFile = path.join(FILES_DIR, '.gh_token');
+                    if (!token) {
+                        const exists = fs.existsSync(tokenFile);
+                        try {
+                            socket.write(exists
+                                ? '\x1b[32m✓ GitHub token is configured.\x1b[0m Use \x1b[33m!gh-auth <new_token>\x1b[0m to update.\r\n\r\n'
+                                : '\x1b[33mUsage: !gh-auth <github_personal_access_token>\x1b[0m\r\n' +
+                                  'Create one at github.com/settings/tokens (needs \x1b[1mrepo\x1b[0m scope)\r\n\r\n'
+                            );
+                        } catch(_) {}
+                        continue;
+                    }
+                    try {
+                        fs.writeFileSync(tokenFile, token, { mode: 0o600 });
+                        try { socket.write('\x1b[32m✓ GitHub token saved.\x1b[0m\r\n$ git push / $ git clone (private repos) now work.\r\n\r\n'); } catch(_) {}
+                        log('[gh-auth] token saved\n');
+                    } catch(e) {
+                        try { socket.write('\x1b[31m✗ ' + e.message + '\x1b[0m\r\n\r\n'); } catch(_) {}
+                    }
+                    continue;
+                }
+
+                // !agentic [on|off] — toggle agentic tool-calling mode
+                if (line.startsWith('!agentic')) {
+                    const arg = line.slice(8).trim().toLowerCase();
+                    if (arg === 'on')  agenticEnabled = true;
+                    else if (arg === 'off') agenticEnabled = false;
+                    else agenticEnabled = !agenticEnabled;
+                    try {
+                        socket.write(agenticEnabled
+                            ? '\x1b[32m✓ Agentic mode ON.\x1b[0m The AI can now run bash commands, read/write files.\r\n' +
+                              '\x1b[2mTurn off with !agentic off  |  Works best with Gemini / Anthropic providers.\x1b[0m\r\n\r\n'
+                            : '\x1b[33m✗ Agentic mode OFF.\x1b[0m Back to standard --print mode.\r\n\r\n'
+                        );
+                    } catch(_) {}
+                    continue;
+                }
+
                 // !install-git — install isomorphic-git as a $ git command (pure JS, no native binary)
                 if (line === '!install-git') {
                     const gitBin  = path.join(FILES_DIR, 'bin', 'git');
@@ -1309,7 +1542,10 @@ function openTcpBridge() {
 'const sub  = args[0];',
 'if (!sub || sub === "--version") { console.log("git version 2.x (isomorphic-git)"); process.exit(0); }',
 'const author = { name: process.env.GIT_AUTHOR_NAME || "user", email: process.env.GIT_AUTHOR_EMAIL || "user@device" };',
-'const opts = { fs, http, dir, author };',
+'const TOKEN_FILE = ' + JSON.stringify(path.join(FILES_DIR, '.gh_token')) + ';',
+'const ghToken = (() => { try { return fs.readFileSync(TOKEN_FILE, "utf8").trim(); } catch(_) { return ""; } })();',
+'const onAuth = ghToken ? () => ({ username: "x-token-auth", password: ghToken }) : undefined;',
+'const opts = { fs, http, dir, author, ...(onAuth ? { onAuth } : {}) };',
 'function run(p) { p.then(r => { if (r !== undefined) console.log(JSON.stringify(r, null, 2)); }).catch(e => { process.stderr.write(e.message + "\\n"); process.exit(1); }); }',
 'switch(sub) {',
 '  case "init":    run(git.init(opts)); break;',
@@ -1361,6 +1597,8 @@ function openTcpBridge() {
                             '  \x1b[33m!test\x1b[0m         Test Node.js launcher\r\n' +
                             '  \x1b[33m!test-cli\x1b[0m     Run module-loader diagnostic\r\n' +
                             '  \x1b[33m!install-git\x1b[0m  Install git (isomorphic-git) for $ git commands\r\n' +
+                            '  \x1b[33m!gh-auth <tok>\x1b[0m Save GitHub token for git push/clone\r\n' +
+                            '  \x1b[33m!agentic [on|off]\x1b[0m Toggle agentic tool-calling mode\r\n' +
                             '  \x1b[33m!help\x1b[0m         Show this message\r\n\r\n'
                         );
                     } catch (_) {}
@@ -1542,6 +1780,24 @@ function openTcpBridge() {
                     busy = false;
                 }
 
+                // ── Agentic mode: direct tool-calling loop via proxy ──────────
+                if (agenticEnabled) {
+                    busy = true;
+                    const agMsg = line;
+                    const agCwd = shellCwd;
+                    const agHist = history.slice();
+                    runAgentic(socket, agMsg, agHist, agCwd).then(reply => {
+                        if (reply) {
+                            history.push({ role: 'user',      content: agMsg });
+                            history.push({ role: 'assistant', content: reply });
+                            if (history.length > MAX_HISTORY) history = history.slice(-MAX_HISTORY);
+                        }
+                        busy = false; current = null;
+                    }).catch(() => { busy = false; current = null; });
+                    continue;
+                }
+
+                // ── Standard --print mode ─────────────────────────────────────
                 // Signal terminal HTML to show animated thinking indicator
                 try { socket.write('\x1b]9;thinking-start\x07'); } catch (_) {}
 

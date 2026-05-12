@@ -379,6 +379,7 @@ html, body {
 <div id="toolbar">
   <button class="tb-btn tb-accent" id="btn-yes">Yes</button>
   <button class="tb-btn tb-accent" id="btn-no">No</button>
+  <button class="tb-btn tb-accent" id="btn-shell">$ </button>
   <button class="tb-btn" id="btn-ctrl-c">Ctrl+C</button>
   <button class="tb-btn" id="btn-tab">Tab</button>
   <button class="tb-btn" id="btn-enter">↵</button>
@@ -838,6 +839,10 @@ function tbRaw(key){
 }
 document.getElementById('btn-yes').addEventListener('click',function(){submitLine('y');});
 document.getElementById('btn-no').addEventListener('click',function(){submitLine('n');});
+document.getElementById('btn-shell').addEventListener('click',function(){
+  if(!inputBuffer.startsWith('$ ')){inputBuffer='$ '+inputBuffer;}
+  ghost.value=inputBuffer;updateInputDisp();ghost.focus();
+});
 document.getElementById('btn-ctrl-c').addEventListener('click',function(){tbRaw('\x03');});
 document.getElementById('btn-tab').addEventListener('click',function(){tbRaw('\t');});
 document.getElementById('btn-enter').addEventListener('click',function(){tbRaw('\r');});
