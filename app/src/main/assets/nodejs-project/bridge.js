@@ -656,21 +656,6 @@ function anthToOai(a, model) {
     if (a.temperature !== undefined) req.temperature = a.temperature;
     if (a.stop_sequences && a.stop_sequences.length) req.stop = a.stop_sequences;
 
-    // Translate Anthropic tool definitions → OpenAI tools format
-    if (a.tools && a.tools.length > 0) {
-        req.tools = a.tools.map(t => ({
-            type: 'function',
-            function: {
-                name: t.name,
-                description: t.description || '',
-                parameters: t.input_schema || { type: 'object', properties: {} }
-            }
-        }));
-        req.tool_choice = 'auto';
-        log('[proxy] forwarding ' + a.tools.length + ' tool(s): ' +
-            a.tools.map(t => t.name).join(', ') + '\n');
-    }
-
     return req;
 }
 
