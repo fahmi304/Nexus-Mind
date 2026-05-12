@@ -1550,15 +1550,21 @@ function openTcpBridge() {
         let   history   = loadSession();  // load persisted history from last session
         let   shellCwd  = FILES_DIR;  // working directory for $ shell commands
 
+        let contextBlock = '';   // injected into next message via !context command
+
         const startCfg = readConfig();
         const modeLabel = startCfg.mode === 'subscription' ? 'Anthropic' : (startCfg.providerUrl || 'proxy');
         const agentTag  = agenticEnabled ? '  \x1b[35m[AGENTIC]\x1b[0m' : '';
         const resumed   = history.length > 0 ? '  \x1b[2m(resumed ' + Math.floor(history.length/2) + ' turns)\x1b[0m' : '';
+        const agenticHint = !agenticEnabled
+            ? '\x1b[2mTip: type \x1b[33m!agentic on\x1b[0m\x1b[2m to let Claude run bash & edit files. Type \x1b[33m!help\x1b[0m\x1b[2m for all commands.\x1b[0m\r\n'
+            : '';
         socket.write(
             '\r\n\x1b[32mClaude Code ready.\x1b[0m Type a message or \x1b[33m$ command\x1b[0m to run shell.\r\n' +
             '\x1b[2mProvider: ' + modeLabel +
             '  Model: ' + (startCfg.modelId || 'auto') +
-            '  Key: ' + sanitizeKey(startCfg.apiKey) + '\x1b[0m' + agentTag + resumed + '\r\n\r\n'
+            '  Key: ' + sanitizeKey(startCfg.apiKey) + '\x1b[0m' + agentTag + resumed + '\r\n' +
+            agenticHint + '\r\n'
         );
 
         // Run launcher self-test once per connection — helps diagnose
@@ -1656,6 +1662,70 @@ function openTcpBridge() {
                         log('[gh-auth] token saved\n');
                     } catch(e) {
                         try { socket.write('\x1b[31m✗ ' + e.message + '\x1b[0m\r\n\r\n'); } catch(_) {}
+                    }
+                    continue;
+                }
+
+                // !context [path|clear] — set working context injected into next message
+                if (line.startsWith('!context')) {
+                    const arg = line.slice(8).trim();
+                    if (arg === 'clear' || arg === '') {
+                        if (!arg) {
+                            // No arg → show current cwd tree as context
+                            const ctxPath = shellCwd;
+                            try {
+                                const entries = fs.readdirSync(ctxPath, { withFileTypes: true });
+                                const fileList = entries
+                                    .map(e => (e.isDirectory() ? '  📂 ' : '  📄 ') + e.name)
+                                    .slice(0, 60).join('\n');
+                                let ctx = '📁 ' + ctxPath + '\n' + fileList + '\n\n';
+                                // Read small key files automatically
+                                const keyFiles = ['README.md', 'CLAUDE.md', 'package.json', '.env.example', 'Makefile'];
+                                for (const fn of keyFiles) {
+                                    const fp = path.join(ctxPath, fn);
+                                    try {
+                                        const stat = fs.statSync(fp);
+                                        if (stat.isFile() && stat.size < 8192) {
+                                            ctx += '── ' + fn + ' ──\n' + fs.readFileSync(fp, 'utf8').slice(0, 3000) + '\n\n';
+                                        }
+                                    } catch (_) {}
+                                }
+                                contextBlock = ctx;
+                                socket.write('\x1b[32m✓ Context loaded: ' + ctxPath + ' (' + entries.length + ' items)\x1b[0m\r\n' +
+                                    '\x1b[2m' + fileList.slice(0, 300).replace(/\n/g, '\r\n') + '\x1b[0m\r\n' +
+                                    '\x1b[2mContext will be sent with your next message. Type !context clear to reset.\x1b[0m\r\n\r\n');
+                            } catch (e) {
+                                socket.write('\x1b[31m✗ Context error: ' + e.message + '\x1b[0m\r\n\r\n');
+                            }
+                        } else {
+                            contextBlock = '';
+                            socket.write('\x1b[32m✓ Context cleared.\x1b[0m\r\n\r\n');
+                        }
+                    } else {
+                        // !context <path>
+                        const ctxPath = path.isAbsolute(arg) ? arg : path.join(shellCwd, arg);
+                        try {
+                            const entries = fs.readdirSync(ctxPath, { withFileTypes: true });
+                            const fileList = entries
+                                .map(e => (e.isDirectory() ? '  📂 ' : '  📄 ') + e.name)
+                                .slice(0, 60).join('\n');
+                            let ctx = '📁 ' + ctxPath + '\n' + fileList + '\n\n';
+                            const keyFiles = ['README.md', 'CLAUDE.md', 'package.json', '.env.example', 'Makefile'];
+                            for (const fn of keyFiles) {
+                                const fp = path.join(ctxPath, fn);
+                                try {
+                                    const stat = fs.statSync(fp);
+                                    if (stat.isFile() && stat.size < 8192) {
+                                        ctx += '── ' + fn + ' ──\n' + fs.readFileSync(fp, 'utf8').slice(0, 3000) + '\n\n';
+                                    }
+                                } catch (_) {}
+                            }
+                            contextBlock = ctx;
+                            socket.write('\x1b[32m✓ Context loaded: ' + ctxPath + '\x1b[0m\r\n' +
+                                '\x1b[2m' + fileList.slice(0, 300).replace(/\n/g, '\r\n') + '\x1b[0m\r\n\r\n');
+                        } catch (e) {
+                            socket.write('\x1b[31m✗ Context error: ' + e.message + '\x1b[0m\r\n\r\n');
+                        }
                     }
                     continue;
                 }
@@ -1786,6 +1856,8 @@ function openTcpBridge() {
                             '  Type normally to chat with the AI model\r\n' +
                             '  \x1b[33m!clear\x1b[0m        Clear conversation history\r\n' +
                             '  \x1b[33m!history\x1b[0m      Show number of turns in memory\r\n' +
+                            '  \x1b[33m!context [path]\x1b[0m Load directory tree + key files as context for next message\r\n' +
+                            '  \x1b[33m!context clear\x1b[0m Remove loaded context\r\n' +
                             '\r\n\x1b[1mDiagnostics:\x1b[0m\r\n' +
                             '  \x1b[33m!log [N]\x1b[0m      Show last N lines of setup.log (default 80)\r\n' +
                             '  \x1b[33m!ver\x1b[0m          Show version and config info\r\n' +
@@ -1979,7 +2051,8 @@ function openTcpBridge() {
                 // ── Agentic mode: streaming tool-calling loop via proxy ───────
                 if (agenticEnabled) {
                     busy = true;
-                    const agMsg = line;
+                    const agMsg = contextBlock ? '[Context]\n' + contextBlock + '\n[Message]\n' + line : line;
+                    contextBlock = '';
                     runAgentic(socket, agMsg, history.slice(), shellCwd).then(result => {
                         if (result.text) {
                             history.push({ role: 'user',      content: agMsg });
@@ -2001,7 +2074,9 @@ function openTcpBridge() {
                 busy = true;
                 let responseStarted = false;
                 let responseBuf = '';     // capture stdout for history
-                current = runMessage(line, socket, history);
+                const printMsg = contextBlock ? '[Context]\n' + contextBlock + '\n[Message]\n' + line : line;
+                contextBlock = '';
+                current = runMessage(printMsg, socket, history);
 
                 // Detect whether any output actually arrived (used for error diagnosis)
                 current.stdout.once('data', () => { responseStarted = true; });

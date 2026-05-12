@@ -22,6 +22,7 @@ import androidx.lifecycle.lifecycleScope
 import com.claudecodesetup.data.AppPreferences
 import com.claudecodesetup.databinding.ActivityTerminalBinding
 import com.claudecodesetup.services.ClaudeService
+import com.claudecodesetup.ui.ComposeActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -224,7 +225,7 @@ class TerminalActivity : AppCompatActivity() {
             setTextColor(getColor(R.color.text_secondary))
 
             setOnClickListener { switchToSession(session.id, replay = true) }
-            setOnLongClickListener { confirmCloseSession(session.id); true }
+            setOnLongClickListener { showSessionOptionsDialog(session.id); true }
         }
 
         tabButtons[session.id] = btn
@@ -307,6 +308,40 @@ class TerminalActivity : AppCompatActivity() {
         }
     }
 
+    private fun showSessionOptionsDialog(sessionId: Int) {
+        val session = claudeService?.getSession(sessionId) ?: return
+        AlertDialog.Builder(this)
+            .setTitle(session.name)
+            .setItems(arrayOf("Rename", "Close")) { _, which ->
+                when (which) {
+                    0 -> showRenameDialog(sessionId, session.name)
+                    1 -> confirmCloseSession(sessionId)
+                }
+            }
+            .show()
+    }
+
+    private fun showRenameDialog(sessionId: Int, currentName: String) {
+        val input = android.widget.EditText(this).apply {
+            setText(currentName)
+            selectAll()
+            setPadding(64, 32, 64, 32)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Rename Session")
+            .setView(input)
+            .setPositiveButton("Rename") { _, _ ->
+                val newName = input.text.toString().trim()
+                if (newName.isNotEmpty()) {
+                    claudeService?.getSession(sessionId)?.name = newName
+                    tabButtons[sessionId]?.text = newName
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun confirmCloseSession(sessionId: Int) {
         if ((claudeService?.getAllSessions()?.size ?: 0) <= 1) {
             AlertDialog.Builder(this)
@@ -350,6 +385,13 @@ class TerminalActivity : AppCompatActivity() {
     private fun setupHeaderButtons() {
         binding.btnSettings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
+            overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
+        }
+        // Tapping the model pill navigates directly to the model picker
+        binding.tvModelName.setOnClickListener {
+            startActivity(Intent(this, ComposeActivity::class.java).apply {
+                putExtra("start_at", "picker")
+            })
             overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
         }
     }
@@ -453,6 +495,18 @@ class TerminalActivity : AppCompatActivity() {
             cm.setPrimaryClip(android.content.ClipData.newPlainText("Claude Output", text))
             runOnUiThread {
                 android.widget.Toast.makeText(this@TerminalActivity, "Copied", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        @JavascriptInterface
+        fun shareText(text: String) {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, text)
+                putExtra(Intent.EXTRA_SUBJECT, "Claude Code Conversation")
+            }
+            runOnUiThread {
+                startActivity(Intent.createChooser(intent, "Export Conversation"))
             }
         }
 

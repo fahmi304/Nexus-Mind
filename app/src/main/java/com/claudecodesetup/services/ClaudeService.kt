@@ -50,6 +50,8 @@ class ClaudeService : LifecycleService() {
     private val responseNotifHandler = Handler(Looper.getMainLooper())
     private val responseNotifRunnable = Runnable { fireResponseNotification() }
     private var responseNotifPending = false
+    // Accumulates the first 200 chars of response text (ANSI stripped) for notification body.
+    private val responsePreviewBuf = StringBuilder()
 
     // ─── Callbacks (set by TerminalActivity) ─────────────────────────────────
 
@@ -59,7 +61,7 @@ class ClaudeService : LifecycleService() {
 
     // ─── Session model ────────────────────────────────────────────────────────
 
-    class ClaudeSession(val id: Int, val name: String) {
+    class ClaudeSession(val id: Int, var name: String) {
         var socket: Socket? = null
         var outputStream: OutputStream? = null
         var alive: Boolean = false
@@ -257,10 +259,19 @@ class ClaudeService : LifecycleService() {
                 session.appendOutput(chunk)
                 onOutput?.invoke(session.id, chunk)
                 // Schedule a background notification if the user isn't watching.
+                // Accumulate a preview snippet (ANSI stripped) for the notification body.
                 // Debounced: fires 1.5 s after the last chunk (response likely done).
-                if (!isActivityVisible && !responseNotifPending) {
-                    responseNotifPending = true
-                    responseNotifHandler.postDelayed(responseNotifRunnable, 1500)
+                if (!isActivityVisible) {
+                    if (responsePreviewBuf.length < 200) {
+                        val clean = chunk.replace(Regex("\\[[0-9;]*[a-zA-Z]"), "")
+                            .replace(Regex("][^]*"), "")
+                            .replace('\r', ' ')
+                        responsePreviewBuf.append(clean)
+                    }
+                    if (!responseNotifPending) {
+                        responseNotifPending = true
+                        responseNotifHandler.postDelayed(responseNotifRunnable, 1500)
+                    }
                 }
             }
         } catch (_: IOException) {
@@ -336,12 +347,16 @@ class ClaudeService : LifecycleService() {
     fun cancelResponseNotification() {
         responseNotifHandler.removeCallbacks(responseNotifRunnable)
         responseNotifPending = false
+        responsePreviewBuf.clear()
         getSystemService(NotificationManager::class.java).cancel(RESPONSE_NOTIF_ID)
     }
 
     private fun fireResponseNotification() {
         responseNotifPending = false
         if (isActivityVisible) return
+        val preview = responsePreviewBuf.toString().take(120).trimEnd().replace('\n', ' ')
+        responsePreviewBuf.clear()
+        val bodyText = if (preview.isNotBlank()) preview else "AI response ready — tap to view"
         val openIntent = PendingIntent.getActivity(
             this, 2,
             Intent(this, TerminalActivity::class.java).apply {
@@ -352,7 +367,7 @@ class ClaudeService : LifecycleService() {
         val notif = Notification.Builder(this, ClaudeApp.CHANNEL_RESPONSE)
             .setSmallIcon(R.drawable.ic_terminal)
             .setContentTitle("Claude Code")
-            .setContentText("AI response ready — tap to view")
+            .setContentText(bodyText)
             .setContentIntent(openIntent)
             .setAutoCancel(true)
             .build()

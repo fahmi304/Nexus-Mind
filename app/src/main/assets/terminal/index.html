@@ -387,6 +387,32 @@ html, body {
   border-color: rgba(100,64,255,0.3);
 }
 .tb-accent:active { background: rgba(100,64,255,0.32); }
+
+/* ── Code block copy button ──────────────────────────────────────────────── */
+.code-wrap { position: relative; }
+.code-copy-btn {
+  position: absolute;
+  top: 6px; right: 6px;
+  background: rgba(255,255,255,0.08);
+  color: rgba(200,200,255,0.6);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 5px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-family: 'Space Mono', 'Courier New', monospace;
+  cursor: pointer;
+  z-index: 2;
+}
+.code-copy-btn:active { background: rgba(100,64,255,0.3); color:#c8b8ff; }
+
+/* ── Thinking timer ──────────────────────────────────────────────────────── */
+#thinking-timer {
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: rgba(0,200,255,0.45);
+  font-family: 'Space Mono','Courier New',monospace;
+  margin-left: 4px;
+}
 </style>
 </head>
 <body>
@@ -411,6 +437,7 @@ html, body {
     <div class="thinking-footer">
       <span class="thinking-dot"></span>
       <span class="thinking-label">THINKING</span>
+      <span id="thinking-timer"></span>
       <div class="scan-line"></div>
     </div>
   </div>
@@ -436,6 +463,23 @@ html, body {
   <button class="tb-btn" id="btn-down">↓</button>
   <button class="tb-btn" id="btn-esc">Esc</button>
   <button class="tb-btn" id="btn-backspace">⌫</button>
+  <div style="width:1px;height:22px;background:rgba(255,255,255,0.08);flex-shrink:0;margin:0 2px"></div>
+  <button class="tb-btn" id="btn-slash">/</button>
+  <button class="tb-btn" id="btn-backslash">\</button>
+  <button class="tb-btn" id="btn-pipe">|</button>
+  <button class="tb-btn" id="btn-dash">-</button>
+  <button class="tb-btn" id="btn-underscore">_</button>
+  <button class="tb-btn" id="btn-tilde">~</button>
+  <button class="tb-btn" id="btn-lbrace">{</button>
+  <button class="tb-btn" id="btn-rbrace">}</button>
+  <button class="tb-btn" id="btn-lbracket">[</button>
+  <button class="tb-btn" id="btn-rbracket">]</button>
+  <button class="tb-btn" id="btn-lparen">(</button>
+  <button class="tb-btn" id="btn-rparen">)</button>
+  <button class="tb-btn" id="btn-semicolon">;</button>
+  <button class="tb-btn" id="btn-quote">"</button>
+  <div style="width:1px;height:22px;background:rgba(255,255,255,0.08);flex-shrink:0;margin:0 2px"></div>
+  <button class="tb-btn" id="btn-export" style="color:#86efac">⇪ Export</button>
 </div>
 
 <script>
@@ -653,6 +697,72 @@ function handleAnsiSGR(st,params){
   }
 }
 
+// ── Input history ─────────────────────────────────────────────────────────
+let inputHistory = [];
+let historyIdx   = -1;   // -1 = not browsing; ≥0 = index into inputHistory
+let savedInput   = '';   // snapshot of inputBuffer before history browsing
+
+function historyUp() {
+  if (inputHistory.length === 0) return;
+  if (historyIdx === -1) { savedInput = inputBuffer; historyIdx = inputHistory.length - 1; }
+  else if (historyIdx > 0) { historyIdx--; }
+  inputBuffer = inputHistory[historyIdx];
+  ghost.value = inputBuffer;
+  updateInputDisp();
+  ghost.focus();
+}
+
+function historyDown() {
+  if (historyIdx === -1) return;
+  historyIdx++;
+  if (historyIdx >= inputHistory.length) { historyIdx = -1; inputBuffer = savedInput; }
+  else { inputBuffer = inputHistory[historyIdx]; }
+  ghost.value = inputBuffer;
+  updateInputDisp();
+  ghost.focus();
+}
+
+// ── Thinking timer ────────────────────────────────────────────────────────
+let thinkingTimerHandle = null;
+let thinkingStartMs = 0;
+const thinkingTimerEl = document.getElementById('thinking-timer');
+
+function startThinkingTimer() {
+  thinkingStartMs = Date.now();
+  thinkingTimerEl.textContent = '0s';
+  if (thinkingTimerHandle) clearInterval(thinkingTimerHandle);
+  thinkingTimerHandle = setInterval(function() {
+    thinkingTimerEl.textContent = Math.floor((Date.now() - thinkingStartMs) / 1000) + 's';
+  }, 1000);
+}
+
+function stopThinkingTimer() {
+  if (thinkingTimerHandle) { clearInterval(thinkingTimerHandle); thinkingTimerHandle = null; }
+  thinkingTimerEl.textContent = '';
+}
+
+// ── Code copy helper ──────────────────────────────────────────────────────
+function copyCode(btn) {
+  var code = btn.nextElementSibling.querySelector('code').textContent;
+  if (typeof Android !== 'undefined') Android.copyText(code);
+  btn.textContent = '✓ Copied';
+  setTimeout(function() { btn.textContent = 'Copy'; }, 1600);
+}
+
+// ── Export conversation ───────────────────────────────────────────────────
+function exportConversation() {
+  var text = 'Claude Code Conversation\n' + new Date().toLocaleString() + '\n\n';
+  var bubbles = msgs.querySelectorAll('.bubble');
+  bubbles.forEach(function(bub) {
+    if (bub.classList.contains('user-bubble')) {
+      text += 'You: ' + bub.textContent.trim() + '\n\n';
+    } else if (bub.classList.contains('ai-bubble')) {
+      text += 'Claude: ' + bub.textContent.trim() + '\n\n';
+    }
+  });
+  return text;
+}
+
 // ── Chat state machine ─────────────────────────────────────────────────────
 // IDLE     — no active response, user input ready
 // THINKING — thinking-start received, animation showing
@@ -673,6 +783,7 @@ function scrollToBottom(){
 
 // ── OSC handler ───────────────────────────────────────────────────────────────
 function resetToIdle(){
+  stopThinkingTimer();
   if(chatState==='RESPONDING') finalizeAiBubble();
   thinkBub.style.display='none';
   if(thinkBub.parentNode===msgs) msgs.removeChild(thinkBub);
@@ -685,8 +796,10 @@ function handleOSC(content){
     chatState='THINKING';
     thinkBub.style.display='flex';
     msgs.appendChild(thinkBub);
+    startThinkingTimer();
     scrollToBottom();
   } else if(content==='9;thinking-done'){
+    stopThinkingTimer();
     thinkBub.style.display='none';
     if(thinkBub.parentNode===msgs) msgs.removeChild(thinkBub);
     // Guard: only open a new AI bubble if not already RESPONDING.
@@ -761,7 +874,8 @@ function renderMarkdown(raw){
       let code='';i++;
       while(i<lines.length&&!/^```/.test(lines[i])){code+=lines[i]+'\n';i++;}
       i++;
-      html+='<pre class="md-code"><code>'+highlightCode(escHtml(code.trimEnd()),lang)+'</code></pre>';
+      html+='<div class="code-wrap"><button class="code-copy-btn" onclick="copyCode(this)">Copy</button>' +
+            '<pre class="md-code"><code>'+highlightCode(escHtml(code.trimEnd()),lang)+'</code></pre></div>';
       continue;
     }
     // Table
@@ -877,6 +991,7 @@ window.termWrite=function(raw){
 };
 
 window.termClear=function(){
+  stopThinkingTimer();
   msgs.innerHTML='';
   sysEl=null;
   sysAnsi=makeAnsiState();
@@ -912,8 +1027,15 @@ function submitLine(text){
   const msg=(text!==undefined?text:inputBuffer).trim();
   inputBuffer='';
   ghost.value='';
+  historyIdx=-1;
+  savedInput='';
   updateInputDisp();
   if(!msg) return;
+  // Push to input history (skip duplicates of the last entry)
+  if(msg.length>0&&inputHistory[inputHistory.length-1]!==msg){
+    inputHistory.push(msg);
+    if(inputHistory.length>50) inputHistory.shift();
+  }
   resetToIdle(); // finalize any pending AI bubble and hide thinking animation
   sysEl=null;
   sysAnsi=makeAnsiState();
@@ -980,8 +1102,13 @@ document.getElementById('btn-shell').addEventListener('click',function(){
 document.getElementById('btn-ctrl-c').addEventListener('click',function(){tbRaw('\x03');});
 document.getElementById('btn-tab').addEventListener('click',function(){tbRaw('\t');});
 document.getElementById('btn-enter').addEventListener('click',function(){tbRaw('\r');});
-document.getElementById('btn-up').addEventListener('click',function(){tbRaw('\x1b[A');});
-document.getElementById('btn-down').addEventListener('click',function(){tbRaw('\x1b[B');});
+// ↑/↓ navigate input history; send ANSI only when input is empty (i.e. PTY-style)
+document.getElementById('btn-up').addEventListener('click',function(){
+  if(inputBuffer.length===0){tbRaw('\x1b[A');}else{historyUp();}
+});
+document.getElementById('btn-down').addEventListener('click',function(){
+  if(historyIdx===-1){tbRaw('\x1b[B');}else{historyDown();}
+});
 document.getElementById('btn-esc').addEventListener('click',function(){tbRaw('\x1b');});
 document.getElementById('btn-backspace').addEventListener('click',function(){
   if(inputBuffer.length>0){
@@ -989,6 +1116,30 @@ document.getElementById('btn-backspace').addEventListener('click',function(){
     ghost.value=inputBuffer;
     updateInputDisp();
   }
+  ghost.focus();
+});
+
+// Special character keys — insert into inputBuffer
+(function(){
+  var chars={
+    'btn-slash':'/','btn-backslash':'\\','btn-pipe':'|','btn-dash':'-',
+    'btn-underscore':'_','btn-tilde':'~','btn-lbrace':'{','btn-rbrace':'}',
+    'btn-lbracket':'[','btn-rbracket':']','btn-lparen':'(','btn-rparen':')',
+    'btn-semicolon':';','btn-quote':'"'
+  };
+  Object.keys(chars).forEach(function(id){
+    document.getElementById(id).addEventListener('click',function(){
+      inputBuffer+=chars[id];
+      ghost.value=inputBuffer;
+      updateInputDisp();
+      ghost.focus();
+    });
+  });
+})();
+
+document.getElementById('btn-export').addEventListener('click',function(){
+  var text=exportConversation();
+  if(typeof Android!=='undefined') Android.shareText(text);
   ghost.focus();
 });
 

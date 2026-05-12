@@ -56,7 +56,12 @@
                 android:fontFamily="monospace"
                 android:maxLines="1"
                 android:ellipsize="end"
-                android:visibility="visible" />
+                android:visibility="visible"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:paddingVertical="2dp"
+                android:paddingHorizontal="4dp" />
 
         </LinearLayout>
 
