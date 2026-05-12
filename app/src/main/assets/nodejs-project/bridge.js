@@ -1451,9 +1451,12 @@ function runMessage(message, socket, history) {
         regexpShim +
         intlShim +
         'process.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';' +
-        'process.argv[2]="--print";' +
-        'process.argv[3]=' + JSON.stringify(fullMessage) + ';' +
-        'process.argv.length=4;' +
+        'process.argv[2]="--output-format";' +
+        'process.argv[3]="stream-json";' +
+        'process.argv[4]="--print";' +
+        'process.argv[5]="--verbose";' +
+        'process.argv[6]=' + JSON.stringify(fullMessage) + ';' +
+        'process.argv.length=7;' +
         'import(' + JSON.stringify(cliUrl) + ')' +
         '.then(function(){' +
         'try{require("fs").appendFileSync(' + exitLogPath + ',"[import-resolved]\\n");}catch(_){}})' +
@@ -1464,16 +1467,46 @@ function runMessage(message, socket, history) {
 
     // Collect stderr separately so we can include it in error messages
     let stderrBuf = '';
-    // Send thinking-done BEFORE the first byte of text so the terminal
-    // transitions from THINKING → RESPONDING before the text renders.
-    // Without this, text arrives while chatState===THINKING and is silently dropped.
+    // Parse --output-format stream-json newline-delimited events.
+    // thinking-done fires on the first event (system/init) so the terminal
+    // transitions THINKING → RESPONDING before any text arrives.
     let thinkingDoneSent = false;
+    let stdoutLineBuf = '';
     child.stdout.on('data', d => {
-        if (!thinkingDoneSent) {
-            thinkingDoneSent = true;
-            try { socket.write('\x1b]9;thinking-done\x07'); } catch (_) {}
+        stdoutLineBuf += d.toString();
+        const lines = stdoutLineBuf.split('\n');
+        stdoutLineBuf = lines.pop(); // keep incomplete last chunk
+
+        for (const line of lines) {
+            if (!line.trim()) continue;
+
+            if (!thinkingDoneSent) {
+                thinkingDoneSent = true;
+                try { socket.write('\x1b]9;thinking-done\x07'); } catch (_) {}
+            }
+
+            let event;
+            try { event = JSON.parse(line); } catch (_) {
+                // Non-JSON line — forward raw (shouldn't happen with stream-json)
+                try { socket.write(line + '\n'); } catch (_) {}
+                continue;
+            }
+
+            if (event.type === 'assistant') {
+                for (const block of (event.message && event.message.content) || []) {
+                    if (block.type === 'text' && block.text) {
+                        try { socket.write(block.text); } catch (_) {}
+                    } else if (block.type === 'tool_use') {
+                        // Show inline tool-call indicator (cyan ▶ name args)
+                        const argsRaw = JSON.stringify(block.input || {});
+                        const argsPreview = argsRaw.length > 100 ? argsRaw.slice(0, 97) + '…' : argsRaw;
+                        const indicator = '\x1b[36m▶ ' + (block.name || 'tool') + '\x1b[0m ' + argsPreview + '\r\n';
+                        try { socket.write(indicator); } catch (_) {}
+                    }
+                }
+            }
+            // system/init, tool_result, result events consumed silently
         }
-        try { socket.write(d); } catch (_) {}
     });
     child.stderr.on('data', d => {
         const s = d.toString();

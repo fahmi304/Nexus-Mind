@@ -301,6 +301,8 @@ Providers are defined in two places:
 
 - **Removed: `DownloadManager.fetchLatestClaudeVersion()` dead code** — The method and its `registryClient` OkHttp instance were never called (version is always pinned to `2.1.112`). Both removed.
 
+- **Added: inline tool-call indicators via `--output-format stream-json`** — `runMessage()` in `bridge.js` now spawns claude with `--output-format stream-json --print --verbose` instead of bare `--print`. Stdout is parsed as newline-delimited JSON events. `assistant` events with `tool_use` content blocks emit a cyan `▶ toolName {args}` line before the response text, so users can see what Claude is doing (reading files, running bash, etc.) in real time. `thinking-done` fires on the first JSON event (`system/init`) instead of on the first raw byte. Text blocks from `assistant` events are forwarded as before. `system/init`, `tool_result`, and `result` events are consumed silently.
+
 ### Known gaps / TODO
 
 #### 🟢 Quality of life
@@ -319,7 +321,7 @@ Providers are defined in two places:
 
 4. **Bridge config is written before each `startBridge()` call** (`bridge_config.json` in `filesDir`). `bridge.js` reads it fresh per message, so changing the provider mid-session affects the next message only.
 
-5. **No PTY.** The app uses `claude --print` (one process per user message). There is no interactive readline, no shell, no PTY allocation. Ctrl+C sends SIGTERM to the current child process. Arrow keys and Tab are sent as escape sequences but their effect depends on what Claude Code does with them in `--print` mode.
+5. **No PTY.** The app uses `claude --output-format stream-json --print --verbose` (one process per user message). There is no interactive readline, no shell, no PTY allocation. Ctrl+C sends SIGTERM to the current child process. Stdout is newline-delimited JSON events, not raw text — `runMessage()` parses them and forwards text/tool-use indicators to the socket.
 
 6. **Signing.** Debug APKs use `.debug` suffix (`com.claudecodesetup.debug`). Release signing config reads from `local.properties` (never committed). CI uses GitHub Secrets.
 
@@ -345,7 +347,7 @@ Providers are defined in two places:
 
 17. **OSC thinking sequences are ephemeral — never buffer them** — `\x1b]9;thinking-start\x07` and `\x1b]9;thinking-done\x07` are UI state signals only. `ClaudeSession.appendOutput()` strips them before storing so they are never replayed to a reconnecting `TerminalActivity`. The real-time `onOutput` callback receives the original data (live thinking indicator still works). If you add new OSC state sequences, strip them in `appendOutput` too.
 
-18. **`thinking-done` must fire before the first stdout byte** — In `runMessage()`, a `thinkingDoneSent` flag sends `\x1b]9;thinking-done\x07` on the first data event of `child.stdout`. This transitions `chatState` from THINKING → RESPONDING before any text arrives. Without this, all model output is discarded (terminal ignores data while THINKING). The `handleOSC thinking-done` in `index.html` is guarded against double-invocation with `if(chatState!=='RESPONDING')`.
+18. **`thinking-done` fires on the first parsed JSON event (`system/init`)** — With `--output-format stream-json`, stdout is newline-delimited JSON. `thinkingDoneSent` fires when the first complete JSON line is parsed (always the `system/init` event), not on raw bytes. The `handleOSC thinking-done` in `index.html` is guarded against double-invocation with `if(chatState!=='RESPONDING')`. The `stdoutLineBuf` accumulator in `runMessage()` handles partial chunks.
 
 19. **`bridge_config.json` now includes `modelList`** — `NodeBridgeManager.writeConfig()` writes a `modelList` JSON array (the provider's static model IDs from `Providers.byId(providerId)?.models`). `bridge.js` reads it in `handleProxyRequest` to drive model fallback after 429 exhaustion. The list is only as fresh as the last `startBridge()` or `refreshConfig()` call; OpenRouter live models are not included (only the static hardcoded list).
 
