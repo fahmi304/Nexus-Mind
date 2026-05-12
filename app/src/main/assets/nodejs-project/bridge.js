@@ -42,6 +42,7 @@ const SETUP_DONE    = path.join(FILES_DIR, 'setup_done');
 const SETUP_FAILED  = path.join(FILES_DIR, 'setup_failed');
 const SESSION_FILE  = path.join(FILES_DIR, 'last_session.json');
 const AGENTIC_FILE  = path.join(FILES_DIR, 'agentic_state');
+const CWD_FILE      = path.join(FILES_DIR, 'last_cwd');
 
 const PORT       = 8083;
 const PROXY_PORT = 8082;
@@ -97,6 +98,10 @@ const intlShim =
 // Tracks last provider HTTP 429 timestamp so the TCP close handler can show
 // a rate-limit notification even when cli.js exits silently with code 0.
 let lastRateLimitMs = 0;
+
+// Set by openTcpBridge to notify active sessions of 429 countdown events.
+// Value: function(delaySeconds) — writes OSC countdown to the active socket.
+let on429CountdownNotify = null;
 
 // ─── Logging ──────────────────────────────────────────────────────────────────
 
@@ -221,12 +226,16 @@ function executeTool(name, input, cwd) {
 function callProxyStreaming(socket, messages, tools, onThinkingDone) {
     return new Promise((resolve, reject) => {
         const cfg  = readConfig();
+        const customPrompt = (cfg.customSystemPrompt || '').trim();
+        const systemPrompt = customPrompt
+            ? AGENTIC_SYSTEM_PROMPT + '\n\n[Custom Instructions]\n' + customPrompt
+            : AGENTIC_SYSTEM_PROMPT;
         const body = JSON.stringify({
             model: 'claude-3-5-sonnet-20241022',
             max_tokens: 4096,
             messages,
             tools,
-            system: AGENTIC_SYSTEM_PROMPT,
+            system: systemPrompt,
             stream: true
         });
         const apiKey = cfg.mode === 'subscription'
@@ -910,6 +919,8 @@ function handleProxyRequest(anthReq, res) {
             lastRateLimitMs = Date.now();
             if (retriesLeft > 0) {
                 log('[proxy] 429 — retrying ' + modelId + ' in ' + delayMs + 's (' + retriesLeft + ' left)\n');
+                // Notify active socket of countdown so the thinking timer shows it
+                try { if (on429CountdownNotify) on429CountdownNotify(delayMs); } catch(_) {}
                 setTimeout(() => attempt(modelId, retriesLeft - 1, delayMs * 2), delayMs * 1000);
             } else {
                 const idx  = modelList.indexOf(modelId);
@@ -1349,14 +1360,21 @@ function stripAnsi(str) {
 
 // Prepend prior conversation turns to the current message so --print mode
 // has context across multiple exchanges within the same socket session.
+// Also prepends customSystemPrompt if configured.
 // History entries: { role: 'user'|'assistant', content: string }
 // Capped at MAX_HISTORY messages (bridge.js enforces this on write).
 function buildMessageWithHistory(message, history) {
-    if (!history || history.length === 0) return message;
+    const cfg = readConfig();
+    const sysPrompt = (cfg.customSystemPrompt || '').trim();
+
+    if (!history || history.length === 0) {
+        return sysPrompt ? '[System]\n' + sysPrompt + '\n\n' + message : message;
+    }
     const ctx = history.map(m =>
         (m.role === 'user' ? 'Human' : 'Assistant') + ': ' + m.content
     ).join('\n\n');
-    return ctx + '\n\nHuman: ' + message;
+    const base = ctx + '\n\nHuman: ' + message;
+    return sysPrompt ? '[System]\n' + sysPrompt + '\n\n' + base : base;
 }
 
 const MAX_HISTORY = 20; // max stored messages (10 turns) per session
@@ -1548,9 +1566,26 @@ function openTcpBridge() {
         let   current   = null;
         let   currentTid = null;  // safety-net timeout handle
         let   history   = loadSession();  // load persisted history from last session
-        let   shellCwd  = FILES_DIR;  // working directory for $ shell commands
+
+        // Working dir: prefer last saved cwd, then projectPath from config, then FILES_DIR
+        let   shellCwd  = (() => {
+            const cfg0 = readConfig();
+            if (cfg0.projectPath) {
+                try { if (require('fs').statSync(cfg0.projectPath).isDirectory()) return cfg0.projectPath; } catch(_) {}
+            }
+            try {
+                const saved = require('fs').readFileSync(CWD_FILE, 'utf8').trim();
+                if (saved && require('fs').statSync(saved).isDirectory()) return saved;
+            } catch(_) {}
+            return FILES_DIR;
+        })();
 
         let contextBlock = '';   // injected into next message via !context command
+
+        // Register countdown notifier for this socket (replaces any previous one)
+        on429CountdownNotify = function(delaySecs) {
+            try { socket.write('\x1b]9;rate-limit:' + delaySecs + '\x07'); } catch(_) {}
+        };
 
         const startCfg = readConfig();
         const modeLabel = startCfg.mode === 'subscription' ? 'Anthropic' : (startCfg.providerUrl || 'proxy');
@@ -1564,6 +1599,7 @@ function openTcpBridge() {
             '\x1b[2mProvider: ' + modeLabel +
             '  Model: ' + (startCfg.modelId || 'auto') +
             '  Key: ' + sanitizeKey(startCfg.apiKey) + '\x1b[0m' + agentTag + resumed + '\r\n' +
+            '\x1b[2mcwd: ' + shellCwd + '\x1b[0m\r\n' +
             agenticHint + '\r\n'
         );
 
@@ -1663,6 +1699,48 @@ function openTcpBridge() {
                     } catch(e) {
                         try { socket.write('\x1b[31m✗ ' + e.message + '\x1b[0m\r\n\r\n'); } catch(_) {}
                     }
+                    continue;
+                }
+
+                // !fetch <url> — fetch URL content and inject as context
+                if (line.startsWith('!fetch ')) {
+                    const url = line.slice(7).trim();
+                    if (!url) {
+                        try { socket.write('\x1b[33mUsage: !fetch <url>\x1b[0m\r\n\r\n'); } catch(_) {}
+                        continue;
+                    }
+                    try { socket.write('\x1b[2mFetching ' + url + '…\x1b[0m\r\n'); } catch(_) {}
+                    const fetchFn = url.startsWith('https') ? https : http;
+                    const req = fetchFn.get(url, { headers: { 'User-Agent': 'ClaudeCodeSetup/1.0' } }, res => {
+                        let body = '';
+                        res.setEncoding('utf8');
+                        res.on('data', c => { if (body.length < 200000) body += c; });
+                        res.on('end', () => {
+                            // Strip HTML tags for cleaner context
+                            const clean = body
+                                .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                                .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                                .replace(/<[^>]+>/g, ' ')
+                                .replace(/\s{3,}/g, '\n')
+                                .trim()
+                                .slice(0, 30000);
+                            contextBlock = '🌐 Content from ' + url + ':\n' + clean + '\n';
+                            try {
+                                socket.write('\x1b[32m✓ Fetched ' + clean.length + ' chars from ' + url + '\x1b[0m\r\n' +
+                                    '\x1b[2mContext will be sent with your next message.\x1b[0m\r\n\r\n');
+                            } catch(_) {}
+                        });
+                        res.on('error', e => {
+                            try { socket.write('\x1b[31m✗ Fetch error: ' + e.message + '\x1b[0m\r\n\r\n'); } catch(_) {}
+                        });
+                    });
+                    req.on('error', e => {
+                        try { socket.write('\x1b[31m✗ Fetch error: ' + e.message + '\x1b[0m\r\n\r\n'); } catch(_) {}
+                    });
+                    req.setTimeout(15000, () => {
+                        req.destroy();
+                        try { socket.write('\x1b[31m✗ Fetch timeout (15 s)\x1b[0m\r\n\r\n'); } catch(_) {}
+                    });
                     continue;
                 }
 
@@ -1858,6 +1936,7 @@ function openTcpBridge() {
                             '  \x1b[33m!history\x1b[0m      Show number of turns in memory\r\n' +
                             '  \x1b[33m!context [path]\x1b[0m Load directory tree + key files as context for next message\r\n' +
                             '  \x1b[33m!context clear\x1b[0m Remove loaded context\r\n' +
+                            '  \x1b[33m!fetch <url>\x1b[0m  Fetch URL and inject content as context for next message\r\n' +
                             '\r\n\x1b[1mDiagnostics:\x1b[0m\r\n' +
                             '  \x1b[33m!log [N]\x1b[0m      Show last N lines of setup.log (default 80)\r\n' +
                             '  \x1b[33m!ver\x1b[0m          Show version and config info\r\n' +
@@ -2009,6 +2088,7 @@ function openTcpBridge() {
                             const stat = fs.statSync(resolved);
                             if (stat.isDirectory()) {
                                 shellCwd = resolved;
+                                try { fs.writeFileSync(CWD_FILE, shellCwd, 'utf8'); } catch(_) {}
                                 try { socket.write('\x1b[2m' + shellCwd + '\x1b[0m\r\n\r\n'); } catch(_) {}
                             } else {
                                 try { socket.write('\x1b[31mcd: not a directory: ' + target + '\x1b[0m\r\n\r\n'); } catch(_) {}

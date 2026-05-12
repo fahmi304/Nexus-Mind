@@ -445,9 +445,11 @@ html, body {
 
 <!-- Input bar -->
 <div id="input-bar">
+  <button id="btn-mic" style="width:36px;height:36px;border-radius:10px;background:rgba(100,64,255,0.18);border:1px solid rgba(100,64,255,0.3);color:#c8b8ff;font-size:16px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;">🎤</button>
   <div id="input-wrap">
     <span id="input-display"></span><span id="cursor"></span>
   </div>
+  <button id="btn-quick" style="width:36px;height:36px;border-radius:10px;background:rgba(0,200,100,0.18);border:1px solid rgba(0,200,100,0.3);color:#86efac;font-size:16px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;">⚡</button>
   <button id="send-btn">↑</button>
 </div>
 
@@ -480,6 +482,7 @@ html, body {
   <button class="tb-btn" id="btn-quote">"</button>
   <div style="width:1px;height:22px;background:rgba(255,255,255,0.08);flex-shrink:0;margin:0 2px"></div>
   <button class="tb-btn" id="btn-export" style="color:#86efac">⇪ Export</button>
+  <button class="tb-btn" id="btn-files" style="color:#7dd3fc">📂 Files</button>
 </div>
 
 <script>
@@ -741,12 +744,20 @@ function stopThinkingTimer() {
   thinkingTimerEl.textContent = '';
 }
 
-// ── Code copy helper ──────────────────────────────────────────────────────
+// ── Code copy / save helpers ──────────────────────────────────────────────
 function copyCode(btn) {
   var code = btn.nextElementSibling.querySelector('code').textContent;
   if (typeof Android !== 'undefined') Android.copyText(code);
   btn.textContent = '✓ Copied';
   setTimeout(function() { btn.textContent = 'Copy'; }, 1600);
+}
+
+function saveCode(btn, filename) {
+  var pre = btn.parentElement.querySelector('code');
+  var raw = pre.getAttribute('data-raw') || pre.textContent;
+  if (typeof Android !== 'undefined') Android.saveFile(filename, raw);
+  btn.textContent = '✓ Saved';
+  setTimeout(function() { btn.textContent = 'Save'; }, 1600);
 }
 
 // ── Export conversation ───────────────────────────────────────────────────
@@ -802,14 +813,20 @@ function handleOSC(content){
     stopThinkingTimer();
     thinkBub.style.display='none';
     if(thinkBub.parentNode===msgs) msgs.removeChild(thinkBub);
-    // Guard: only open a new AI bubble if not already RESPONDING.
-    // The close-handler sends a second thinking-done as a fallback for error
-    // cases; when text already triggered the first thinking-done we must not
-    // start a fresh empty bubble on top of the one already being filled.
     if(chatState!=='RESPONDING'){
       chatState='RESPONDING';
       startAiBubble();
     }
+  } else if(content.startsWith('9;rate-limit:')){
+    // 429 countdown: "9;rate-limit:30" means retry in 30s
+    var secs=parseInt(content.slice(13))||30;
+    thinkingTimerEl.textContent='⏳ '+secs+'s';
+    var cd=secs;
+    var cdh=setInterval(function(){
+      cd--;
+      if(cd<=0){clearInterval(cdh);thinkingTimerEl.textContent='';}
+      else{thinkingTimerEl.textContent='⏳ '+cd+'s';}
+    },1000);
   }
 }
 
@@ -870,12 +887,20 @@ function renderMarkdown(raw){
     const line=lines[i];
     // Fenced code block
     if(/^```/.test(line)){
-      const lang=line.slice(3).trim().toLowerCase();
+      const meta=line.slice(3).trim();
+      const parts=meta.split(/\s+/);
+      const lang=(parts[0]||'').toLowerCase();
+      // Filename hint: ```lang filename.ext or ```filename.ext
+      const hasExt=function(s){return/\.[a-zA-Z0-9]{1,6}$/.test(s);};
+      let fname=parts.length>1&&hasExt(parts[1])?parts[1]:
+                parts.length===1&&hasExt(parts[0])&&parts[0].indexOf('/')===-1?parts[0]:'';
       let code='';i++;
       while(i<lines.length&&!/^```/.test(lines[i])){code+=lines[i]+'\n';i++;}
       i++;
-      html+='<div class="code-wrap"><button class="code-copy-btn" onclick="copyCode(this)">Copy</button>' +
-            '<pre class="md-code"><code>'+highlightCode(escHtml(code.trimEnd()),lang)+'</code></pre></div>';
+      const codeEsc=highlightCode(escHtml(code.trimEnd()),lang);
+      const saveBtn=fname?'<button class="code-copy-btn" style="right:52px" onclick="saveCode(this,\''+escHtml(fname)+'\')">Save</button>':'';
+      html+='<div class="code-wrap">'+saveBtn+'<button class="code-copy-btn" onclick="copyCode(this)">Copy</button>' +
+            '<pre class="md-code"><code data-raw="'+escHtml(code.trimEnd())+'">'+codeEsc+'</code></pre></div>';
       continue;
     }
     // Table
@@ -1015,6 +1040,14 @@ window.termSetMeta=function(name,model){
   /* app name and model are now shown in the native Android header bar */
 };
 
+// Pre-fill the input buffer (used by shared text and voice input)
+window.termSetInput=function(text){
+  inputBuffer=text;
+  ghost.value=text;
+  updateInputDisp();
+  ghost.focus();
+};
+
 // ── Input buffer ──────────────────────────────────────────────────────────────
 let inputBuffer='';
 
@@ -1141,6 +1174,19 @@ document.getElementById('btn-export').addEventListener('click',function(){
   var text=exportConversation();
   if(typeof Android!=='undefined') Android.shareText(text);
   ghost.focus();
+});
+
+document.getElementById('btn-files').addEventListener('click',function(){
+  if(typeof Android!=='undefined') Android.browseFiles();
+  ghost.focus();
+});
+
+document.getElementById('btn-mic').addEventListener('click',function(){
+  if(typeof Android!=='undefined') Android.startVoiceInput();
+});
+
+document.getElementById('btn-quick').addEventListener('click',function(){
+  if(typeof Android!=='undefined') Android.showQuickActions();
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────

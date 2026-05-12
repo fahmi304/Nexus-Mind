@@ -63,8 +63,9 @@ class NodeBridgeManager(private val context: Context) {
 
     // ─── Start Node.js ────────────────────────────────────────────────────────
 
-    fun startBridge(mode: String, apiKey: String, modelId: String, baseUrl: String, providerId: String = "") {
-        writeConfig(mode, apiKey, modelId, baseUrl, providerId)
+    fun startBridge(mode: String, apiKey: String, modelId: String, baseUrl: String, providerId: String = "",
+                    projectPath: String = "", customSystemPrompt: String = "") {
+        writeConfig(mode, apiKey, modelId, baseUrl, providerId, projectPath, customSystemPrompt)
         startNodeEngine()
     }
 
@@ -73,11 +74,13 @@ class NodeBridgeManager(private val context: Context) {
      *  up the new model immediately. */
     fun refreshConfig(prefs: AppPreferences) {
         writeConfig(
-            mode       = prefs.getLoginMode(),
-            apiKey     = prefs.getApiKey(),
-            modelId    = prefs.getModelId(),
-            baseUrl    = prefs.getBaseUrl(),
-            providerId = prefs.getProviderId()
+            mode               = prefs.getLoginMode(),
+            apiKey             = prefs.getApiKey(),
+            modelId            = prefs.getModelId(),
+            baseUrl            = prefs.getBaseUrl(),
+            providerId         = prefs.getProviderId(),
+            projectPath        = prefs.getProjectPath(),
+            customSystemPrompt = prefs.getCustomSystemPrompt()
         )
     }
 
@@ -115,23 +118,25 @@ class NodeBridgeManager(private val context: Context) {
         }
     }
 
-    private fun writeConfig(mode: String, apiKey: String, modelId: String, baseUrl: String, providerId: String = "") {
+    private fun writeConfig(mode: String, apiKey: String, modelId: String, baseUrl: String,
+                            providerId: String = "", projectPath: String = "",
+                            customSystemPrompt: String = "") {
         val isSubscription = mode == AppPreferences.MODE_SUBSCRIPTION
         val authToken = if (!isSubscription) "freecc" else ""
         val effectiveBaseUrl = if (!isSubscription) "http://127.0.0.1:8082" else baseUrl
         val providerUrl = if (!isSubscription) baseUrl else ""
-        // Build model list for fallback: use the provider's static model list.
-        // bridge.js uses this to auto-switch on persistent 429s.
         val models = Providers.byId(providerId)?.models ?: emptyList()
         val modelList = JSONArray().apply { models.forEach { put(it.modelId) } }
         val json = JSONObject().apply {
-            put("mode",        mode)
-            put("apiKey",      apiKey)
-            put("modelId",     modelId)
-            put("baseUrl",     effectiveBaseUrl)
-            put("authToken",   authToken)
-            put("providerUrl", providerUrl)
-            put("modelList",   modelList)
+            put("mode",               mode)
+            put("apiKey",             apiKey)
+            put("modelId",            modelId)
+            put("baseUrl",            effectiveBaseUrl)
+            put("authToken",          authToken)
+            put("providerUrl",        providerUrl)
+            put("modelList",          modelList)
+            put("projectPath",        projectPath)
+            put("customSystemPrompt", customSystemPrompt)
         }
         try {
             File(context.filesDir, CONFIG_FILE).writeText(json.toString())

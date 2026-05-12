@@ -39,6 +39,10 @@ class SettingsActivity : AppCompatActivity() {
         val provider   = Providers.byId(providerId)
         val model      = prefs.getModelId()
 
+        // Project path and custom system prompt
+        binding.etProjectPath.setText(prefs.getProjectPath())
+        binding.etCustomSystemPrompt.setText(prefs.getCustomSystemPrompt())
+
         binding.tvCurrentProvider.text = when (mode) {
             AppPreferences.MODE_SUBSCRIPTION -> "Claude Subscription"
             AppPreferences.MODE_GEMINI       -> "Google Gemini — $model"
@@ -66,6 +70,13 @@ class SettingsActivity : AppCompatActivity() {
                 ) { prefs.setLanguage(langCodes[position]) }
                 override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
             }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        prefs.setProjectPath(binding.etProjectPath.text.toString().trim())
+        prefs.setCustomSystemPrompt(binding.etCustomSystemPrompt.text.toString().trim())
+        bridgeManager.refreshConfig(prefs)
     }
 
     private fun setupActions() {

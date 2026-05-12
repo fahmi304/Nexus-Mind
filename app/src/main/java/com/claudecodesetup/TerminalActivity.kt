@@ -1,22 +1,29 @@
 package com.claudecodesetup
 
+import android.app.Activity
 import android.app.AlertDialog
+import android.app.PictureInPictureParams
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
+import android.widget.ScrollView
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.claudecodesetup.data.AppPreferences
@@ -26,6 +33,7 @@ import com.claudecodesetup.ui.ComposeActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class TerminalActivity : AppCompatActivity() {
 
@@ -37,6 +45,10 @@ class TerminalActivity : AppCompatActivity() {
 
     private var activeSessionId: Int = -1
     private val tabButtons = LinkedHashMap<Int, Button>()
+
+    companion object {
+        private const val REQUEST_VOICE = 1001
+    }
 
     // ─── Message-status tracking ──────────────────────────────────────────────
 
@@ -79,6 +91,9 @@ class TerminalActivity : AppCompatActivity() {
 
     // ─── Lifecycle ────────────────────────────────────────────────────────────
 
+    // shared text passed via ACTION_SEND intent (set after terminal loads)
+    private var pendingSharedText: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityTerminalBinding.inflate(layoutInflater)
@@ -86,11 +101,23 @@ class TerminalActivity : AppCompatActivity() {
 
         prefs = AppPreferences(this)
 
+        // Capture shared text from ACTION_SEND intent (or forwarded from SplashActivity)
+        pendingSharedText = intent?.getStringExtra("shared_text")
+
         setupWebView()
         setupRestartButton()
         setupHeaderButtons()
         setupStatusBar()
         startAndBindService()
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                enterPictureInPictureMode(PictureInPictureParams.Builder().build())
+            } catch (_: Exception) {}
+        }
     }
 
     override fun onResume() {
@@ -132,7 +159,6 @@ class TerminalActivity : AppCompatActivity() {
         wv.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
                 binding.tvLoading.visibility = View.GONE
-                // Show the active model in the native header bar
                 val model = prefs.getModelId().let { m ->
                     when {
                         m.isEmpty() -> "claude"
@@ -141,6 +167,14 @@ class TerminalActivity : AppCompatActivity() {
                     }
                 }
                 binding.tvModelName.text = model
+
+                // Pre-fill input with shared text (from ACTION_SEND intent)
+                pendingSharedText?.let { text ->
+                    pendingSharedText = null
+                    val escaped = text.replace("\\", "\\\\").replace("\"", "\\\"")
+                        .replace("\n", "\\n").replace("\r", "\\r")
+                    view.evaluateJavascript("window.termSetInput(\"$escaped\")", null)
+                }
             }
         }
 
@@ -455,6 +489,134 @@ class TerminalActivity : AppCompatActivity() {
         startThinkingTimeout()
     }
 
+    // ─── Voice input ──────────────────────────────────────────────────────────
+
+    private fun startVoiceInput() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            android.widget.Toast.makeText(this, "Voice recognition not available", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak your message to Claude…")
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+        try {
+            startActivityForResult(intent, REQUEST_VOICE)
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(this, "Voice input not supported", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_VOICE && resultCode == Activity.RESULT_OK) {
+            val results = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val text = results?.firstOrNull() ?: return
+            val escaped = text.replace("\\", "\\\\").replace("\"", "\\\"")
+            binding.webViewTerminal.evaluateJavascript("window.termSetInput(\"$escaped\")", null)
+        }
+    }
+
+    // ─── Quick-action prompts ─────────────────────────────────────────────────
+
+    private fun showQuickActions() {
+        val prompts = arrayOf(
+            "Explain this code to me",
+            "Find and fix any bugs in my code",
+            "Write unit tests for this",
+            "Optimize this code for performance",
+            "Add error handling and logging",
+            "Refactor this code to be cleaner",
+            "Create a README for this project",
+            "List all files in the project",
+            "Run $ ls and show directory structure",
+            "Help me with git: show status and recent commits"
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("Quick Actions")
+            .setItems(prompts) { _, which ->
+                val escaped = prompts[which].replace("\"", "\\\"")
+                binding.webViewTerminal.evaluateJavascript(
+                    "window.termSetInput(\"$escaped\")", null
+                )
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // ─── File browser ─────────────────────────────────────────────────────────
+
+    private fun showFileBrowser(dirPath: String) {
+        val dir = File(dirPath)
+        if (!dir.exists() || !dir.isDirectory) {
+            android.widget.Toast.makeText(this, "Directory not found: $dirPath", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val entries = try {
+            dir.listFiles()?.sortedWith(compareBy({ !it.isDirectory }, { it.name })) ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+        val names = entries.map { (if (it.isDirectory) "📂 " else "📄 ") + it.name }.toTypedArray()
+        if (names.isEmpty()) {
+            android.widget.Toast.makeText(this, "Empty directory", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(dirPath)
+            .setItems(names) { _, which ->
+                val selected = entries[which]
+                if (selected.isDirectory) {
+                    showFileBrowser(selected.absolutePath)
+                } else {
+                    showFileContent(selected)
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun showFileContent(file: File) {
+        val content = try {
+            if (file.length() > 100_000) file.readText(Charsets.UTF_8).take(100_000) + "\n…(truncated)"
+            else file.readText(Charsets.UTF_8)
+        } catch (e: Exception) {
+            "Error reading file: ${e.message}"
+        }
+
+        val scrollView = ScrollView(this)
+        val tv = TextView(this).apply {
+            text = content
+            setTextColor(Color.WHITE)
+            textSize = 11f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setPadding(32, 16, 32, 16)
+        }
+        scrollView.addView(tv)
+
+        AlertDialog.Builder(this)
+            .setTitle(file.name)
+            .setView(scrollView)
+            .setPositiveButton("Insert as Context") { _, _ ->
+                val escaped = content.take(4000).replace("\\", "\\\\").replace("\"", "\\\"")
+                    .replace("\n", "\\n").replace("\r", "\\r")
+                val ctxMsg = "Here is the content of ${file.name}:\\n$escaped"
+                binding.webViewTerminal.evaluateJavascript("window.termSetInput(\"$ctxMsg\")", null)
+            }
+            .setNeutralButton("Copy Path") { _, _ ->
+                val cm = getSystemService(android.content.ClipboardManager::class.java)
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("File Path", file.absolutePath))
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
     // ─── Service binding ──────────────────────────────────────────────────────
 
     private fun startAndBindService() {
@@ -519,6 +681,49 @@ class TerminalActivity : AppCompatActivity() {
                     .setPositiveButton("Yes, create it") { _, _ -> claudeService?.sendInput("y\r") }
                     .setNegativeButton("No, skip")       { _, _ -> claudeService?.sendInput("n\r") }
                     .show()
+            }
+        }
+
+        @JavascriptInterface
+        fun saveFile(filename: String, content: String) {
+            val projectPath = prefs.getProjectPath().ifEmpty { filesDir.absolutePath }
+            val file = File(projectPath, filename)
+            try {
+                file.parentFile?.mkdirs()
+                file.writeText(content, Charsets.UTF_8)
+                runOnUiThread {
+                    android.widget.Toast.makeText(
+                        this@TerminalActivity,
+                        "Saved: ${file.absolutePath}",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    android.widget.Toast.makeText(
+                        this@TerminalActivity,
+                        "Save failed: ${e.message}",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun startVoiceInput() {
+            runOnUiThread { this@TerminalActivity.startVoiceInput() }
+        }
+
+        @JavascriptInterface
+        fun showQuickActions() {
+            runOnUiThread { this@TerminalActivity.showQuickActions() }
+        }
+
+        @JavascriptInterface
+        fun browseFiles() {
+            runOnUiThread {
+                val path = prefs.getProjectPath().ifEmpty { filesDir.absolutePath }
+                showFileBrowser(path)
             }
         }
     }

@@ -57,6 +57,14 @@ class AppPreferences(context: Context) {
     fun setSessionActive(active: Boolean) =
         prefs.edit().putBoolean(KEY_SESSION_ACTIVE, active).apply()
 
+    // ─── Project ─────────────────────────────────────────────────────────────
+
+    fun getProjectPath(): String = prefs.getString(KEY_PROJECT_PATH, "") ?: ""
+    fun setProjectPath(path: String) = prefs.edit().putString(KEY_PROJECT_PATH, path).apply()
+
+    fun getCustomSystemPrompt(): String = prefs.getString(KEY_CUSTOM_SYSTEM_PROMPT, "") ?: ""
+    fun setCustomSystemPrompt(prompt: String) = prefs.edit().putString(KEY_CUSTOM_SYSTEM_PROMPT, prompt).apply()
+
     // ─── Misc ────────────────────────────────────────────────────────────────
 
     fun getInstalledClaudeVersion(): String = prefs.getString(KEY_CLAUDE_VERSION, "") ?: ""
@@ -82,16 +90,18 @@ class AppPreferences(context: Context) {
     }
 
     companion object {
-        private const val KEY_NODE_SETUP_DONE = "node_setup_done"
-        private const val KEY_PROVIDER_SET    = "provider_set"
-        private const val KEY_LOGIN_MODE      = "login_mode"
-        private const val KEY_PROVIDER_ID     = "provider_id"
-        private const val KEY_API_KEY         = "api_key"
-        private const val KEY_MODEL_ID        = "model_id"
-        private const val KEY_BASE_URL        = "base_url"
-        private const val KEY_SESSION_ACTIVE  = "session_active"
-        private const val KEY_LANGUAGE        = "language"
-        private const val KEY_CLAUDE_VERSION  = "claude_version"
+        private const val KEY_NODE_SETUP_DONE     = "node_setup_done"
+        private const val KEY_PROVIDER_SET        = "provider_set"
+        private const val KEY_LOGIN_MODE          = "login_mode"
+        private const val KEY_PROVIDER_ID         = "provider_id"
+        private const val KEY_API_KEY             = "api_key"
+        private const val KEY_MODEL_ID            = "model_id"
+        private const val KEY_BASE_URL            = "base_url"
+        private const val KEY_SESSION_ACTIVE      = "session_active"
+        private const val KEY_LANGUAGE            = "language"
+        private const val KEY_CLAUDE_VERSION      = "claude_version"
+        private const val KEY_PROJECT_PATH        = "project_path"
+        private const val KEY_CUSTOM_SYSTEM_PROMPT = "custom_system_prompt"
 
         const val MODE_SUBSCRIPTION = "subscription"
         const val MODE_PROXY        = "proxy"

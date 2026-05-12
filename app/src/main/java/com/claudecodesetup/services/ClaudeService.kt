@@ -214,7 +214,9 @@ class ClaudeService : LifecycleService() {
                 prefs.getApiKey(),
                 prefs.getModelId(),
                 prefs.getBaseUrl(),
-                prefs.getProviderId()
+                prefs.getProviderId(),
+                prefs.getProjectPath(),
+                prefs.getCustomSystemPrompt()
             )
         } else {
             bridge.refreshConfig(prefs)
@@ -303,7 +305,8 @@ class ClaudeService : LifecycleService() {
         bridgeStartedThisSession = false
         lifecycleScope.launch(Dispatchers.IO) {
             val mode = prefs.getLoginMode()
-            bridge.startBridge(mode, prefs.getApiKey(), prefs.getModelId(), prefs.getBaseUrl(), prefs.getProviderId())
+            bridge.startBridge(mode, prefs.getApiKey(), prefs.getModelId(), prefs.getBaseUrl(),
+                prefs.getProviderId(), prefs.getProjectPath(), prefs.getCustomSystemPrompt())
         }
     }
 

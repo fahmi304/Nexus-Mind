@@ -12,13 +12,24 @@ class SplashActivity : AppCompatActivity() {
 
         val prefs = AppPreferences(this)
 
+        // Handle text shared from other apps (ACTION_SEND)
+        val sharedText = if (intent?.action == Intent.ACTION_SEND &&
+            intent.type == "text/plain") {
+            intent.getStringExtra(Intent.EXTRA_TEXT)
+        } else null
+
         val next: Class<*> = when {
             !prefs.isNodeSetupComplete()  -> SetupActivity::class.java
             !prefs.isProviderConfigured() -> com.claudecodesetup.ui.ComposeActivity::class.java
-            else                          -> com.claudecodesetup.ui.HomeActivity::class.java
+            else                          -> TerminalActivity::class.java
         }
 
-        startActivity(Intent(this, next))
+        val nextIntent = Intent(this, next)
+        if (sharedText != null && next == TerminalActivity::class.java) {
+            nextIntent.putExtra("shared_text", sharedText)
+        }
+
+        startActivity(nextIntent)
         finish()
     }
 }
