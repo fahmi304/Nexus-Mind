@@ -36,10 +36,11 @@ const CLAUDE_CLI  = path.join(
     NPM_PREFIX, 'lib', 'node_modules',
     '@anthropic-ai', 'claude-code', 'cli.js'
 );
-const CONFIG_FILE  = path.join(FILES_DIR, 'bridge_config.json');
-const SETUP_LOG    = path.join(FILES_DIR, 'setup.log');
-const SETUP_DONE   = path.join(FILES_DIR, 'setup_done');
-const SETUP_FAILED = path.join(FILES_DIR, 'setup_failed');
+const CONFIG_FILE   = path.join(FILES_DIR, 'bridge_config.json');
+const SETUP_LOG     = path.join(FILES_DIR, 'setup.log');
+const SETUP_DONE    = path.join(FILES_DIR, 'setup_done');
+const SETUP_FAILED  = path.join(FILES_DIR, 'setup_failed');
+const SESSION_FILE  = path.join(FILES_DIR, 'last_session.json');
 
 const PORT       = 8083;
 const PROXY_PORT = 8082;
@@ -155,6 +156,8 @@ const AGENTIC_TOOLS = [
     }
 ];
 
+// executeTool returns { content, isError, newCwd }
+// newCwd is set when the bash command changes the working directory.
 function executeTool(name, input, cwd) {
     return new Promise(resolve => {
         const env = buildEnv();
@@ -163,46 +166,58 @@ function executeTool(name, input, cwd) {
             const workDir = input.cwd ? path.resolve(cwd, input.cwd) : cwd;
             let out = '', err = '';
             let child;
-            try { child = spawn('/system/bin/sh', ['-c', cmd], { env, cwd: workDir }); }
-            catch(e) { resolve({ content: 'spawn error: ' + e.message, isError: true }); return; }
+            // Wrap command: print pwd after execution so we can track cwd changes.
+            const wrappedCmd = cmd + '\n__exit=$?\npwd\nexit $__exit';
+            try { child = spawn('/system/bin/sh', ['-c', wrappedCmd], { env, cwd: workDir }); }
+            catch(e) { resolve({ content: 'spawn error: ' + e.message, isError: true, newCwd: cwd }); return; }
             const tid = setTimeout(() => {
                 try { child.kill(); } catch(_) {}
-                resolve({ content: (out + err).trim() + '\n[timeout 30s]', isError: true });
+                resolve({ content: (out + err).trim() + '\n[timeout 30s]', isError: true, newCwd: cwd });
             }, 30000);
             child.stdout.on('data', d => { out += d.toString(); });
             child.stderr.on('data', d => { err += d.toString(); });
             child.on('close', code => {
                 clearTimeout(tid);
+                // Extract trailing pwd line to detect cd
+                const lines = out.trimEnd().split('\n');
+                let newCwd = cwd;
+                const lastLine = lines[lines.length - 1] || '';
+                if (lastLine.startsWith('/') && fs.existsSync(lastLine.trim())) {
+                    newCwd = lastLine.trim();
+                    out = lines.slice(0, -1).join('\n');
+                }
                 const combined = (out + (err ? '\nstderr:\n' + err : '')).trim();
-                resolve({ content: combined || '[exit ' + code + ']', isError: code !== 0 });
+                resolve({ content: combined || '[exit ' + code + ']', isError: code !== 0, newCwd });
             });
         } else if (name === 'read_file') {
             try {
                 const fp = path.resolve(cwd, input.path);
                 const content = fs.readFileSync(fp, 'utf8');
-                resolve({ content: content.slice(0, 50000), isError: false });
-            } catch(e) { resolve({ content: 'Error: ' + e.message, isError: true }); }
+                resolve({ content: content.slice(0, 50000), isError: false, newCwd: cwd });
+            } catch(e) { resolve({ content: 'Error: ' + e.message, isError: true, newCwd: cwd }); }
         } else if (name === 'write_file') {
             try {
                 const fp = path.resolve(cwd, input.path);
                 fs.mkdirSync(path.dirname(fp), { recursive: true });
                 fs.writeFileSync(fp, input.content, 'utf8');
-                resolve({ content: 'Wrote ' + fp, isError: false });
-            } catch(e) { resolve({ content: 'Error: ' + e.message, isError: true }); }
+                resolve({ content: 'Wrote ' + fp, isError: false, newCwd: cwd });
+            } catch(e) { resolve({ content: 'Error: ' + e.message, isError: true, newCwd: cwd }); }
         } else if (name === 'list_dir') {
             try {
                 const dp = path.resolve(cwd, input.path);
                 const entries = fs.readdirSync(dp, { withFileTypes: true });
                 const lines = entries.map(e => (e.isDirectory() ? 'd ' : 'f ') + e.name).join('\n');
-                resolve({ content: lines || '(empty)', isError: false });
-            } catch(e) { resolve({ content: 'Error: ' + e.message, isError: true }); }
+                resolve({ content: lines || '(empty)', isError: false, newCwd: cwd });
+            } catch(e) { resolve({ content: 'Error: ' + e.message, isError: true, newCwd: cwd }); }
         } else {
-            resolve({ content: 'Unknown tool: ' + name, isError: true });
+            resolve({ content: 'Unknown tool: ' + name, isError: true, newCwd: cwd });
         }
     });
 }
 
-function callProxyOnce(messages, tools) {
+// Streaming proxy call — writes text_delta chunks to socket as they arrive.
+// Resolves with { content, stop_reason } in Anthropic format after stream ends.
+function callProxyStreaming(socket, messages, tools, onThinkingDone) {
     return new Promise((resolve, reject) => {
         const cfg  = readConfig();
         const body = JSON.stringify({
@@ -210,12 +225,13 @@ function callProxyOnce(messages, tools) {
             max_tokens: 4096,
             messages,
             tools,
-            stream: false
+            system: AGENTIC_SYSTEM_PROMPT,
+            stream: true
         });
         const apiKey = cfg.mode === 'subscription'
             ? (cfg.apiKey || 'sk-ant-key')
             : 'sk-ant-proxy000';
-        const options = {
+        const req = http.request({
             hostname: HOST, port: PROXY_PORT,
             path: '/v1/messages', method: 'POST',
             headers: {
@@ -224,22 +240,82 @@ function callProxyOnce(messages, tools) {
                 'anthropic-version': '2023-06-01',
                 'Content-Length': Buffer.byteLength(body)
             }
-        };
-        const req = http.request(options, res => {
-            let data = '';
-            res.on('data', d => { data += d; });
-            res.on('end', () => {
-                try { resolve(JSON.parse(data)); }
-                catch(e) { reject(new Error('Bad JSON: ' + data.slice(0, 200))); }
+        }, res => {
+            let buf = '';
+            const textBlocks = {}, toolBlocks = {};
+            let stopReason = 'end_turn';
+            let thinkingSignalled = false;
+
+            res.on('data', chunk => {
+                buf += chunk.toString();
+                const lines = buf.split('\n');
+                buf = lines.pop();
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    const raw = line.slice(6).trim();
+                    if (raw === '[DONE]') continue;
+                    let evt; try { evt = JSON.parse(raw); } catch(_) { continue; }
+
+                    if (evt.type === 'content_block_start') {
+                        const cb = evt.content_block;
+                        if (cb.type === 'text')     textBlocks[evt.index] = '';
+                        if (cb.type === 'tool_use') toolBlocks[evt.index] = { id: cb.id, name: cb.name, input_json: '' };
+                    } else if (evt.type === 'content_block_delta') {
+                        const d = evt.delta;
+                        if (d.type === 'text_delta' && d.text) {
+                            textBlocks[evt.index] = (textBlocks[evt.index] || '') + d.text;
+                            if (!thinkingSignalled) {
+                                thinkingSignalled = true;
+                                if (onThinkingDone) onThinkingDone();
+                            }
+                            try { socket.write(d.text); } catch(_) {}
+                        } else if (d.type === 'input_json_delta' && toolBlocks[evt.index]) {
+                            toolBlocks[evt.index].input_json += d.partial_json || '';
+                        }
+                    } else if (evt.type === 'message_delta' && evt.delta.stop_reason) {
+                        stopReason = evt.delta.stop_reason;
+                    }
+                }
             });
+
+            res.on('end', () => {
+                // Rebuild content array in block-index order
+                const content = [];
+                const allIdx = new Set([...Object.keys(textBlocks), ...Object.keys(toolBlocks)].map(Number));
+                for (const idx of Array.from(allIdx).sort((a, b) => a - b)) {
+                    if (textBlocks[idx] !== undefined) content.push({ type: 'text', text: textBlocks[idx] });
+                    if (toolBlocks[idx]) {
+                        let input = {};
+                        try { input = JSON.parse(toolBlocks[idx].input_json || '{}'); } catch(_) {}
+                        content.push({ type: 'tool_use', id: toolBlocks[idx].id, name: toolBlocks[idx].name, input });
+                    }
+                }
+                resolve({ content, stop_reason: stopReason });
+            });
+            res.on('error', reject);
         });
-        const tid = setTimeout(() => { req.destroy(); reject(new Error('Proxy timeout')); }, 90000);
+
+        const tid = setTimeout(() => { req.destroy(); reject(new Error('Proxy stream timeout')); }, 120000);
         req.on('error', e => { clearTimeout(tid); reject(e); });
         req.on('close', () => clearTimeout(tid));
         req.write(body); req.end();
     });
 }
 
+const AGENTIC_SYSTEM_PROMPT =
+    'You are an AI assistant running directly on an Android device via Claude Code Setup. ' +
+    'You have the following tools available — use them proactively to complete tasks:\n' +
+    '• bash(command, cwd?) — run any shell command (git, npm, node, cat, ls, curl, etc.)\n' +
+    '• read_file(path) — read a file\'s contents\n' +
+    '• write_file(path, content) — create or overwrite a file\n' +
+    '• list_dir(path) — list directory contents\n\n' +
+    'Working directory: /data/data/com.claudecodesetup/files\n' +
+    'git is available via isomorphic-git if !install-git has been run.\n' +
+    'Always use tools to complete tasks rather than just describing how to do them. ' +
+    'When editing code, read the file first, make targeted changes, then write it back.';
+
+// runAgentic — streaming agentic loop. Returns final assistant text for history.
+// Also returns updated shellCwd (may change if AI ran cd commands).
 async function runAgentic(socket, userMessage, history, shellCwd) {
     const MAX_TURNS = 12;
     const messages = history.map(h => ({ role: h.role, content: h.content }));
@@ -247,38 +323,47 @@ async function runAgentic(socket, userMessage, history, shellCwd) {
 
     try { socket.write('\x1b]9;thinking-start\x07'); } catch(_) {}
     let thinkingDone = false;
+    const signalThinkingDone = () => {
+        if (!thinkingDone) {
+            thinkingDone = true;
+            try { socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
+        }
+    };
+
     let assistantText = '';
+    let currentCwd = shellCwd;
 
     try {
         for (let turn = 0; turn < MAX_TURNS; turn++) {
-            const resp = await callProxyOnce(messages, AGENTIC_TOOLS);
+            const resp = await callProxyStreaming(socket, messages, AGENTIC_TOOLS, signalThinkingDone);
             if (!resp || !resp.content) throw new Error('Empty response from proxy');
 
-            messages.push({ role: 'assistant', content: resp.content });
-
-            for (const block of resp.content) {
-                if (block.type === 'text' && block.text) {
-                    if (!thinkingDone) {
-                        thinkingDone = true;
-                        try { socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
-                    }
-                    try { socket.write(block.text); } catch(_) {}
-                    assistantText += block.text;
-                }
+            // Collect text for history
+            for (const b of resp.content) {
+                if (b.type === 'text') assistantText += b.text;
             }
+
+            messages.push({ role: 'assistant', content: resp.content });
 
             if (resp.stop_reason === 'end_turn' || resp.stop_reason === 'stop_sequence') break;
 
             const toolUses = resp.content.filter(b => b.type === 'tool_use');
             if (!toolUses.length) break;
 
+            // Tools run after streaming — show indicator and execute
+            signalThinkingDone();
             const toolResults = [];
             for (const tu of toolUses) {
                 try { socket.write('\r\n\x1b[36m▶ ' + tu.name + '  ' + JSON.stringify(tu.input) + '\x1b[0m\r\n'); } catch(_) {}
-                const result = await executeTool(tu.name, tu.input, shellCwd);
+                const result = await executeTool(tu.name, tu.input, currentCwd);
+                // Update cwd if bash command changed directory
+                if (result.newCwd && result.newCwd !== currentCwd) {
+                    currentCwd = result.newCwd;
+                    try { socket.write('\x1b[2mcwd: ' + currentCwd + '\x1b[0m\r\n'); } catch(_) {}
+                }
                 const preview = result.content.slice(0, 2000);
-                try { socket.write('\x1b[2m' + preview + '\x1b[0m\r\n'); } catch(_) {}
-                log('[agentic] tool=' + tu.name + ' isError=' + result.isError + '\n');
+                try { socket.write('\x1b[2m' + preview + (result.content.length > 2000 ? '\n…(truncated)' : '') + '\x1b[0m\r\n'); } catch(_) {}
+                log('[agentic] tool=' + tu.name + ' cwd=' + currentCwd + ' isError=' + result.isError + '\n');
                 toolResults.push({
                     type: 'tool_result', tool_use_id: tu.id,
                     content: result.content.slice(0, 8000),
@@ -286,14 +371,36 @@ async function runAgentic(socket, userMessage, history, shellCwd) {
                 });
             }
             messages.push({ role: 'user', content: toolResults });
+            // Show thinking again between tool rounds
+            try { socket.write('\x1b]9;thinking-start\x07'); } catch(_) {}
+            thinkingDone = false;
         }
     } catch(e) {
         log('[agentic] error: ' + e.message + '\n');
         try { socket.write('\r\n\x1b[31m[agentic error] ' + e.message + '\x1b[0m\r\n'); } catch(_) {}
     }
 
-    if (!thinkingDone) { try { socket.write('\x1b]9;thinking-done\x07'); } catch(_) {} }
-    return assistantText;
+    signalThinkingDone();
+    return { text: assistantText, cwd: currentCwd };
+}
+
+// ─── Session persistence ──────────────────────────────────────────────────────
+// Saves the last N history entries to filesDir/last_session.json so context
+// survives app restarts. Loaded on each new socket connection.
+
+function loadSession() {
+    try {
+        const data = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
+        // Discard sessions older than 24 hours
+        if (Date.now() - (data.ts || 0) > 86400000) return [];
+        return Array.isArray(data.history) ? data.history : [];
+    } catch(_) { return []; }
+}
+
+function saveSession(history) {
+    try {
+        fs.writeFileSync(SESSION_FILE, JSON.stringify({ ts: Date.now(), history }), 'utf8');
+    } catch(_) {}
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -1379,16 +1486,18 @@ function openTcpBridge() {
         let   busy      = false;
         let   current   = null;
         let   currentTid = null;  // safety-net timeout handle
-        let   history   = [];     // conversation turns for this session
+        let   history   = loadSession();  // load persisted history from last session
         let   shellCwd  = FILES_DIR;  // working directory for $ shell commands
 
         const startCfg = readConfig();
         const modeLabel = startCfg.mode === 'subscription' ? 'Anthropic' : (startCfg.providerUrl || 'proxy');
+        const agentTag  = agenticEnabled ? '  \x1b[35m[AGENTIC]\x1b[0m' : '';
+        const resumed   = history.length > 0 ? '  \x1b[2m(resumed ' + Math.floor(history.length/2) + ' turns)\x1b[0m' : '';
         socket.write(
             '\r\n\x1b[32mClaude Code ready.\x1b[0m Type a message or \x1b[33m$ command\x1b[0m to run shell.\r\n' +
             '\x1b[2mProvider: ' + modeLabel +
             '  Model: ' + (startCfg.modelId || 'auto') +
-            '  Key: ' + sanitizeKey(startCfg.apiKey) + '\x1b[0m\r\n\r\n'
+            '  Key: ' + sanitizeKey(startCfg.apiKey) + '\x1b[0m' + agentTag + resumed + '\r\n\r\n'
         );
 
         // Run launcher self-test once per connection — helps diagnose
@@ -1452,6 +1561,7 @@ function openTcpBridge() {
                 }
                 if (line === '!clear') {
                     history = [];
+                    saveSession([]);
                     try { socket.write('\r\n\x1b[32m✓ Conversation history cleared.\x1b[0m\r\n'); } catch (_) {}
                     continue;
                 }
@@ -1496,9 +1606,9 @@ function openTcpBridge() {
                     else agenticEnabled = !agenticEnabled;
                     try {
                         socket.write(agenticEnabled
-                            ? '\x1b[32m✓ Agentic mode ON.\x1b[0m The AI can now run bash commands, read/write files.\r\n' +
-                              '\x1b[2mTurn off with !agentic off  |  Works best with Gemini / Anthropic providers.\x1b[0m\r\n\r\n'
-                            : '\x1b[33m✗ Agentic mode OFF.\x1b[0m Back to standard --print mode.\r\n\r\n'
+                            ? '\x1b[35m[AGENTIC ON]\x1b[0m The AI can now run bash, read/write files, chain tool calls.\r\n' +
+                              '\x1b[2mBest with Gemini Flash/Pro or Anthropic subscription. Turn off: !agentic off\x1b[0m\r\n\r\n'
+                            : '\x1b[2m[AGENTIC OFF]\x1b[0m Back to standard --print mode.\r\n\r\n'
                         );
                     } catch(_) {}
                     continue;
@@ -1780,18 +1890,19 @@ function openTcpBridge() {
                     busy = false;
                 }
 
-                // ── Agentic mode: direct tool-calling loop via proxy ──────────
+                // ── Agentic mode: streaming tool-calling loop via proxy ───────
                 if (agenticEnabled) {
                     busy = true;
                     const agMsg = line;
-                    const agCwd = shellCwd;
-                    const agHist = history.slice();
-                    runAgentic(socket, agMsg, agHist, agCwd).then(reply => {
-                        if (reply) {
+                    runAgentic(socket, agMsg, history.slice(), shellCwd).then(result => {
+                        if (result.text) {
                             history.push({ role: 'user',      content: agMsg });
-                            history.push({ role: 'assistant', content: reply });
+                            history.push({ role: 'assistant', content: result.text });
                             if (history.length > MAX_HISTORY) history = history.slice(-MAX_HISTORY);
+                            saveSession(history);
                         }
+                        // Propagate cwd changes from AI tool calls back to shell
+                        if (result.cwd && result.cwd !== shellCwd) shellCwd = result.cwd;
                         busy = false; current = null;
                     }).catch(() => { busy = false; current = null; });
                     continue;
@@ -1842,6 +1953,7 @@ function openTcpBridge() {
                             history.push({ role: 'user',      content: line });
                             history.push({ role: 'assistant', content: reply });
                             if (history.length > MAX_HISTORY) history = history.slice(-MAX_HISTORY);
+                            saveSession(history);
                         }
                     }
                     responseBuf = '';
