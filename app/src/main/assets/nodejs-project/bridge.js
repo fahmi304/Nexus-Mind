@@ -605,28 +605,90 @@ function anthToOai(a, model) {
     for (const m of (a.messages || [])) {
         if (typeof m.content === 'string') {
             msgs.push({ role: m.role, content: m.content });
+            continue;
+        }
+        const blocks = m.content || [];
+        const textBlocks    = blocks.filter(b => b.type === 'text');
+        const toolUseBlocks = blocks.filter(b => b.type === 'tool_use');
+        const toolResults   = blocks.filter(b => b.type === 'tool_result');
+
+        if (toolResults.length > 0) {
+            // Anthropic user tool_result → OpenAI role:"tool" messages (one per result)
+            for (const tr of toolResults) {
+                const content = Array.isArray(tr.content)
+                    ? tr.content.filter(b => b.type === 'text').map(b => b.text).join('')
+                    : String(tr.content || '');
+                msgs.push({ role: 'tool', tool_call_id: tr.tool_use_id, content });
+            }
+            // Any accompanying text in the same user block (rare)
+            if (textBlocks.length > 0)
+                msgs.push({ role: 'user', content: textBlocks.map(b => b.text).join('') });
+        } else if (toolUseBlocks.length > 0 && m.role === 'assistant') {
+            // Anthropic assistant tool_use → OpenAI tool_calls
+            msgs.push({
+                role: 'assistant',
+                content: textBlocks.map(b => b.text).join('') || null,
+                tool_calls: toolUseBlocks.map(tu => ({
+                    id: tu.id || ('call_' + tu.name + '_' + Date.now()),
+                    type: 'function',
+                    function: { name: tu.name, arguments: JSON.stringify(tu.input || {}) }
+                }))
+            });
         } else {
-            const text = (m.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-            msgs.push({ role: m.role, content: text });
+            msgs.push({ role: m.role, content: textBlocks.map(b => b.text).join('') });
         }
     }
 
     const req = { model, messages: msgs, max_tokens: a.max_tokens || 8096, stream: !!a.stream };
     if (a.temperature !== undefined) req.temperature = a.temperature;
     if (a.stop_sequences && a.stop_sequences.length) req.stop = a.stop_sequences;
+
+    // Translate Anthropic tool definitions → OpenAI tools format
+    if (a.tools && a.tools.length > 0) {
+        req.tools = a.tools.map(t => ({
+            type: 'function',
+            function: {
+                name: t.name,
+                description: t.description || '',
+                parameters: t.input_schema || { type: 'object', properties: {} }
+            }
+        }));
+        req.tool_choice = 'auto';
+        log('[proxy] forwarding ' + a.tools.length + ' tool(s): ' +
+            a.tools.map(t => t.name).join(', ') + '\n');
+    }
+
     return req;
 }
 
 // Convert OpenAI Chat Completions response → Anthropic Messages response
 function oaiToAnth(oai, model) {
     const choice = (oai.choices || [])[0] || {};
-    const text   = (choice.message || {}).content || '';
-    const stop   = choice.finish_reason === 'length' ? 'max_tokens' : 'end_turn';
+    const msg    = choice.message || {};
+    const content = [];
+
+    if (msg.content) content.push({ type: 'text', text: msg.content });
+
+    // Convert OpenAI tool_calls → Anthropic tool_use blocks
+    if (msg.tool_calls && msg.tool_calls.length > 0) {
+        for (const tc of msg.tool_calls) {
+            let input = {};
+            try { input = JSON.parse(tc.function.arguments || '{}'); } catch (_) {}
+            content.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input });
+        }
+        log('[proxy] received ' + msg.tool_calls.length + ' tool_call(s) from provider\n');
+    }
+
+    const finish   = choice.finish_reason;
+    const stopReason = finish === 'length'     ? 'max_tokens'
+                     : finish === 'tool_calls' ? 'tool_use'
+                     : 'end_turn';
+
     return {
         id: 'msg_' + (oai.id || Date.now()),
         type: 'message', role: 'assistant',
-        content: [{ type: 'text', text }],
-        model, stop_reason: stop, stop_sequence: null,
+        content: content.length ? content : [{ type: 'text', text: '' }],
+        model, stop_reason: stopReason, stop_sequence: null,
         usage: {
             input_tokens:  (oai.usage || {}).prompt_tokens    || 0,
             output_tokens: (oai.usage || {}).completion_tokens || 0,
@@ -723,9 +785,12 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res) {
             });
 
             const msgId = 'msg_' + Date.now();
-            let outTokens = 0;
-            let buffer    = '';
+            let outTokens   = 0;
+            let buffer      = '';
             let headersSent = false;
+            // tool_call index → {id, name, blockIdx} — tracks streaming tool call blocks
+            let tcBlocks    = {};
+            let nextBlockIdx = 1; // 0 = text block; tool blocks start at 1
 
             function sendEvent(event, data) {
                 try { res.write('event: ' + event + '\ndata: ' + JSON.stringify(data) + '\n\n'); }
@@ -756,6 +821,7 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res) {
                                        content: [], model: oaiReq.model, stop_reason: null,
                                        usage: { input_tokens: 0, output_tokens: 0 } },
                         });
+                        // Always open a text block at index 0 (may be empty if model only uses tools)
                         sendEvent('content_block_start', {
                             type: 'content_block_start', index: 0,
                             content_block: { type: 'text', text: '' },
@@ -763,10 +829,12 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res) {
                         sendEvent('ping', { type: 'ping' });
                     }
 
-                    const delta      = ((event.choices || [])[0] || {}).delta || {};
+                    const choice     = (event.choices || [])[0] || {};
+                    const delta      = choice.delta || {};
                     const text       = delta.content || '';
-                    const finishCode = ((event.choices || [])[0] || {}).finish_reason;
+                    const finishCode = choice.finish_reason;
 
+                    // Text delta
                     if (text) {
                         outTokens++;
                         sendEvent('content_block_delta', {
@@ -775,9 +843,45 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res) {
                         });
                     }
 
+                    // Tool call deltas — convert to Anthropic tool_use content blocks
+                    if (delta.tool_calls && delta.tool_calls.length > 0) {
+                        for (const tc of delta.tool_calls) {
+                            const tcIdx = tc.index !== undefined ? tc.index : 0;
+                            if (!tcBlocks[tcIdx]) {
+                                // First chunk for this tool call: open a new content block
+                                const blockIdx = nextBlockIdx++;
+                                tcBlocks[tcIdx] = { id: tc.id, name: (tc.function || {}).name || '', blockIdx };
+                                sendEvent('content_block_start', {
+                                    type: 'content_block_start', index: blockIdx,
+                                    content_block: {
+                                        type: 'tool_use',
+                                        id: tc.id,
+                                        name: (tc.function || {}).name || '',
+                                        input: {}
+                                    }
+                                });
+                                log('[proxy] stream: tool_use block opened — ' + tcBlocks[tcIdx].name + '\n');
+                            }
+                            const args = (tc.function || {}).arguments || '';
+                            if (args) {
+                                sendEvent('content_block_delta', {
+                                    type: 'content_block_delta', index: tcBlocks[tcIdx].blockIdx,
+                                    delta: { type: 'input_json_delta', partial_json: args }
+                                });
+                            }
+                        }
+                    }
+
                     if (finishCode) {
-                        const stopReason = finishCode === 'length' ? 'max_tokens' : 'end_turn';
+                        // Close text block
                         sendEvent('content_block_stop', { type: 'content_block_stop', index: 0 });
+                        // Close any open tool_use blocks
+                        for (const tb of Object.values(tcBlocks)) {
+                            sendEvent('content_block_stop', { type: 'content_block_stop', index: tb.blockIdx });
+                        }
+                        const stopReason = finishCode === 'tool_calls' ? 'tool_use'
+                                         : finishCode === 'length'     ? 'max_tokens'
+                                         : 'end_turn';
                         sendEvent('message_delta', {
                             type: 'message_delta',
                             delta: { stop_reason: stopReason, stop_sequence: null },
@@ -840,7 +944,10 @@ function buildEnv() {
         LANG: 'en_US.UTF-8',
         LINES: '50',
         COLUMNS: '160',
-        PATH: process.env.PATH || '/system/bin:/system/xbin',
+        // Include npm-global bin and a bundled-binaries dir (for future git/gh bundles)
+        PATH: (process.env.PATH || '/system/bin:/system/xbin') +
+              ':' + path.join(NPM_PREFIX, 'bin') +
+              ':' + path.join(FILES_DIR, 'bin'),
         LD_LIBRARY_PATH: NATIVE_DIR,
     };
 
