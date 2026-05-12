@@ -50,12 +50,17 @@ ClaudeCodeSetup/
 │   │   │   └── node_launcher.cpp — optional launcher helper
 │   │   └── java/com/claudecodesetup/
 │   │       ├── ClaudeApp.kt          — Application class, notification channels
-│   │       ├── SplashActivity.kt     — routing: Setup → LoginFlow → Terminal
+│   │       ├── SplashActivity.kt     — routing: Setup → ComposeActivity → Terminal
 │   │       ├── SetupActivity.kt      — first-run: starts Node, polls setup.log
-│   │       ├── LoginFlowActivity.kt  — provider/API-key wizard (5 screens)
 │   │       ├── TerminalActivity.kt   — WebView terminal + session tabs
 │   │       ├── SettingsActivity.kt   — change provider, reset, language
 │   │       ├── NodeEngine.kt         — Kotlin singleton; wraps JNI nativeStart()
+│   │       ├── ui/
+│   │       │   ├── ComposeActivity.kt    — hosts full Compose login flow; supports start_at intent extra
+│   │       │   ├── LoginScreens.kt       — SubscriptionScreen, MalaysiaScreen, GeminiRecommendScreen, ProviderListScreen
+│   │       │   ├── ApiKeyScreen.kt       — glassmorphic key entry + OkHttp validation per provider
+│   │       │   ├── ModelPickerScreen.kt  — 3-col grid picker; live fetch for OpenRouter
+│   │       │   └── UiCommon.kt           — AppBackground, glowShadow, DmSansFamily, SpaceMonoFamily
 │   │       ├── data/
 │   │       │   ├── AppPreferences.kt     — EncryptedSharedPreferences wrapper
 │   │       │   ├── Providers.kt          — hardcoded Provider/AiModel data classes
@@ -136,13 +141,14 @@ No Android unit tests exist yet. Instrumentation tests are wired up but empty (E
 ```
 SplashActivity (routing only)
     ↓  first run               ↓  provider not set    ↓  ready
-SetupActivity         LoginFlowActivity           TerminalActivity
-(Node install)        (5-screen wizard)            (sessions + WebView)
-                                                         ↕
-                                                   SettingsActivity
+SetupActivity         ComposeActivity              TerminalActivity
+(Node install)        (6-screen Compose flow)      (sessions + WebView)
+                        subscription → malaysia          ↕
+                        → gemini_recommend           SettingsActivity
+                        → providers → key → picker   (Change model → ComposeActivity start_at=picker)
 ```
 
-`SplashActivity` always decides the next screen based on two prefs: `isNodeSetupComplete()` and `isProviderConfigured()`.
+`SplashActivity` always decides the next screen based on two prefs: `isNodeSetupComplete()` and `isProviderConfigured()`. `LoginFlowActivity` has been deleted — `ComposeActivity` is the sole login flow entry point.
 
 ### Session model
 
@@ -211,10 +217,23 @@ Providers are defined in two places:
 
 - **Replaced app icon with Convergence Gate design** — New icon is a dark-purple geometric diamond gate with 6 colored peripheral nodes (orange/green/blue/purple/red/cyan) connected by dashed lines to a central white glow. Generated all density PNGs (mdpi 48px → xxxhdpi 192px) + round variants via a pure-Python pixel renderer (`/tmp/render_icon.py`, `struct`/`zlib`/`math` only — no native image libs available on ARM64 PRoot). `ic_launcher_foreground.xml` replaced with Android VectorDrawable version using `aapt:attr` radial/linear gradients (requires API 26+, minSdk is 29). `ic_launcher_background.xml` updated to `#090714`. Master SVG saved at `app/src/main/assets/icons/app_icon.svg`.
 
-- **Added: Jetpack Compose UI — ApiKeyScreen + ModelPickerScreen** — Two-screen Compose flow in `app/src/main/java/com/claudecodesetup/ui/`. Hosted by `ComposeActivity` with simple `var screen by remember` state navigation (no NavController). Compose BOM `2024.02.00`, Kotlin Compose compiler `1.5.10`.
-  - **ApiKeyScreen**: glassmorphic card (7% white alpha, border, 24dp radius) on radial gradient background. IDLE/LOADING/SUCCESS/ERROR state machine. `animateColorAsState` border + `BlurMaskFilter` glow ring. Infinite-transition icon pulse while loading; keyframe scale-bounce on success. `BasicTextField` with `PasswordVisualTransformation`. Gradient CTA button (`#3B82F6→#6366F1`) with press scale. 500ms entry fade+slide.
-  - **ModelPickerScreen**: 18 models across 8 categories. `LazyRow` filter chips (animated colors). `LazyVerticalGrid` 3-column, 9 per page with empty slot placeholders. Per-card: emoji icon box, speed bar gradient, badge pill, token count. Selected state: animated bg/border/glow + checkmark. Pagination row with prev/next + numbered page chips.
-  - **UiCommon.kt**: `AppBackground` composable (radial gradient + 3 decorative glow blobs). `glowShadow` Modifier extension via `drawBehind` + `BlurMaskFilter`. `DmSansFamily` + `SpaceMonoFamily` via `GoogleFont.Provider`.
+- **Added: full Jetpack Compose login flow — replaces LoginFlowActivity** — `LoginFlowActivity.kt`, `activity_login_flow.xml`, `item_provider.xml`, `provider_registry.html` all deleted. `ComposeActivity` now hosts a 6-screen flow with `var screen by remember` state navigation (no NavController). Compose BOM `2024.02.00`, Kotlin Compose compiler `1.5.10`.
+  - **LoginScreens.kt**: `SubscriptionScreen`, `MalaysiaScreen`, `GeminiRecommendScreen`, `ProviderListScreen`, `ProviderCard`, `FlowButton`, `FlowOutlineButton`. Glassmorphic card design consistent across all screens.
+  - **ApiKeyScreen**: glassmorphic card on radial gradient background. IDLE/LOADING/SUCCESS/ERROR state machine. `animateColorAsState` border + `BlurMaskFilter` glow ring. Real OkHttp validation per provider (Anthropic, Gemini, OpenRouter, DeepSeek, Kimi, NVIDIA, Meta). Gradient CTA button (`#3B82F6→#6366F1`). Handles Ollama (no key required).
+  - **ModelPickerScreen**: driven by `provider.models` (real data). `LazyRow` filter chips (animated). `LazyVerticalGrid` 3-column, 9 per page. Per-card: emoji, speed bar, badge pill, token count, glow on selection. For OpenRouter: auto-fetches live free models via `ProvidersRepository.fetchOpenRouterFreeModels()` on entry + "↻ Refresh" button in header.
+  - **UiCommon.kt**: `AppBackground` composable (radial gradient + 3 decorative glow blobs). `glowShadow` Modifier extension via `drawBehind` + `BlurMaskFilter`. `DmSansFamily` + `SpaceMonoFamily` via `GoogleFont.Provider`. `font_certs.xml` added to `res/values/` (required by `GoogleFont.Provider` — not in any Maven dep, must be in project resources).
+  - **`start_at` intent extra**: `ComposeActivity` accepts `intent.getStringExtra("start_at")` to jump directly to any screen. Used by `SettingsActivity` "Change model" button which passes `start_at=picker`; the picker pre-loads the current provider + API key from prefs.
+
+- **Fixed: chat UI — empty bubble, avatar position, text colors** — Three bugs in `terminal/index.html`:
+  1. **Empty sys bubble**: `termWrite` previously called `getSysBubble()` (DOM creation) before `processAnsiBytes()`. OSC sequences like `thinking-start` change `chatState` inside `processAnsiBytes`, but the empty DOM element was already created. Fix: process ANSI bytes first; only create a sys bubble if `chatState` is still `IDLE` and there is visible text in `sysAnsi.lines`. `sysAnsi` reset moved from `getSysBubble()` to `submitLine()`.
+  2. **Avatar on wrong side**: `.user-row` uses `flex-direction: row-reverse` (first child = rightmost). DOM was `[bub, av]` → avatar landed left of bubble. Fixed to `[av, bub]` → avatar rightmost, bubble to its left.
+  3. **Input text color**: `#input-wrap color` was `#e0d8ff` (bluish-white); changed to `#ffffff`.
+
+- **Fixed: logos in terminal header and setup screen** — `activity_terminal.xml` and `activity_setup.xml` were using `@drawable/ic_terminal` (old icon). Both updated to `@mipmap/ic_launcher` (the new Convergence Gate app icon). Terminal header tint removed; size adjusted to 28dp.
+
+- **Fixed: bluish-white text colors in Compose UI** — `Color(0xFFF1F5F9)` (Tailwind slate-100) and `Color(0xFFE5E7EB)` (gray-200) appeared as the primary text color on dark backgrounds, rendering as slightly blue-tinted white (hard to read). All occurrences in `ApiKeyScreen.kt`, `LoginScreens.kt`, and `ModelPickerScreen.kt` replaced with `Color.White`.
+
+- **Fixed: Settings "Change model" button** — Previously showed an in-app dialog with a live OpenRouter model fetch. Now navigates to `ComposeActivity` with `start_at=picker`, which loads the current provider/key from prefs and shows the full Compose model picker (works for all providers, not just OpenRouter). Visibility condition changed from `providerId == "openrouter"` to `provider.models.size > 1`. Dead code (`startModelRefresh`, `showModelPickerDialog`) removed from `SettingsActivity`.
 
 ### Known gaps / TODO
 - `DownloadManager.kt` exists with resumable download + npm version fetching, but `fetchLatestClaudeVersion()` is not used — version is always the pinned constant. The class is partially unused.
@@ -225,6 +244,9 @@ Providers are defined in two places:
 - No `CHANGELOG.md` (referenced in `release.yml`).
 - `build.gradle` ABI filter is `arm64-v8a, armeabi-v7a` only — x86/x86_64 not supported despite README mentioning them.
 - README still has `YOUR_USERNAME` placeholders in GitHub URLs.
+- **Models have no internet access** — providers are stateless LLMs; no web search or tool use is wired. In proxy mode (all non-Anthropic providers), Claude Code tool calls are not forwarded and may be silently dropped.
+- **No persistent memory across sessions** — `history[]` in `bridge.js` is per-socket only; lost on socket close, app restart, or model switch. Cross-session memory (save/load `session_memory.json` in `filesDir`) is not yet implemented.
+- **No agentic/shell execution** — the app uses `claude --print` only. Claude Code's agentic loop (file read/write, shell commands, git, etc.) does not run. Enabling it would require switching to interactive PTY mode and bundling ARM64 binaries (`git`, `gh`, etc.).
 
 ---
 
