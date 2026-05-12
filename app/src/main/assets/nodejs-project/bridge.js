@@ -320,9 +320,22 @@ const AGENTIC_SYSTEM_PROMPT =
     '• write_file(path, content) — create or overwrite a file\n' +
     '• list_dir(path) — list directory contents\n\n' +
     'Working directory: /data/data/com.claudecodesetup/files\n' +
-    'git is available via isomorphic-git if !install-git has been run.\n' +
-    'Always use tools to complete tasks rather than just describing how to do them. ' +
-    'When editing code, read the file first, make targeted changes, then write it back.';
+    'git is available via isomorphic-git if !install-git has been run.\n\n' +
+    '## IMPORTANT — How to handle requests\n\n' +
+    '**Before starting any non-trivial task:**\n' +
+    '1. If the request is ambiguous or has important unknowns (language, framework, target platform, ' +
+    'existing setup), ask 1–3 focused clarifying questions FIRST. Do not assume and proceed blindly.\n' +
+    '2. Use bash to check whether required tools/packages are installed before trying to use them ' +
+    '(e.g. `which node`, `which git`, `node -v`, `npm list <pkg>`, `ls /path/to/tool`). ' +
+    'If a tool is missing, tell the user what is missing and ask if they want you to install it.\n' +
+    '3. For build/project tasks: confirm the language and framework before generating files.\n\n' +
+    '**Examples of questions to ask:**\n' +
+    '- "What language/framework would you like? (e.g. Node.js, Python, Kotlin)"\n' +
+    '- "Do you have X installed? I can check with `which X` or install it for you."\n' +
+    '- "Should I create this in your current project folder or a new subfolder?"\n' +
+    '- "Do you want me to initialize a git repo for this project?"\n\n' +
+    'When editing code, read the file first, make targeted changes, then write it back. ' +
+    'Always use tools to do real work rather than just describing steps.';
 
 // runAgentic — streaming agentic loop. Returns final assistant text for history.
 // Also returns updated shellCwd (may change if AI ran cd commands).
@@ -348,12 +361,25 @@ async function runAgentic(socket, userMessage, history, shellCwd) {
             const resp = await callProxyStreaming(socket, messages, AGENTIC_TOOLS, signalThinkingDone);
             if (!resp || !resp.content) throw new Error('Empty response from proxy');
 
-            // Collect text for history
+            // Collect this turn's text separately so we can inspect it for questions
+            let turnText = '';
             for (const b of resp.content) {
-                if (b.type === 'text') assistantText += b.text;
+                if (b.type === 'text') { turnText += b.text; assistantText += b.text; }
             }
 
             messages.push({ role: 'assistant', content: resp.content });
+
+            // If Claude ended with a question or is asking for confirmation, stop the
+            // tool loop so the user can answer before the AI proceeds further.
+            const trimmed = turnText.trim();
+            const isAskingQuestion =
+                /[?？]\s*$/.test(trimmed) ||
+                /\b(would you (like|prefer|want)|do you (want|have|need|already)|should i (proceed|install|create|use|go ahead)|what (language|framework|tech|stack|do you|would you|type of)|which (one|option|do you|would you|framework|language)|please (confirm|let me know|clarify)|before i (proceed|start|continue|go ahead)|can you (confirm|clarify|share|tell me|let me know)|are you (using|sure|ok with)|have you (installed|set up|already)|shall i|want me to)\b/i.test(trimmed);
+
+            if (isAskingQuestion) {
+                log('[agentic] pausing loop — Claude asked a question\n');
+                break;
+            }
 
             if (resp.stop_reason === 'end_turn' || resp.stop_reason === 'stop_sequence') break;
 
@@ -1363,18 +1389,31 @@ function stripAnsi(str) {
 // Also prepends customSystemPrompt if configured.
 // History entries: { role: 'user'|'assistant', content: string }
 // Capped at MAX_HISTORY messages (bridge.js enforces this on write).
+// Base instruction injected into every --print spawn so Claude asks questions
+// and checks for tools before proceeding. Short enough to stay under the
+// tryOptimize 800-char guard (only applies to housekeeping prompts, not here).
+const BASE_ASSISTANT_INSTRUCTION =
+    'Before starting any non-trivial task: ' +
+    '(1) If intent or setup is unclear, ask 1–2 focused clarifying questions first rather than assuming. ' +
+    '(2) Use bash to check whether required tools/packages exist before using them; ' +
+    'if something is missing, say what is missing and ask whether to install it. ' +
+    '(3) Confirm language/framework choice for any new project before generating files.';
+
 function buildMessageWithHistory(message, history) {
     const cfg = readConfig();
-    const sysPrompt = (cfg.customSystemPrompt || '').trim();
+    const customPrompt = (cfg.customSystemPrompt || '').trim();
+    // Always include base instruction; append custom prompt if set
+    const sysPrompt = customPrompt
+        ? BASE_ASSISTANT_INSTRUCTION + '\n\n[Custom Instructions]\n' + customPrompt
+        : BASE_ASSISTANT_INSTRUCTION;
 
     if (!history || history.length === 0) {
-        return sysPrompt ? '[System]\n' + sysPrompt + '\n\n' + message : message;
+        return '[System]\n' + sysPrompt + '\n\n' + message;
     }
     const ctx = history.map(m =>
         (m.role === 'user' ? 'Human' : 'Assistant') + ': ' + m.content
     ).join('\n\n');
-    const base = ctx + '\n\nHuman: ' + message;
-    return sysPrompt ? '[System]\n' + sysPrompt + '\n\n' + base : base;
+    return '[System]\n' + sysPrompt + '\n\n' + ctx + '\n\nHuman: ' + message;
 }
 
 const MAX_HISTORY = 20; // max stored messages (10 turns) per session
