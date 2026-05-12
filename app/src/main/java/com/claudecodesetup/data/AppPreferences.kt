@@ -78,6 +78,11 @@ class AppPreferences(context: Context) {
     fun getMcpServersJson(): String = prefs.getString(KEY_MCP_SERVERS, "[]") ?: "[]"
     fun saveMcpServersJson(json: String) = prefs.edit().putString(KEY_MCP_SERVERS, json).apply()
 
+    // ─── TTS ─────────────────────────────────────────────────────────────────
+
+    fun getTtsEnabled(): Boolean = prefs.getBoolean(KEY_TTS_ENABLED, false)
+    fun setTtsEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_TTS_ENABLED, enabled).apply()
+
     // ─── Misc ────────────────────────────────────────────────────────────────
 
     fun getInstalledClaudeVersion(): String = prefs.getString(KEY_CLAUDE_VERSION, "") ?: ""
@@ -118,6 +123,7 @@ class AppPreferences(context: Context) {
         private const val KEY_SKIP_MALAYSIA        = "skip_malaysia_prompt"
         private const val KEY_PROJECTS             = "projects_json"
         private const val KEY_MCP_SERVERS          = "mcp_servers_json"
+        private const val KEY_TTS_ENABLED          = "tts_enabled"
 
         const val MODE_SUBSCRIPTION = "subscription"
         const val MODE_PROXY        = "proxy"

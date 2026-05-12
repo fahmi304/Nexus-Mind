@@ -65,6 +65,19 @@
 
         </LinearLayout>
 
+        <Button
+            android:id="@+id/btnTts"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:text="🔇"
+            android:textSize="16sp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:paddingHorizontal="0dp"
+            android:paddingVertical="0dp"
+            android:contentDescription="Toggle TTS" />
+
         <ImageButton
             android:id="@+id/btnSettings"
             android:layout_width="44dp"

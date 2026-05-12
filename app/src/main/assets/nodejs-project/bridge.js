@@ -339,10 +339,19 @@ const AGENTIC_SYSTEM_PROMPT =
 
 // runAgentic — streaming agentic loop. Returns final assistant text for history.
 // Also returns updated shellCwd (may change if AI ran cd commands).
-async function runAgentic(socket, userMessage, history, shellCwd) {
+async function runAgentic(socket, userMessage, history, shellCwd, pendingImage) {
     const MAX_TURNS = 12;
     const messages = history.map(h => ({ role: h.role, content: h.content }));
-    messages.push({ role: 'user', content: userMessage });
+    // If image is attached, build a multimodal user message
+    if (pendingImage) {
+        const userContent = [
+            { type: 'image', source: { type: 'base64', media_type: pendingImage.mime, data: pendingImage.b64 } },
+            { type: 'text', text: userMessage || 'What do you see in this image?' }
+        ];
+        messages.push({ role: 'user', content: userContent });
+    } else {
+        messages.push({ role: 'user', content: userMessage });
+    }
 
     try { socket.write('\x1b]9;thinking-start\x07'); } catch(_) {}
     let thinkingDone = false;
@@ -984,6 +993,7 @@ function anthToOai(a, model) {
         }
         const blocks = m.content || [];
         const textBlocks    = blocks.filter(b => b.type === 'text');
+        const imageBlocks   = blocks.filter(b => b.type === 'image');
         const toolUseBlocks = blocks.filter(b => b.type === 'tool_use');
         const toolResults   = blocks.filter(b => b.type === 'tool_result');
 
@@ -1009,6 +1019,23 @@ function anthToOai(a, model) {
                     function: { name: tu.name, arguments: JSON.stringify(tu.input || {}) }
                 }))
             });
+        } else if (imageBlocks.length > 0) {
+            // Message with image content — convert to OpenAI vision format
+            const oaiContent = [];
+            for (const ib of imageBlocks) {
+                if (ib.source && ib.source.type === 'base64') {
+                    oaiContent.push({
+                        type: 'image_url',
+                        image_url: { url: 'data:' + ib.source.media_type + ';base64,' + ib.source.data }
+                    });
+                }
+            }
+            for (const tb of textBlocks) {
+                oaiContent.push({ type: 'text', text: tb.text });
+            }
+            if (oaiContent.length > 0) {
+                msgs.push({ role: m.role, content: oaiContent });
+            }
         } else {
             msgs.push({ role: m.role, content: textBlocks.map(b => b.text).join('') });
         }
@@ -1399,13 +1426,26 @@ const BASE_ASSISTANT_INSTRUCTION =
     'if something is missing, say what is missing and ask whether to install it. ' +
     '(3) Confirm language/framework choice for any new project before generating files.';
 
+function readDeviceContext() {
+    try {
+        return JSON.parse(fs.readFileSync(path.join(FILES_DIR, 'device_context.json'), 'utf8'));
+    } catch(_) { return null; }
+}
+
 function buildMessageWithHistory(message, history) {
     const cfg = readConfig();
     const customPrompt = (cfg.customSystemPrompt || '').trim();
     // Always include base instruction; append custom prompt if set
-    const sysPrompt = customPrompt
+    let sysPrompt = customPrompt
         ? BASE_ASSISTANT_INSTRUCTION + '\n\n[Custom Instructions]\n' + customPrompt
         : BASE_ASSISTANT_INSTRUCTION;
+
+    // Inject device context
+    const deviceCtx = readDeviceContext();
+    if (deviceCtx) {
+        sysPrompt += '\n[Device context: ' + deviceCtx.time + ' | Battery: ' + deviceCtx.battery +
+            ' | ' + deviceCtx.device + ' | ' + deviceCtx.androidVersion + ']';
+    }
 
     if (!history || history.length === 0) {
         return '[System]\n' + sysPrompt + '\n\n' + message;
@@ -2232,12 +2272,30 @@ function openTcpBridge() {
                     busy = true;
                     const agMsg = contextBlock ? '[Context]\n' + contextBlock + '\n[Message]\n' + line : line;
                     contextBlock = '';
-                    runAgentic(socket, agMsg, history.slice(), shellCwd).then(result => {
+                    // Check for pending image attachment
+                    let agPendingImage = null;
+                    const imgB64File = path.join(FILES_DIR, 'pending_image.b64');
+                    const imgMimeFile = path.join(FILES_DIR, 'pending_image.mime');
+                    if (fs.existsSync(imgB64File)) {
+                        try {
+                            agPendingImage = {
+                                b64: fs.readFileSync(imgB64File, 'utf8').trim(),
+                                mime: fs.existsSync(imgMimeFile) ? fs.readFileSync(imgMimeFile, 'utf8').trim() : 'image/jpeg'
+                            };
+                            fs.unlinkSync(imgB64File);
+                            if (fs.existsSync(imgMimeFile)) fs.unlinkSync(imgMimeFile);
+                        } catch(_) {}
+                    }
+                    runAgentic(socket, agMsg, history.slice(), shellCwd, agPendingImage).then(result => {
                         if (result.text) {
                             history.push({ role: 'user',      content: agMsg });
                             history.push({ role: 'assistant', content: result.text });
                             if (history.length > MAX_HISTORY) history = history.slice(-MAX_HISTORY);
                             saveSession(history);
+                            // Generate follow-up suggestions
+                            if (history.length >= 2) {
+                                generateSuggestions(socket, history).catch(() => {});
+                            }
                         }
                         // Propagate cwd changes from AI tool calls back to shell
                         if (result.cwd && result.cwd !== shellCwd) shellCwd = result.cwd;
@@ -2254,10 +2312,22 @@ function openTcpBridge() {
                 sessionMsgCount++;
                 sessionTokenEstimate += Math.round(line.length / 4);
 
+                // Check for pending image attachment (for --print mode, add as text note)
+                const imgB64FilePrint = path.join(FILES_DIR, 'pending_image.b64');
+                const imgMimeFilePrint = path.join(FILES_DIR, 'pending_image.mime');
+                let printImageNote = '';
+                if (fs.existsSync(imgB64FilePrint)) {
+                    try {
+                        printImageNote = '\n[User attached an image — use agentic mode (!agentic on) for image analysis]';
+                        fs.unlinkSync(imgB64FilePrint);
+                        if (fs.existsSync(imgMimeFilePrint)) fs.unlinkSync(imgMimeFilePrint);
+                    } catch(_) {}
+                }
+
                 busy = true;
                 let responseStarted = false;
                 let responseBuf = '';     // capture stdout for history
-                const printMsg = contextBlock ? '[Context]\n' + contextBlock + '\n[Message]\n' + line : line;
+                const printMsg = (contextBlock ? '[Context]\n' + contextBlock + '\n[Message]\n' + line : line) + printImageNote;
                 contextBlock = '';
                 current = runMessage(printMsg, socket, history);
 
@@ -2301,6 +2371,10 @@ function openTcpBridge() {
                             history.push({ role: 'assistant', content: reply });
                             if (history.length > MAX_HISTORY) history = history.slice(-MAX_HISTORY);
                             saveSession(history);
+                            // Generate follow-up suggestions
+                            if (history.length >= 2) {
+                                generateSuggestions(socket, history).catch(() => {});
+                            }
                         }
                     }
                     responseBuf = '';
@@ -2367,6 +2441,53 @@ function openTcpBridge() {
 
     server.listen(PORT, HOST, () => {
         log('Bridge ready on ' + HOST + ':' + PORT + '\n');
+    });
+}
+
+// ─── Follow-up suggestions ────────────────────────────────────────────────────
+// After a successful response, generate 3 follow-up question chips for the user.
+
+async function generateSuggestions(socket, history) {
+    const cfg = readConfig();
+    if (!cfg.providerUrl && cfg.mode !== 'subscription') return;
+    const last2 = history.slice(-4).map(h => (h.role === 'user' ? 'User' : 'AI') + ': ' + (h.content || '').slice(0, 200)).join('\n');
+    const body = JSON.stringify({
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 150,
+        messages: [{ role: 'user', content: 'Given this conversation:\n' + last2 + '\n\nSuggest 3 short follow-up questions (max 60 chars each). Reply with ONLY a JSON array: ["q1","q2","q3"]' }]
+    });
+    return new Promise((resolve) => {
+        const apiKey = cfg.mode === 'subscription' ? (cfg.apiKey || 'sk-ant-key') : 'sk-ant-proxy000';
+        const req = http.request({
+            hostname: HOST, port: PROXY_PORT, path: '/v1/messages', method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+                'Content-Length': Buffer.byteLength(body)
+            }
+        }, res => {
+            let data = '';
+            res.on('data', c => { data += c; });
+            res.on('end', () => {
+                try {
+                    const resp = JSON.parse(data);
+                    const text = (resp.content || []).find(b => b.type === 'text') && resp.content.find(b => b.type === 'text').text || '';
+                    const match = text.match(/\[[\s\S]*?\]/);
+                    if (match) {
+                        const suggestions = JSON.parse(match[0]);
+                        if (Array.isArray(suggestions) && suggestions.length > 0) {
+                            try { socket.write('\x1b]9;suggestions:' + JSON.stringify(suggestions) + '\x07'); } catch(_) {}
+                        }
+                    }
+                } catch(_) {}
+                resolve();
+            });
+        });
+        req.setTimeout(8000, () => { req.destroy(); resolve(); });
+        req.on('error', () => resolve());
+        req.write(body);
+        req.end();
     });
 }
 

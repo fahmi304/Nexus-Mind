@@ -7,13 +7,19 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
 import android.graphics.Color
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.MediaStore
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.speech.tts.TextToSpeech
+import android.util.Base64
 import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
@@ -31,7 +37,9 @@ import com.claudecodesetup.ui.ComposeActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.Locale
 
 class TerminalActivity : AppCompatActivity() {
 
@@ -46,7 +54,11 @@ class TerminalActivity : AppCompatActivity() {
 
     companion object {
         private const val REQUEST_VOICE = 1001
+        private const val REQUEST_IMAGE = 1002
     }
+
+    // ─── TTS ──────────────────────────────────────────────────────────────────
+    private var tts: TextToSpeech? = null
 
     // ─── Message-status tracking ──────────────────────────────────────────────
 
@@ -107,6 +119,13 @@ class TerminalActivity : AppCompatActivity() {
         setupHeaderButtons()
         setupStatusBar()
         startAndBindService()
+
+        // Initialize TTS
+        tts = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                tts?.language = Locale.getDefault()
+            }
+        }
     }
 
     override fun onResume() {
@@ -123,6 +142,9 @@ class TerminalActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         cancelThinkingTimeout()
+        tts?.stop()
+        tts?.shutdown()
+        tts = null
         if (serviceBound) {
             claudeService?.isActivityVisible = false
             claudeService?.onOutput = null
@@ -417,6 +439,16 @@ class TerminalActivity : AppCompatActivity() {
             })
             overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
         }
+        // TTS toggle button
+        binding.btnTts.apply {
+            text = if (prefs.getTtsEnabled()) "🔊" else "🔇"
+            setOnClickListener {
+                val newState = !prefs.getTtsEnabled()
+                prefs.setTtsEnabled(newState)
+                text = if (newState) "🔊" else "🔇"
+                if (!newState) tts?.stop()
+            }
+        }
     }
 
     // ─── Status bar ───────────────────────────────────────────────────────────
@@ -470,12 +502,40 @@ class TerminalActivity : AppCompatActivity() {
     private fun retryLastMessage() {
         val text = lastSentMessage[activeSessionId]
         if (text.isNullOrEmpty()) return
+        if (!isOnline()) {
+            showStatusError("No internet connection — check your network and try again")
+            return
+        }
         hideStatus()
         writeToTerminal("\r\n[32m❯ $text[0m  [33m[retry][0m\r\n")
         claudeService?.sendInput(text + "\r")
         sessionBusy[activeSessionId] = true
         showStatusThinking()
         startThinkingTimeout()
+    }
+
+    // ─── TTS ──────────────────────────────────────────────────────────────────
+
+    fun speakText(text: String) {
+        if (!prefs.getTtsEnabled()) return
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "claude_response")
+    }
+
+    // ─── Offline detection ────────────────────────────────────────────────────
+
+    private fun isOnline(): Boolean {
+        val cm = getSystemService(ConnectivityManager::class.java)
+        val net = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(net) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    // ─── Image picker ─────────────────────────────────────────────────────────
+
+    private fun pickImage() {
+        val intent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+        intent.type = "image/*"
+        startActivityForResult(intent, REQUEST_IMAGE)
     }
 
     // ─── Voice input ──────────────────────────────────────────────────────────
@@ -505,6 +565,30 @@ class TerminalActivity : AppCompatActivity() {
             val text = results?.firstOrNull() ?: return
             val escaped = text.replace("\\", "\\\\").replace("\"", "\\\"")
             binding.webViewTerminal.evaluateJavascript("window.termSetInput(\"$escaped\")", null)
+        }
+        if (requestCode == REQUEST_IMAGE && resultCode == Activity.RESULT_OK && data?.data != null) {
+            try {
+                val uri = data.data!!
+                @Suppress("DEPRECATION")
+                val bitmap = MediaStore.Images.Media.getBitmap(contentResolver, uri)
+                val scaled = Bitmap.createScaledBitmap(
+                    bitmap,
+                    minOf(bitmap.width, 1024),
+                    minOf(bitmap.height, 1024),
+                    true
+                )
+                val baos = ByteArrayOutputStream()
+                scaled.compress(Bitmap.CompressFormat.JPEG, 80, baos)
+                val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+                val escaped = b64.replace("\"", "\\\"")
+                runOnUiThread {
+                    binding.webViewTerminal.evaluateJavascript(
+                        "window.termSetImage(\"$escaped\", \"image/jpeg\")", null
+                    )
+                }
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(this, "Image error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -652,6 +736,12 @@ class TerminalActivity : AppCompatActivity() {
         @JavascriptInterface
         fun submitMessage(text: String) {
             if (text.isEmpty()) return
+            if (!isOnline()) {
+                runOnUiThread {
+                    showStatusError("No internet connection — check your network and try again")
+                }
+                return
+            }
             lastSentMessage[activeSessionId] = text
             sessionBusy[activeSessionId] = true
             runOnUiThread {
@@ -749,6 +839,86 @@ class TerminalActivity : AppCompatActivity() {
         @JavascriptInterface
         fun openPreview() {
             runOnUiThread { this@TerminalActivity.openWebPreview() }
+        }
+
+        @JavascriptInterface
+        fun pickImage() {
+            runOnUiThread { this@TerminalActivity.pickImage() }
+        }
+
+        @JavascriptInterface
+        fun submitMessageWithImage(text: String, imageB64: String, mime: String) {
+            if (!isOnline()) {
+                runOnUiThread {
+                    showStatusError("No internet connection — check your network and try again")
+                }
+                return
+            }
+            // Write image to temp file so bridge.js can pick it up
+            try {
+                File(filesDir, "pending_image.b64").writeText(imageB64)
+                File(filesDir, "pending_image.mime").writeText(mime)
+            } catch (_: Exception) {}
+            val msg = text.ifEmpty { "What do you see in this image?" }
+            lastSentMessage[activeSessionId] = msg
+            sessionBusy[activeSessionId] = true
+            runOnUiThread {
+                showStatusThinking()
+                startThinkingTimeout()
+            }
+            claudeService?.sendInput(msg + "\r")
+        }
+
+        @JavascriptInterface
+        fun runAndFeedback(code: String, lang: String) {
+            Thread {
+                val escapedCode = code.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+                val cmd = when (lang.lowercase()) {
+                    "python", "py" -> "python3 -c \"$escapedCode\""
+                    "javascript", "js", "node" -> "node -e \"$escapedCode\""
+                    else -> code
+                }
+                val result = try {
+                    val process = Runtime.getRuntime().exec(arrayOf("/system/bin/sh", "-c", cmd))
+                    process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)
+                    val stdout = process.inputStream.bufferedReader().readText()
+                    val stderr = process.errorStream.bufferedReader().readText()
+                    val parts = listOf(stdout, if (stderr.isNotEmpty()) "stderr:\n$stderr" else "")
+                        .filter { it.isNotEmpty() }
+                    val combined = parts.joinToString("\n").trim()
+                    if (combined.isEmpty()) "[exit ${process.exitValue()} — no output]" else combined.take(3000)
+                } catch (e: Exception) {
+                    "Error running code: ${e.message}"
+                }
+                val feedback = "I ran the code. Here's the output:\n```\n$result\n```\nWhat does this mean / what should I do next?"
+                lastSentMessage[activeSessionId] = feedback
+                sessionBusy[activeSessionId] = true
+                runOnUiThread {
+                    showStatusThinking()
+                    startThinkingTimeout()
+                    binding.webViewTerminal.evaluateJavascript("window.termResetRunBtn()", null)
+                }
+                claudeService?.sendInput(feedback + "\r")
+            }.start()
+        }
+
+        @JavascriptInterface
+        fun speakText(text: String) {
+            this@TerminalActivity.speakText(text)
+        }
+
+        @JavascriptInterface
+        fun regenerateLastResponse() {
+            val text = lastSentMessage[activeSessionId]
+            if (text.isNullOrEmpty()) return
+            runOnUiThread {
+                hideStatus()
+                writeToTerminal("\r\n[33m[Regenerating...][0m\r\n")
+                sessionBusy[activeSessionId] = true
+                showStatusThinking()
+                startThinkingTimeout()
+            }
+            claudeService?.sendInput(text + "\r")
         }
     }
 

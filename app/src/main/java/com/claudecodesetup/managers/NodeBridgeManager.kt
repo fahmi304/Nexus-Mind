@@ -66,6 +66,7 @@ class NodeBridgeManager(private val context: Context) {
     fun startBridge(mode: String, apiKey: String, modelId: String, baseUrl: String, providerId: String = "",
                     projectPath: String = "", customSystemPrompt: String = "") {
         writeConfig(mode, apiKey, modelId, baseUrl, providerId, projectPath, customSystemPrompt)
+        writeDeviceContext()
         startNodeEngine()
     }
 
@@ -108,6 +109,24 @@ class NodeBridgeManager(private val context: Context) {
             projectPath        = prefs.getProjectPath(),
             customSystemPrompt = prefs.getCustomSystemPrompt()
         )
+        writeDeviceContext()
+    }
+
+    fun writeDeviceContext() {
+        try {
+            val batteryManager = context.getSystemService(android.content.Context.BATTERY_SERVICE) as android.os.BatteryManager
+            val batteryLevel = batteryManager.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            val now = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm z", java.util.Locale.getDefault()).format(java.util.Date())
+            val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+            val androidVersion = android.os.Build.VERSION.RELEASE
+            val json = org.json.JSONObject().apply {
+                put("time", now)
+                put("battery", "$batteryLevel%")
+                put("device", deviceModel)
+                put("androidVersion", "Android $androidVersion")
+            }
+            java.io.File(context.filesDir, "device_context.json").writeText(json.toString())
+        } catch (_: Exception) {}
     }
 
     fun startSetup() {

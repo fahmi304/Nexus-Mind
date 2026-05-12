@@ -463,9 +463,13 @@ html, body {
   </div>
 </div>
 
+<!-- Image preview indicator (shown when image is attached) -->
+<div id="img-preview" style="position:fixed;bottom:68px;left:12px;background:rgba(255,150,50,0.2);border:1px solid rgba(255,150,50,0.4);border-radius:8px;padding:4px 10px;font-size:11px;color:#fbbf24;z-index:91;display:none;cursor:pointer;">📷 Image attached ✕</div>
+
 <!-- Input bar -->
 <div id="input-bar">
   <button id="btn-mic" style="width:36px;height:36px;border-radius:10px;background:rgba(100,64,255,0.18);border:1px solid rgba(100,64,255,0.3);color:#c8b8ff;font-size:16px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;">🎤</button>
+  <button id="btn-image" style="width:36px;height:36px;border-radius:10px;background:rgba(255,150,50,0.18);border:1px solid rgba(255,150,50,0.3);color:#fbbf24;font-size:16px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;">📷</button>
   <div id="input-wrap">
     <span id="input-display"></span><span id="cursor"></span>
   </div>
@@ -832,6 +836,11 @@ function handleOSC(content){
       if(cd<=0){clearInterval(cdh);thinkingTimerEl.textContent='';}
       else{thinkingTimerEl.textContent='⏳ '+cd+'s';}
     },1000);
+  } else if(content.startsWith('9;suggestions:')){
+    try{
+      var suggestions=JSON.parse(content.slice(14));
+      showSuggestions(suggestions);
+    }catch(_){}
   }
 }
 
@@ -884,6 +893,46 @@ function parseTableRow(line){
   return parts.slice(1,parts.length-1).map(function(s){return s.trim();});
 }
 
+// ── Run-and-Feedback helpers ──────────────────────────────────────────────────
+function runCodeBlock(btn){
+  var code=btn.getAttribute('data-code');
+  var lang=btn.getAttribute('data-lang');
+  if(typeof Android!=='undefined'){
+    btn.textContent='⏳';
+    btn.disabled=true;
+    Android.runAndFeedback(code,lang);
+  }
+}
+
+window.termResetRunBtn=function(){
+  var btns=document.querySelectorAll('.run-btn');
+  btns.forEach(function(b){b.disabled=false;b.textContent='▶ Run';});
+};
+
+// ── Follow-up suggestions ─────────────────────────────────────────────────────
+function showSuggestions(suggestions){
+  var old=document.getElementById('suggestions-bar');
+  if(old)old.remove();
+  var bar=document.createElement('div');
+  bar.id='suggestions-bar';
+  bar.style.cssText='display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px 4px;';
+  suggestions.forEach(function(q){
+    var chip=document.createElement('button');
+    chip.textContent=q;
+    chip.style.cssText='background:rgba(100,64,255,0.15);border:1px solid rgba(100,64,255,0.35);border-radius:16px;color:#c8b8ff;font-size:11px;font-family:Space Mono,monospace;padding:5px 12px;cursor:pointer;text-align:left;';
+    chip.addEventListener('click',function(){
+      inputBuffer=q;
+      ghost.value=q;
+      updateInputDisp();
+      ghost.focus();
+      bar.remove();
+    });
+    bar.appendChild(chip);
+  });
+  msgs.appendChild(bar);
+  scrollToBottom();
+}
+
 function renderMarkdown(raw){
   const text=raw.replace(/\x1b\[[0-9;]*[mA-Za-z]/g,'').replace(/\x1b\][^\x07]*\x07/g,'');
   const lines=text.split('\n');
@@ -904,7 +953,9 @@ function renderMarkdown(raw){
       i++;
       const codeEsc=highlightCode(escHtml(code.trimEnd()),lang);
       const saveBtn=fname?'<button class="code-copy-btn" style="right:52px" onclick="saveCode(this,\''+escHtml(fname)+'\')">Save</button>':'';
-      html+='<div class="code-wrap">'+saveBtn+'<button class="code-copy-btn" onclick="copyCode(this)">Copy</button>' +
+      const isRunnable=['bash','sh','shell','javascript','js','python','py','node'].includes(lang);
+      const runBtn=isRunnable?'<button class="code-copy-btn run-btn" style="right:'+(fname?'98px':'52px')+';background:rgba(0,200,100,0.2);border-color:rgba(0,200,100,0.4);color:#86efac;" onclick="runCodeBlock(this)" data-code="'+escHtml(code.trimEnd())+'" data-lang="'+lang+'">▶ Run</button>':'';
+      html+='<div class="code-wrap">'+runBtn+saveBtn+'<button class="code-copy-btn" onclick="copyCode(this)">Copy</button>' +
             '<pre class="md-code"><code data-raw="'+escHtml(code.trimEnd())+'">'+codeEsc+'</code></pre></div>';
       continue;
     }
@@ -938,14 +989,24 @@ function hasMarkdownStructures(text){
 function startAiBubble(){
   const row=document.createElement('div');
   row.className='msg-row ai-row';
+  row.style.position='relative';
   const av=document.createElement('div');
   av.className='avatar ai-avatar';
   av.textContent='◎';
   const bub=document.createElement('div');
   bub.className='bubble ai-bubble';
   bub.innerHTML='<span class="ai-loading"><span></span><span></span><span></span></span>';
+  // Regenerate button — hidden until response finalized
+  const regenBtn=document.createElement('button');
+  regenBtn.textContent='↺';
+  regenBtn.title='Regenerate response';
+  regenBtn.style.cssText='position:absolute;top:6px;right:6px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:rgba(255,255,255,0.35);font-size:12px;padding:2px 6px;cursor:pointer;display:none;';
+  regenBtn.addEventListener('click',function(){
+    if(typeof Android!=='undefined') Android.regenerateLastResponse();
+  });
   row.appendChild(av);
   row.appendChild(bub);
+  row.appendChild(regenBtn);
   msgs.appendChild(row);
   currentAiBubble=bub;
   currentAiAnsi=makeAnsiState();
@@ -984,6 +1045,14 @@ function finalizeAiBubble(){
       // no content ever arrived — remove the bubble entirely
       const row=currentAiBubble.parentElement;
       if(row) row.remove();
+    }
+    // Show regenerate button
+    const regenBtn=currentAiBubble.parentElement&&currentAiBubble.parentElement.querySelector('button[title="Regenerate response"]');
+    if(regenBtn) regenBtn.style.display='';
+    // TTS: speak the response
+    if(typeof Android!=='undefined'&&rawAiText.trim()){
+      const ttsText=rawAiText.replace(/\x1b\[[0-9;]*m/g,'').replace(/```[\s\S]*?```/g,'[code block]').replace(/[*_#`]/g,'').trim().slice(0,500);
+      if(ttsText) Android.speakText(ttsText);
     }
     scrollToBottom();
   }
@@ -1068,6 +1137,22 @@ window.termSetInput=function(text){
   ghost.focus();
 };
 
+// ── Image attachment state ────────────────────────────────────────────────────
+let pendingImageB64 = null;
+let pendingImageMime = 'image/jpeg';
+const imgPreviewEl = document.getElementById('img-preview');
+
+window.termSetImage = function(b64, mime) {
+  pendingImageB64 = b64;
+  pendingImageMime = mime || 'image/jpeg';
+  imgPreviewEl.style.display = 'block';
+};
+
+imgPreviewEl.addEventListener('click', function() {
+  pendingImageB64 = null;
+  imgPreviewEl.style.display = 'none';
+});
+
 // ── Input buffer ──────────────────────────────────────────────────────────────
 let inputBuffer='';
 
@@ -1092,8 +1177,18 @@ function submitLine(text){
   resetToIdle(); // finalize any pending AI bubble and hide thinking animation
   sysEl=null;
   sysAnsi=makeAnsiState();
+  // Remove suggestions bar if present
+  const sb=document.getElementById('suggestions-bar');if(sb)sb.remove();
   addUserBubble(msg);
-  if(typeof Android!=='undefined') Android.submitMessage(msg);
+  if(typeof Android!=='undefined'){
+    if(pendingImageB64!==null){
+      Android.submitMessageWithImage(msg,pendingImageB64,pendingImageMime);
+      pendingImageB64=null;
+      imgPreviewEl.style.display='none';
+    } else {
+      Android.submitMessage(msg);
+    }
+  }
 }
 
 // ── Ghost textarea ────────────────────────────────────────────────────────────
@@ -1194,6 +1289,10 @@ document.getElementById('btn-mic').addEventListener('click',function(){
 
 document.getElementById('btn-quick').addEventListener('click',function(){
   if(typeof Android!=='undefined') Android.showQuickActions();
+});
+
+document.getElementById('btn-image').addEventListener('click',function(){
+  if(typeof Android!=='undefined') Android.pickImage();
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
