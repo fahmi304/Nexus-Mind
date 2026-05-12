@@ -279,25 +279,32 @@ Providers are defined in two places:
 
 - **Fixed: model switch not taking effect after first session** — `ClaudeService.connectSession()` now calls `bridge.refreshConfig(prefs)` whenever the bridge is already running, so model/key changes saved in Settings immediately update `bridge_config.json` before the next message. Previously `writeConfig()` was only called inside `startBridge()` which runs once per service lifecycle, leaving the config stale after any provider or model change.
 
+- **Live-fetch in ModelTestScreen for OpenRouter** — `ModelTestScreen` now live-fetches models from `ProvidersRepository.fetchOpenRouterFreeModels()` on entry for OpenRouter providers instead of using the hardcoded list. Shows a loading spinner, error card with ↻ Retry on failure, and a ↻ refresh button in the header. Other providers still use their static model list. "Test All" is disabled until models are loaded.
+
+- **Added: 429 auto-retry + model fallback in proxy** — `handleProxyRequest` in `bridge.js` now retries the same model up to 3× on HTTP 429 with exponential backoff (2 s → 4 s → 8 s). After exhausting retries, it falls through to the next model in `cfg.modelList`. `NodeBridgeManager.writeConfig()` now writes a `modelList` JSON array to `bridge_config.json` from the provider's static model list (`Providers.byId(providerId)?.models`). `sendToProvider` accepts an `on429` callback (7th parameter) alongside the existing `onBadRequest`.
+
+- **Added: background AI response notification** — `ClaudeService` fires a "AI response ready — tap to view" local notification (channel `CHANNEL_RESPONSE`, `NOTIF_ID = 1002`) when output arrives while `isActivityVisible = false`. Debounced 1.5 s so the notification fires after the response has finished streaming, not on every chunk. `TerminalActivity.onResume()` and `onServiceConnected` set `isActivityVisible = true` and call `cancelResponseNotification()`; `onPause()` sets it back to `false`.
+
+- **Added: search bar in ModelPickerScreen** — `BasicTextField` at the top of `ModelPickerScreen` filters the model list by name or model ID. Search query is combined with the existing category filter chip; both reset pagination to page 0 on change.
+
+- **Fixed: `!agentic` state persists across bridge restarts** — `agenticEnabled` is now initialised from `filesDir/agentic_state` (exists = true) at module load. Toggling `!agentic on/off` writes or deletes that file so the preference survives Node.js restarts (app kill/reopen).
+
+- **Added: `!log [N]` configurable line count** — `!log` now accepts an optional number argument (e.g. `!log 200`). Defaults to 80 if omitted.
+
+- **Added: `!update` command** — Deletes the claude-code package directory (`path.dirname(CLAUDE_CLI)`) and the `setup_done` sentinel, then calls `installClaudeCode()` in-place. Shows progress in the terminal; no app data clear required.
+
+- **Added: markdown rendering for AI response bubbles** — `terminal/index.html` accumulates the raw AI output text in `rawAiText`. In `finalizeAiBubble()`, if the text contains markdown structures (fenced code blocks, tables, headings, bold/italic, lists), it is rendered via `renderMarkdown()` instead of the ANSI line renderer. `renderMarkdown()` handles: fenced code with minimal syntax highlighting (keywords, strings, comments for JS/Python/Kotlin/Java/Bash), pipe tables, `#`/`##`/`###` headings, `- `/ `* ` / numbered list items, `**bold**`, `*italic*`, and `` `inline code` ``. CSS classes: `.md-code`, `.md-table`, `.md-inline-code`, `.md-h1/h2/h3`, `.md-li`, `.hl-kw`, `.hl-str`, `.hl-comment`.
+
+- **Improved: multi-session tab strip discoverability** — `activity_terminal.xml` tab strip now has a "SESSIONS" label on the left, a permanently visible "＋ New" button on the right (was a small 34 dp `+` icon tucked into the scrollable container), and two 1 dp divider lines (top and bottom) to visually separate the strip from the header and terminal. The scrollable `tabContainer` sits between the label and the button.
+
+- **Fixed: README `YOUR_USERNAME` placeholder** — All GitHub URLs in `README.md` now use `rektzy9903`.
+
+- **Removed: `DownloadManager.fetchLatestClaudeVersion()` dead code** — The method and its `registryClient` OkHttp instance were never called (version is always pinned to `2.1.112`). Both removed.
+
 ### Known gaps / TODO
 
-#### 🟠 High value
-- **Auto-retry + model fallback on 429** — Free models rate-limit constantly. Should retry with exponential backoff (2 s → 4 s → 8 s) up to 3 times, then auto-switch to next model in provider list. Currently just shows a warning and stops.
-- **Setup screen progress streaming** — First-run `npm install` shows a spinner with no detail. Stream `setup.log` lines live to `SetupActivity` so users see what's happening and don't think the app froze.
-
-#### 🟡 Medium
-- **Notification when AI finishes while backgrounded** — No signal arrives when the response lands while the user is in another app. One local `NotificationManager` notification on response complete solves this.
-- **Model picker search bar** — 50+ OpenRouter models with no filtering. Add a `TextField` at the top of `ModelPickerScreen` to filter by name.
-- **`!agentic` state survives bridge restarts** — `agenticEnabled` resets when Node.js restarts (e.g. app kill). Persist it to `bridge_config.json` or a small state file in `filesDir`.
-- **`!log` configurable line count** — `!log 200` variant; currently hardcoded 80 lines.
-- **`!update` command** — Re-runs the install flow for the latest pinned claude-code version without clearing app data.
-
 #### 🟢 Quality of life
-- **Markdown rendering** — Hand-rolled ANSI renderer handles bold/color but not tables, fenced code blocks with syntax highlighting. Consider a dedicated markdown view for AI response bubbles.
-- **Multi-session tab visibility** — Tab bar exists in `TerminalActivity` but is not discoverable. Add a visible "+ New Session" button or make the tab strip always shown.
 - **App size** — Shipping both `arm64-v8a` and `armeabi-v7a` `libnode.so` doubles native lib size. Switch to AAB (Android App Bundle) to serve only the device's ABI.
-- **README placeholders** — `YOUR_USERNAME` still in GitHub URLs in README.
-- **`DownloadManager.kt` partially unused** — `fetchLatestClaudeVersion()` is never called; version always uses pinned constant. Either wire it up or remove dead code.
 - **`ProvidersRepository.REMOTE_URL` wired but empty** — Live provider updates disabled. Enable to push new models/providers without an app update.
 
 ---
@@ -339,3 +346,13 @@ Providers are defined in two places:
 17. **OSC thinking sequences are ephemeral — never buffer them** — `\x1b]9;thinking-start\x07` and `\x1b]9;thinking-done\x07` are UI state signals only. `ClaudeSession.appendOutput()` strips them before storing so they are never replayed to a reconnecting `TerminalActivity`. The real-time `onOutput` callback receives the original data (live thinking indicator still works). If you add new OSC state sequences, strip them in `appendOutput` too.
 
 18. **`thinking-done` must fire before the first stdout byte** — In `runMessage()`, a `thinkingDoneSent` flag sends `\x1b]9;thinking-done\x07` on the first data event of `child.stdout`. This transitions `chatState` from THINKING → RESPONDING before any text arrives. Without this, all model output is discarded (terminal ignores data while THINKING). The `handleOSC thinking-done` in `index.html` is guarded against double-invocation with `if(chatState!=='RESPONDING')`.
+
+19. **`bridge_config.json` now includes `modelList`** — `NodeBridgeManager.writeConfig()` writes a `modelList` JSON array (the provider's static model IDs from `Providers.byId(providerId)?.models`). `bridge.js` reads it in `handleProxyRequest` to drive model fallback after 429 exhaustion. The list is only as fresh as the last `startBridge()` or `refreshConfig()` call; OpenRouter live models are not included (only the static hardcoded list).
+
+20. **`sendToProvider` has a 7th `on429` callback** — Signature: `sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on429)`. When provided, `on429()` is called instead of `proxyError` on HTTP 429, allowing the caller to implement retry/fallback. `lastRateLimitMs` is set by the `on429` handler in `handleProxyRequest`, not inside `sendToProvider` when `on429` is provided.
+
+21. **`!agentic` state is persisted to `filesDir/agentic_state`** — File present = agentic on; absent = off. `agenticEnabled` is initialised from this file at module load (not from `bridge_config.json`). `AGENTIC_FILE` constant is defined alongside the other path constants at the top of `bridge.js`.
+
+22. **Markdown rendering accumulates raw text in `rawAiText`** — `termWrite()` appends to `rawAiText` whenever `chatState === 'RESPONDING'`. `startAiBubble()` resets it to `''`. `finalizeAiBubble()` checks `hasMarkdownStructures(rawAiText)` and calls `renderMarkdown()` instead of the ANSI line renderer when true. `rawAiText` includes raw ANSI escape sequences; `renderMarkdown()` strips them via regex before parsing. Do not reset `rawAiText` anywhere except `startAiBubble()` and `finalizeAiBubble()`.
+
+23. **Background response notification uses `CHANNEL_RESPONSE` and `RESPONSE_NOTIF_ID = 1002`** — The channel is created in `ClaudeApp.onCreate()` alongside `CHANNEL_RUNNING` and `CHANNEL_SETUP`. The debounce handler (`responseNotifHandler` + `responseNotifRunnable`) is module-level in `ClaudeService`. Call `cancelResponseNotification()` from `TerminalActivity` whenever the activity becomes visible to dismiss the pending notification and cancel the handler.
