@@ -1164,11 +1164,12 @@ function openTcpBridge() {
         let   current   = null;
         let   currentTid = null;  // safety-net timeout handle
         let   history   = [];     // conversation turns for this session
+        let   shellCwd  = FILES_DIR;  // working directory for $ shell commands
 
         const startCfg = readConfig();
         const modeLabel = startCfg.mode === 'subscription' ? 'Anthropic' : (startCfg.providerUrl || 'proxy');
         socket.write(
-            '\r\n\x1b[32mClaude Code ready.\x1b[0m Type a message and press Enter.\r\n' +
+            '\r\n\x1b[32mClaude Code ready.\x1b[0m Type a message or \x1b[33m$ command\x1b[0m to run shell.\r\n' +
             '\x1b[2mProvider: ' + modeLabel +
             '  Model: ' + (startCfg.modelId || 'auto') +
             '  Key: ' + sanitizeKey(startCfg.apiKey) + '\x1b[0m\r\n\r\n'
@@ -1243,6 +1244,27 @@ function openTcpBridge() {
                     try {
                         socket.write('\r\n\x1b[2mHistory: ' + history.length + ' messages (' + turns + ' turns). ' +
                             'Type !clear to reset.\x1b[0m\r\n');
+                    } catch (_) {}
+                    continue;
+                }
+                if (line === '!help') {
+                    try {
+                        socket.write(
+                            '\r\n\x1b[1mShell commands:\x1b[0m\r\n' +
+                            '  \x1b[33m$ <command>\x1b[0m   Run any shell command (ls, cat, npm, node, git…)\r\n' +
+                            '  \x1b[33m$ cd <dir>\x1b[0m    Change working directory (persists in this session)\r\n' +
+                            '  \x1b[33m$ pwd\x1b[0m         Print current working directory\r\n' +
+                            '\r\n\x1b[1mAI conversation:\x1b[0m\r\n' +
+                            '  Type normally to chat with the AI model\r\n' +
+                            '  \x1b[33m!clear\x1b[0m        Clear conversation history\r\n' +
+                            '  \x1b[33m!history\x1b[0m      Show number of turns in memory\r\n' +
+                            '\r\n\x1b[1mDiagnostics:\x1b[0m\r\n' +
+                            '  \x1b[33m!log\x1b[0m          Show last 80 lines of setup.log\r\n' +
+                            '  \x1b[33m!ver\x1b[0m          Show version and config info\r\n' +
+                            '  \x1b[33m!test\x1b[0m         Test Node.js launcher\r\n' +
+                            '  \x1b[33m!test-cli\x1b[0m     Run module-loader diagnostic\r\n' +
+                            '  \x1b[33m!help\x1b[0m         Show this message\r\n\r\n'
+                        );
                     } catch (_) {}
                     continue;
                 }
@@ -1360,6 +1382,58 @@ function openTcpBridge() {
                     () => runEvalStep('[6] net: connect to proxy port ' + PROXY_PORT,
                         netTestCode,
                     () => { socket.write('\x1b[33mDone. Check !log for details.\x1b[0m\r\n'); }))))));
+                    continue;
+                }
+
+                // ── Shell command: $ <command> ────────────────────────────────
+                if (line.startsWith('$ ') || line === '$') {
+                    const cmd = line.slice(2).trim();
+                    if (!cmd) { continue; }
+
+                    // Interrupt any running AI request
+                    if (busy) {
+                        try { if (current) current.kill('SIGTERM'); } catch(_) {}
+                        if (currentTid) { clearTimeout(currentTid); currentTid = null; }
+                        busy = false;
+                    }
+
+                    // cd is handled in-process — each child spawn has its own cwd
+                    if (/^cd(\s|$)/.test(cmd)) {
+                        const target = cmd.slice(2).trim() || FILES_DIR;
+                        const resolved = path.resolve(shellCwd, target);
+                        try {
+                            const stat = fs.statSync(resolved);
+                            if (stat.isDirectory()) {
+                                shellCwd = resolved;
+                                try { socket.write('\x1b[2m' + shellCwd + '\x1b[0m\r\n\r\n'); } catch(_) {}
+                            } else {
+                                try { socket.write('\x1b[31mcd: not a directory: ' + target + '\x1b[0m\r\n\r\n'); } catch(_) {}
+                            }
+                        } catch(e) {
+                            try { socket.write('\x1b[31mcd: ' + target + ': No such file or directory\x1b[0m\r\n\r\n'); } catch(_) {}
+                        }
+                        continue;
+                    }
+
+                    busy = true;
+                    try { socket.write('\r\n'); } catch(_) {}
+                    const shellEnv = buildEnv();
+                    current = spawn('/system/bin/sh', ['-c', cmd], { env: shellEnv, cwd: shellCwd });
+                    current.stdout.on('data', d => { try { socket.write(d); } catch(_) {} });
+                    current.stderr.on('data', d => {
+                        try { socket.write('\x1b[33m' + d.toString() + '\x1b[0m'); } catch(_) {}
+                    });
+                    current.on('error', e => {
+                        try { socket.write('\x1b[31msh: ' + e.message + '\x1b[0m\r\n\r\n'); } catch(_) {}
+                        busy = false; current = null;
+                    });
+                    current.on('close', code => {
+                        if (code !== 0 && code !== null) {
+                            try { socket.write('\x1b[2m[exit ' + code + ']\x1b[0m\r\n'); } catch(_) {}
+                        }
+                        try { socket.write('\r\n'); } catch(_) {}
+                        busy = false; current = null;
+                    });
                     continue;
                 }
 
