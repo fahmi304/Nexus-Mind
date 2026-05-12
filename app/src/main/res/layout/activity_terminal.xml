@@ -20,10 +20,9 @@
         android:elevation="4dp">
 
         <ImageView
-            android:layout_width="22dp"
-            android:layout_height="22dp"
-            android:src="@drawable/ic_terminal"
-            android:tint="@color/accent_blue"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:src="@mipmap/ic_launcher"
             android:contentDescription="Claude Code" />
 
         <!-- App name + model pill stacked vertically -->

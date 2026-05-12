@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Text
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.claudecodesetup.data.AiModel
 import com.claudecodesetup.data.Provider
+import com.claudecodesetup.data.ProvidersRepository
+import kotlinx.coroutines.launch
 import kotlin.math.ceil
 
 // ── Model display helpers ─────────────────────────────────────────────────────
@@ -129,7 +132,26 @@ fun ModelPickerScreen(
     onConfirm: (AiModel) -> Unit,
     onBack: () -> Unit
 ) {
-    val displays = remember(provider) { provider.models.map { toDisplay(it) } }
+    val isOpenRouter = provider.id == "openrouter"
+    var liveModels by remember { mutableStateOf<List<AiModel>?>(null) }
+    var isRefreshing by remember { mutableStateOf(isOpenRouter) }
+    val scope = rememberCoroutineScope()
+
+    fun fetchLive() {
+        scope.launch {
+            isRefreshing = true
+            try {
+                val fetched = ProvidersRepository.fetchOpenRouterFreeModels(apiKey)
+                if (fetched.isNotEmpty()) liveModels = fetched
+            } catch (_: Exception) {}
+            isRefreshing = false
+        }
+    }
+
+    if (isOpenRouter) LaunchedEffect(Unit) { fetchLive() }
+
+    val modelList = liveModels ?: provider.models
+    val displays = remember(modelList) { modelList.map { toDisplay(it) } }
     val categories = remember(displays) {
         val cats = displays.map { it.category }.distinct()
         if (cats.size > 1) listOf("All") + cats else emptyList()
@@ -185,6 +207,29 @@ fun ModelPickerScreen(
                     }
                 }
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (isOpenRouter) {
+                        Box(
+                            modifier = Modifier
+                                .background(
+                                    if (isRefreshing) Color(0x0FFFFFFF) else Color(0x1F8B5CF6),
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .border(1.dp,
+                                    if (isRefreshing) Color(0x14FFFFFF) else Color(0x508B5CF6),
+                                    RoundedCornerShape(8.dp))
+                                .clickable(enabled = !isRefreshing) { fetchLive() }
+                                .padding(horizontal = 10.dp, vertical = 5.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isRefreshing) {
+                                CircularProgressIndicator(
+                                    Modifier.size(12.dp), color = Color(0xFF8B5CF6), strokeWidth = 1.5.dp)
+                            } else {
+                                Text("↻ Refresh", fontFamily = DmSansFamily, fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold, color = Color(0xFF8B5CF6))
+                            }
+                        }
+                    }
                     if (apiKey.isNotEmpty()) {
                         val shortKey = if (apiKey.length > 8) apiKey.take(8) + "…" else apiKey
                         Row(
@@ -405,7 +450,7 @@ private fun ModelCard(display: ModelDisplay, isSelected: Boolean, onSelect: () -
             Column(modifier = Modifier.padding(top = 6.dp)) {
                 Text(
                     display.model.name, fontFamily = DmSansFamily, fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold, color = Color(0xFFF1F5F9),
+                    fontWeight = FontWeight.Bold, color = Color.White,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, lineHeight = 14.sp
                 )
                 Text(

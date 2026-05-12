@@ -118,14 +118,14 @@ html, body {
   background: linear-gradient(135deg, rgba(100,64,255,0.3) 0%, rgba(100,64,255,0.15) 100%);
   border: 1px solid rgba(100,64,255,0.42);
   border-radius: 16px 4px 16px 16px;
-  color: #e0d8ff;
+  color: #ffffff;
   white-space: pre-wrap;
 }
 .ai-bubble {
   background: rgba(255,255,255,0.05);
   border: 1px solid rgba(0,200,255,0.2);
   border-radius: 4px 16px 16px 16px;
-  color: #e0d8ff;
+  color: #ffffff;
   white-space: pre-wrap;
   min-width: 60px;
 }
@@ -255,7 +255,7 @@ html, body {
   padding: 10px 14px;
   font-family: 'Space Mono', 'Courier New', monospace;
   font-size: 13px;
-  color: #e0d8ff;
+  color: #ffffff;
   display: flex;
   align-items: center;
   cursor: text;
@@ -647,8 +647,8 @@ function addUserBubble(text){
   const bub=document.createElement('div');
   bub.className='bubble user-bubble';
   bub.textContent=text;
-  row.appendChild(bub);
   row.appendChild(av);
+  row.appendChild(bub);
   msgs.appendChild(row);
   scrollToBottom();
 }
@@ -697,7 +697,6 @@ function getSysBubble(){
     row.appendChild(bub);
     msgs.appendChild(row);
     sysEl=bub;
-    sysAnsi=makeAnsiState();
   }
   return sysEl;
 }
@@ -720,9 +719,12 @@ window.termWrite=function(raw){
     processAnsiBytes(currentAiAnsi,raw);
     scheduleAiRender();
   } else {
-    getSysBubble();
     processAnsiBytes(sysAnsi,raw);
-    scheduleSysRender();
+    // OSC sequences (e.g. thinking-start) change chatState during processAnsiBytes;
+    // only create a sys bubble if we're still IDLE and have visible text.
+    if(chatState!=='IDLE') return;
+    const hasText=sysAnsi.lines.some(function(l){return l.length>0;});
+    if(hasText){getSysBubble();scheduleSysRender();}
   }
 };
 
@@ -766,6 +768,7 @@ function submitLine(text){
   if(!msg) return;
   if(chatState==='RESPONDING') finalizeAiBubble();
   sysEl=null;
+  sysAnsi=makeAnsiState();
   addUserBubble(msg);
   if(typeof Android!=='undefined') Android.submitMessage(msg);
 }

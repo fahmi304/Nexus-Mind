@@ -125,7 +125,7 @@ private fun QuestionCard(
                 ) {
                     Text(
                         question, fontFamily = DmSansFamily, fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold, color = Color(0xFFF1F5F9),
+                        fontWeight = FontWeight.Bold, color = Color.White,
                         textAlign = TextAlign.Center
                     )
                     Text(
@@ -243,7 +243,7 @@ private fun ProviderCard(provider: Provider, onSelect: () -> Unit) {
             ) {
                 Text(
                     provider.name, fontFamily = DmSansFamily, fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold, color = Color(0xFFF1F5F9)
+                    fontWeight = FontWeight.Bold, color = Color.White
                 )
                 Box(
                     modifier = Modifier

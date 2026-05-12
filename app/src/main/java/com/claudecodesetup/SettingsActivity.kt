@@ -8,14 +8,10 @@ import android.view.MenuItem
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.lifecycleScope
-import com.claudecodesetup.data.AiModel
 import com.claudecodesetup.data.AppPreferences
 import com.claudecodesetup.data.Providers
-import com.claudecodesetup.data.ProvidersRepository
 import com.claudecodesetup.databinding.ActivitySettingsBinding
 import com.claudecodesetup.managers.NodeBridgeManager
-import kotlinx.coroutines.launch
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -49,9 +45,9 @@ class SettingsActivity : AppCompatActivity() {
             else -> "${provider?.name ?: "Unknown"} — $model"
         }
 
-        // Show "Change model" only for OpenRouter (live free model list available)
+        // Show "Change model" for any provider with multiple models
         binding.btnChangeModel.visibility =
-            if (providerId == "openrouter") View.VISIBLE else View.GONE
+            if ((provider?.models?.size ?: 0) > 1) View.VISIBLE else View.GONE
 
         val installedVersion = prefs.getInstalledClaudeVersion()
             .ifEmpty { com.claudecodesetup.managers.DownloadManager.PINNED_CLAUDE_VERSION }
@@ -79,7 +75,13 @@ class SettingsActivity : AppCompatActivity() {
             finish()
         }
 
-        binding.btnChangeModel.setOnClickListener { startModelRefresh() }
+        binding.btnChangeModel.setOnClickListener {
+            startActivity(
+                Intent(this, com.claudecodesetup.ui.ComposeActivity::class.java)
+                    .putExtra("start_at", "picker")
+            )
+            finish()
+        }
 
         binding.btnClearData.setOnClickListener {
             AlertDialog.Builder(this)
@@ -113,58 +115,6 @@ class SettingsActivity : AppCompatActivity() {
                     Uri.parse("https://github.com/Alishahryar1/free-claude-code/issues/new"))
             )
         }
-    }
-
-    // ─── Live model picker ────────────────────────────────────────────────────
-
-    private fun startModelRefresh() {
-        val key = prefs.getApiKey()
-        if (key.isEmpty()) {
-            Toast.makeText(this, "No API key stored — re-configure via Change provider", Toast.LENGTH_SHORT).show()
-            return
-        }
-        binding.btnChangeModel.isEnabled = false
-        binding.btnChangeModel.text = "Loading models…"
-        lifecycleScope.launch {
-            try {
-                val models = ProvidersRepository.fetchOpenRouterFreeModels(key)
-                if (models.isEmpty()) {
-                    Toast.makeText(this@SettingsActivity,
-                        "No free models found — check your API key", Toast.LENGTH_SHORT).show()
-                } else {
-                    showModelPickerDialog(models)
-                }
-            } catch (e: Exception) {
-                Toast.makeText(this@SettingsActivity,
-                    "Failed to load models: ${e.message}", Toast.LENGTH_SHORT).show()
-            } finally {
-                binding.btnChangeModel.isEnabled = true
-                binding.btnChangeModel.text = "Change model"
-            }
-        }
-    }
-
-    private fun showModelPickerDialog(models: List<AiModel>) {
-        val currentModelId = prefs.getModelId()
-        val names = models.map { it.name }.toTypedArray()
-        val currentIndex = models.indexOfFirst { it.modelId == currentModelId }.coerceAtLeast(0)
-        var selectedIndex = currentIndex
-
-        AlertDialog.Builder(this)
-            .setTitle("Free models (${models.size})")
-            .setSingleChoiceItems(names, currentIndex) { _, which -> selectedIndex = which }
-            .setPositiveButton("Apply") { _, _ ->
-                val model = models[selectedIndex]
-                prefs.setModelId(model.modelId)
-                bridgeManager.refreshConfig(prefs)
-
-                val provider = Providers.byId(prefs.getProviderId())
-                binding.tvCurrentProvider.text =
-                    "${provider?.name ?: "OpenRouter"} — ${model.modelId}"
-                Toast.makeText(this, "Model set to ${model.name}", Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
     }
 
     // ─── Reset ────────────────────────────────────────────────────────────────

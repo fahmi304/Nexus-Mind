@@ -15,8 +15,9 @@ class ComposeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = AppPreferences(this)
+        val startAt = intent.getStringExtra("start_at") ?: "subscription"
         setContent {
-            AppRoot { provider, apiKey, model ->
+            AppRoot(startAt = startAt, prefs = prefs) { provider, apiKey, model ->
                 val mode = if (provider.id == "anthropic") AppPreferences.MODE_SUBSCRIPTION
                            else AppPreferences.MODE_PROXY
                 prefs.setLoginMode(mode)
@@ -33,10 +34,21 @@ class ComposeActivity : ComponentActivity() {
 }
 
 @Composable
-private fun AppRoot(onComplete: (Provider, String, AiModel) -> Unit) {
-    var screen by remember { mutableStateOf("subscription") }
-    var selectedProvider by remember { mutableStateOf<Provider?>(null) }
-    var storedKey by remember { mutableStateOf("") }
+private fun AppRoot(
+    startAt: String,
+    prefs: AppPreferences,
+    onComplete: (Provider, String, AiModel) -> Unit
+) {
+    // When jumping directly to picker (e.g. from Settings → Change model), restore current prefs
+    val initProvider = remember {
+        if (startAt == "picker") Providers.byId(prefs.getProviderId()) ?: Providers.GEMINI
+        else null
+    }
+    val initKey = remember { if (startAt == "picker") prefs.getApiKey() else "" }
+
+    var screen by remember { mutableStateOf(startAt) }
+    var selectedProvider by remember { mutableStateOf<Provider?>(initProvider) }
+    var storedKey by remember { mutableStateOf(initKey) }
 
     when (screen) {
         "subscription" -> SubscriptionScreen(
@@ -83,7 +95,7 @@ private fun AppRoot(onComplete: (Provider, String, AiModel) -> Unit) {
             onConfirm = { model ->
                 onComplete(selectedProvider ?: Providers.GEMINI, storedKey, model)
             },
-            onBack = { screen = "key" }
+            onBack = { screen = if (startAt == "picker") "providers" else "key" }
         )
     }
 }

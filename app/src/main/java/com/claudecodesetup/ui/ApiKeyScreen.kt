@@ -263,7 +263,7 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
                                 if (provider.requiresApiKey) "Enter your API Key"
                                 else "No API Key Required",
                                 fontFamily = DmSansFamily, fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold, color = Color(0xFFF1F5F9)
+                                fontWeight = FontWeight.Bold, color = Color.White
                             )
                             Text(
                                 if (provider.requiresApiKey) "Required to access ${provider.name} models"
@@ -294,7 +294,7 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
                                         textStyle = TextStyle(
                                             fontFamily = SpaceMonoFamily,
                                             fontSize = 13.sp,
-                                            color = Color(0xFFE5E7EB),
+                                            color = Color.White,
                                             letterSpacing = if (!passwordVisible && apiKey.isNotEmpty()) 3.sp else 0.sp
                                         ),
                                         visualTransformation = if (passwordVisible)
