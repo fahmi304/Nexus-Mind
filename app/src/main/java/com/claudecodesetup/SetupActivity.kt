@@ -182,7 +182,7 @@ class SetupActivity : AppCompatActivity() {
     }
 
     private fun proceedToNext() {
-        startActivity(Intent(this, com.claudecodesetup.ui.ComposeActivity::class.java))
+        startActivity(Intent(this, com.claudecodesetup.ui.HomeActivity::class.java))
         finish()
     }
 
