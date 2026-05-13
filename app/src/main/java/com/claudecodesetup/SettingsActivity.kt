@@ -14,6 +14,7 @@ import com.claudecodesetup.data.AppPreferences
 import com.claudecodesetup.data.Providers
 import com.claudecodesetup.databinding.ActivitySettingsBinding
 import com.claudecodesetup.managers.NodeBridgeManager
+import com.claudecodesetup.services.FloatingOverlayService
 import java.io.File
 
 class SettingsActivity : AppCompatActivity() {
@@ -34,6 +35,13 @@ class SettingsActivity : AppCompatActivity() {
 
         populateFields()
         setupActions()
+        setupOverlaySwitch()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Refresh switch state in case user just returned from the permission screen
+        syncOverlaySwitchState()
     }
 
     private fun populateFields() {
@@ -159,6 +167,46 @@ class SettingsActivity : AppCompatActivity() {
         binding.btnMcpServers.setOnClickListener {
             startActivity(Intent(this, com.claudecodesetup.ui.McpActivity::class.java))
         }
+    }
+
+    private fun setupOverlaySwitch() {
+        syncOverlaySwitchState()
+
+        binding.switchOverlay.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                if (!Settings.canDrawOverlays(this)) {
+                    // Permission not granted — show the button and revert the switch
+                    binding.switchOverlay.isChecked = false
+                    binding.btnOverlayPermission.visibility = View.VISIBLE
+                } else {
+                    binding.btnOverlayPermission.visibility = View.GONE
+                    prefs.setOverlayEnabled(true)
+                    startForegroundService(Intent(this, FloatingOverlayService::class.java))
+                    Toast.makeText(this, "Floating overlay enabled", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                binding.btnOverlayPermission.visibility = View.GONE
+                prefs.setOverlayEnabled(false)
+                startService(Intent(this, FloatingOverlayService::class.java)
+                    .setAction(FloatingOverlayService.ACTION_STOP))
+                Toast.makeText(this, "Floating overlay disabled", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        binding.btnOverlayPermission.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")))
+        }
+    }
+
+    private fun syncOverlaySwitchState() {
+        val hasPermission = Settings.canDrawOverlays(this)
+        val enabled       = prefs.getOverlayEnabled() && hasPermission
+        // Update pref if permission was revoked externally
+        if (!hasPermission && prefs.getOverlayEnabled()) prefs.setOverlayEnabled(false)
+        binding.switchOverlay.isChecked         = enabled
+        binding.btnOverlayPermission.visibility =
+            if (!hasPermission && prefs.getOverlayEnabled()) View.VISIBLE else View.GONE
     }
 
     private fun showFolderPicker(dir: File) {
