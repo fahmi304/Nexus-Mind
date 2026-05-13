@@ -1028,11 +1028,8 @@ function showSuggestions(suggestions){
     chip.textContent=q;
     chip.style.cssText='background:rgba(100,64,255,0.15);border:1px solid rgba(100,64,255,0.35);border-radius:16px;color:#c8b8ff;font-size:11px;font-family:Space Mono,monospace;padding:5px 12px;cursor:pointer;text-align:left;';
     chip.addEventListener('click',function(){
-      inputBuffer=q;
-      ghost.value=q;
-      updateInputDisp();
-      ghost.focus();
       bar.remove();
+      submitLine(q);
     });
     bar.appendChild(chip);
   });

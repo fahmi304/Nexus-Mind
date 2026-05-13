@@ -3372,7 +3372,7 @@ async function generateSuggestions(socket, history) {
     const body = JSON.stringify({
         model: 'claude-3-5-sonnet-20241022',
         max_tokens: 150,
-        messages: [{ role: 'user', content: 'Given this conversation:\n' + last2 + '\n\nSuggest 3 short follow-up questions (max 60 chars each). Reply with ONLY a JSON array: ["q1","q2","q3"]' }]
+        messages: [{ role: 'user', content: 'Given this conversation:\n' + last2 + '\n\nGenerate 3 short follow-up questions the USER might want to ask next (max 60 chars each). Make them specific, actionable, and natural. Reply with ONLY a JSON array: ["q1","q2","q3"]' }]
     });
     return new Promise((resolve) => {
         const apiKey = cfg.mode === 'subscription' ? (cfg.apiKey || 'sk-ant-key') : 'sk-ant-proxy000';
