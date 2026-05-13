@@ -45,6 +45,7 @@ const AGENTIC_FILE  = path.join(FILES_DIR, 'agentic_state');
 const CWD_FILE      = path.join(FILES_DIR, 'last_cwd');
 const UNDO_DIR      = path.join(FILES_DIR, '.undo');
 const BIN_DIR       = path.join(FILES_DIR, 'bin');
+const CONFIRM_FILE  = path.join(FILES_DIR, 'auto_approve.json');
 
 // ─── Package catalog ──────────────────────────────────────────────────────────
 // Static ARM64 Android binaries and npm packages installable via !install.
@@ -232,6 +233,42 @@ function log(msg) {
 
 let agenticEnabled = (() => { try { return fs.existsSync(AGENTIC_FILE); } catch (_) { return false; } })();
 
+// ─── Install confirmation ──────────────────────────────────────────────────────
+// When the agentic AI tries to run an install command, we pause and ask the user.
+// "Yes, don't ask again" saves the package-manager key to disk.
+let autoApprove = (() => {
+    try { return new Set(JSON.parse(fs.readFileSync(CONFIRM_FILE, 'utf8'))); }
+    catch(_) { return new Set(); }
+})();
+const pendingConfirms = new Map(); // confirmId -> resolve fn
+let confirmIdSeq = 0;
+
+function saveAutoApprove() {
+    try { fs.writeFileSync(CONFIRM_FILE, JSON.stringify([...autoApprove])); } catch(_) {}
+}
+
+// Regex: package-manager install commands that should prompt for confirmation
+const INSTALL_CMD_RE = /\b(apt(-get)?|pip[23]?|gem|cargo|brew)\s+install\b|\bnpm\s+(install|i)\s+(--global|-g)\b/i;
+
+function installKeyFromCmd(cmd) {
+    const m = cmd.match(/\b(apt(-get)?|pip[23]?|gem|cargo|brew|npm)\b/i);
+    return m ? m[1].toLowerCase().replace('apt-get', 'apt') : 'install';
+}
+
+function waitForConfirm(socket, id, description) {
+    return new Promise(resolve => {
+        pendingConfirms.set(id, resolve);
+        try { socket.write('\x1b]9;confirm:' + id + ':' + description + '\x07'); } catch(_) {
+            pendingConfirms.delete(id);
+            resolve('yes');
+        }
+        // Auto-cancel after 2 minutes if user doesn't respond
+        setTimeout(() => {
+            if (pendingConfirms.has(id)) { pendingConfirms.delete(id); resolve('no'); }
+        }, 120000);
+    });
+}
+
 const AGENTIC_TOOLS = [
     {
         name: 'bash',
@@ -279,15 +316,32 @@ const AGENTIC_TOOLS = [
 
 // executeTool returns { content, isError, newCwd }
 // newCwd is set when the bash command changes the working directory.
-function executeTool(name, input, cwd) {
-    return new Promise(resolve => {
-        const env = buildEnv();
-        if (name === 'bash') {
-            const cmd = input.command || '';
+async function executeTool(name, input, cwd, socket) {
+    const env = buildEnv();
+
+    if (name === 'bash') {
+        const cmd = input.command || '';
+
+        // Confirm with user before running install commands
+        if (socket && INSTALL_CMD_RE.test(cmd)) {
+            const key = installKeyFromCmd(cmd);
+            if (!autoApprove.has(key)) {
+                const confirmId = 'c' + (++confirmIdSeq);
+                const choice = await waitForConfirm(socket, confirmId, cmd.slice(0, 120));
+                if (choice === 'always') {
+                    autoApprove.add(key);
+                    saveAutoApprove();
+                } else if (choice === 'no') {
+                    return { content: 'Installation cancelled by user.', isError: false, newCwd: cwd };
+                }
+                // 'yes' or 'always' → fall through and execute
+            }
+        }
+
+        return new Promise(resolve => {
             const workDir = input.cwd ? path.resolve(cwd, input.cwd) : cwd;
             let out = '', err = '';
             let child;
-            // Wrap command: print pwd after execution so we can track cwd changes.
             const wrappedCmd = cmd + '\n__exit=$?\npwd\nexit $__exit';
             try { child = spawn('/system/bin/sh', ['-c', wrappedCmd], { env, cwd: workDir }); }
             catch(e) { resolve({ content: 'spawn error: ' + e.message, isError: true, newCwd: cwd }); return; }
@@ -299,7 +353,6 @@ function executeTool(name, input, cwd) {
             child.stderr.on('data', d => { err += d.toString(); });
             child.on('close', code => {
                 clearTimeout(tid);
-                // Extract trailing pwd line to detect cd
                 const lines = out.trimEnd().split('\n');
                 let newCwd = cwd;
                 const lastLine = lines[lines.length - 1] || '';
@@ -310,55 +363,57 @@ function executeTool(name, input, cwd) {
                 const combined = (out + (err ? '\nstderr:\n' + err : '')).trim();
                 resolve({ content: combined || '[exit ' + code + ']', isError: code !== 0, newCwd });
             });
-        } else if (name === 'read_file') {
-            try {
-                const fp = path.resolve(cwd, input.path);
-                const content = fs.readFileSync(fp, 'utf8');
-                resolve({ content: content.slice(0, 50000), isError: false, newCwd: cwd });
-            } catch(e) { resolve({ content: 'Error: ' + e.message, isError: true, newCwd: cwd }); }
-        } else if (name === 'write_file') {
-            try {
-                const fp = path.resolve(cwd, input.path);
-                let diffText = null;
-                // Snapshot original before overwriting
-                if (fs.existsSync(fp)) {
-                    try {
-                        const oldContent = fs.readFileSync(fp, 'utf8');
-                        diffText = lineDiff(oldContent, input.content);
-                        fs.mkdirSync(UNDO_DIR, { recursive: true });
-                        const safeName = path.basename(fp).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80);
-                        const snap = path.join(UNDO_DIR, Date.now() + '_' + safeName);
-                        fs.copyFileSync(fp, snap);
-                        const snaps = fs.readdirSync(UNDO_DIR).sort();
-                        if (snaps.length > 20) {
-                            for (const old of snaps.slice(0, snaps.length - 20)) {
-                                try { fs.unlinkSync(path.join(UNDO_DIR, old)); } catch(_) {}
-                            }
+        });
+
+    } else if (name === 'read_file') {
+        try {
+            const fp = path.resolve(cwd, input.path);
+            const content = fs.readFileSync(fp, 'utf8');
+            return { content: content.slice(0, 50000), isError: false, newCwd: cwd };
+        } catch(e) { return { content: 'Error: ' + e.message, isError: true, newCwd: cwd }; }
+
+    } else if (name === 'write_file') {
+        try {
+            const fp = path.resolve(cwd, input.path);
+            let diffText = null;
+            if (fs.existsSync(fp)) {
+                try {
+                    const oldContent = fs.readFileSync(fp, 'utf8');
+                    diffText = lineDiff(oldContent, input.content);
+                    fs.mkdirSync(UNDO_DIR, { recursive: true });
+                    const safeName = path.basename(fp).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80);
+                    const snap = path.join(UNDO_DIR, Date.now() + '_' + safeName);
+                    fs.copyFileSync(fp, snap);
+                    const snaps = fs.readdirSync(UNDO_DIR).sort();
+                    if (snaps.length > 20) {
+                        for (const old of snaps.slice(0, snaps.length - 20)) {
+                            try { fs.unlinkSync(path.join(UNDO_DIR, old)); } catch(_) {}
                         }
-                    } catch(_) {}
-                }
-                fs.mkdirSync(path.dirname(fp), { recursive: true });
-                fs.writeFileSync(fp, input.content, 'utf8');
-                resolve({ content: 'Wrote ' + fp, isError: false, newCwd: cwd, diff: diffText });
-            } catch(e) { resolve({ content: 'Error: ' + e.message, isError: true, newCwd: cwd }); }
-        } else if (name === 'list_dir') {
-            try {
-                const dp = path.resolve(cwd, input.path);
-                const entries = fs.readdirSync(dp, { withFileTypes: true });
-                const lines = entries.map(e => (e.isDirectory() ? 'd ' : 'f ') + e.name).join('\n');
-                resolve({ content: lines || '(empty)', isError: false, newCwd: cwd });
-            } catch(e) { resolve({ content: 'Error: ' + e.message, isError: true, newCwd: cwd }); }
-        } else if (name.startsWith('mcp_')) {
-            // Delegate to stdio MCP server
-            callMcpStdioTool(name, input).then(content => {
-                resolve({ content: content || '(no output)', isError: false, newCwd: cwd });
-            }).catch(e => {
-                resolve({ content: 'MCP error: ' + e.message, isError: true, newCwd: cwd });
-            });
-        } else {
-            resolve({ content: 'Unknown tool: ' + name, isError: true, newCwd: cwd });
-        }
-    });
+                    }
+                } catch(_) {}
+            }
+            fs.mkdirSync(path.dirname(fp), { recursive: true });
+            fs.writeFileSync(fp, input.content, 'utf8');
+            return { content: 'Wrote ' + fp, isError: false, newCwd: cwd, diff: diffText };
+        } catch(e) { return { content: 'Error: ' + e.message, isError: true, newCwd: cwd }; }
+
+    } else if (name === 'list_dir') {
+        try {
+            const dp = path.resolve(cwd, input.path);
+            const entries = fs.readdirSync(dp, { withFileTypes: true });
+            const lines = entries.map(e => (e.isDirectory() ? 'd ' : 'f ') + e.name).join('\n');
+            return { content: lines || '(empty)', isError: false, newCwd: cwd };
+        } catch(e) { return { content: 'Error: ' + e.message, isError: true, newCwd: cwd }; }
+
+    } else if (name.startsWith('mcp_')) {
+        try {
+            const content = await callMcpStdioTool(name, input);
+            return { content: content || '(no output)', isError: false, newCwd: cwd };
+        } catch(e) { return { content: 'MCP error: ' + e.message, isError: true, newCwd: cwd }; }
+
+    } else {
+        return { content: 'Unknown tool: ' + name, isError: true, newCwd: cwd };
+    }
 }
 
 // Streaming proxy call — writes text_delta chunks to socket as they arrive.
@@ -541,7 +596,7 @@ async function runAgentic(socket, userMessage, history, shellCwd, pendingImage) 
             const toolResults = [];
             for (const tu of toolUses) {
                 try { socket.write('\r\n\x1b[36m▶ ' + tu.name + '  ' + JSON.stringify(tu.input) + '\x1b[0m\r\n'); } catch(_) {}
-                const result = await executeTool(tu.name, tu.input, currentCwd);
+                const result = await executeTool(tu.name, tu.input, currentCwd, socket);
                 // Update cwd if bash command changed directory
                 if (result.newCwd && result.newCwd !== currentCwd) {
                     currentCwd = result.newCwd;
@@ -2150,6 +2205,16 @@ function openTcpBridge() {
                 inputBuf   = inputBuf.slice(nl + 1);
 
                 if (!line) continue;
+
+                // Resolve pending install confirmations from the terminal UI
+                if (line.startsWith('__confirm__:')) {
+                    const parts = line.split(':');
+                    const confirmId = parts[1];
+                    const choice    = parts[2]; // 'yes' | 'always' | 'no'
+                    const resolveFn = pendingConfirms.get(confirmId);
+                    if (resolveFn) { pendingConfirms.delete(confirmId); resolveFn(choice); }
+                    continue;
+                }
 
                 // ── Built-in diagnostic commands ──────────────────────────────
                 if (line === '!log' || line.startsWith('!log ')) {

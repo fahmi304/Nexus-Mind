@@ -909,6 +909,10 @@ function handleOSC(content){
       if(cd<=0){clearInterval(cdh);thinkingTimerEl.textContent='';}
       else{thinkingTimerEl.textContent='⏳ '+cd+'s';}
     },1000);
+  } else if(content.startsWith('9;confirm:')){
+    var rest=content.slice(10);
+    var ci=rest.indexOf(':');
+    if(ci!==-1) showConfirmDialog(rest.slice(0,ci), rest.slice(ci+1));
   } else if(content.startsWith('9;suggestions:')){
     try{
       var suggestions=JSON.parse(content.slice(14));
@@ -1015,6 +1019,39 @@ window.termResetRunBtn=function(){
   var btns=document.querySelectorAll('.run-btn');
   btns.forEach(function(b){b.disabled=false;b.textContent='▶ Run';});
 };
+
+// ── Install confirmation dialog ───────────────────────────────────────────────
+function showConfirmDialog(id, desc){
+  var old=document.getElementById('confirm-dialog-'+id);
+  if(old)old.remove();
+  var wrap=document.createElement('div');
+  wrap.id='confirm-dialog-'+id;
+  wrap.style.cssText='padding:10px 12px 6px;';
+  var label=document.createElement('div');
+  label.style.cssText='color:rgba(251,191,36,0.9);font-size:11px;font-family:Space Mono,monospace;margin-bottom:8px;line-height:1.5;';
+  label.textContent='🔧 Install required: '+desc;
+  wrap.appendChild(label);
+  var row=document.createElement('div');
+  row.style.cssText='display:flex;gap:8px;flex-wrap:wrap;';
+  var choices=[
+    {label:'✓ Yes',            choice:'yes',    bg:'rgba(34,197,94,0.18)',  border:'rgba(34,197,94,0.5)',  color:'#4ade80'},
+    {label:'✓ Yes, don\'t ask again',choice:'always',bg:'rgba(34,197,94,0.08)',border:'rgba(34,197,94,0.3)',color:'#86efac'},
+    {label:'✗ No',             choice:'no',     bg:'rgba(239,68,68,0.15)', border:'rgba(239,68,68,0.4)',  color:'#f87171'}
+  ];
+  choices.forEach(function(c){
+    var btn=document.createElement('button');
+    btn.textContent=c.label;
+    btn.style.cssText='background:'+c.bg+';border:1px solid '+c.border+';border-radius:16px;color:'+c.color+';font-size:12px;font-family:Space Mono,monospace;padding:6px 14px;cursor:pointer;';
+    btn.addEventListener('click',function(){
+      wrap.remove();
+      if(typeof Android!=='undefined') Android.sendConfirm(id,c.choice);
+    });
+    row.appendChild(btn);
+  });
+  wrap.appendChild(row);
+  msgs.appendChild(wrap);
+  scrollToBottom();
+}
 
 // ── Follow-up suggestions ─────────────────────────────────────────────────────
 function showSuggestions(suggestions){

@@ -866,6 +866,11 @@ class TerminalActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun sendConfirm(id: String, choice: String) {
+            claudeService?.sendInput("__confirm__:$id:$choice\r")
+        }
+
+        @JavascriptInterface
         fun cancelPendingImage() {
             try {
                 File(filesDir, "pending_image.b64").delete()
