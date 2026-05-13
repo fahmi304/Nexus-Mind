@@ -59,6 +59,7 @@ class FloatingOverlayService : Service() {
     private var expanded = false
 
     private var pendingScreenshotQuery: String? = null
+    private lateinit var overlayParams: WindowManager.LayoutParams
 
     // Idle-fade: fades to IDLE_ALPHA after IDLE_DELAY_MS of no interaction
     private val idleHandler  = Handler(Looper.getMainLooper())
@@ -180,7 +181,7 @@ class FloatingOverlayService : Service() {
     }
 
     private fun addOverlayToWindow() {
-        val params = WindowManager.LayoutParams(
+        overlayParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -189,7 +190,32 @@ class FloatingOverlayService : Service() {
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.TOP or Gravity.START }
-        windowManager.addView(overlayRoot, params)
+        windowManager.addView(overlayRoot, overlayParams)
+        updateTouchableRegion()
+    }
+
+    // Only the button (and open menus) are touchable — empty overlay areas pass through to the app
+    private fun updateTouchableRegion() {
+        val r = android.graphics.Region()
+        r.union(android.graphics.Rect(btnX, btnY, btnX + btnPx, btnY + btnPx))
+        if (subMenu.visibility == View.VISIBLE) {
+            val subW = dpToPx(48) * 5 + dpToPx(10) * 4 + dpToPx(24)
+            val subLeft = (btnX + btnPx / 2 - subW / 2)
+                .coerceIn(dpToPx(8), (screenW - subW - dpToPx(8)).coerceAtLeast(dpToPx(8)))
+            val subTop = if (btnY - dpToPx(72) >= dpToPx(24)) btnY - dpToPx(72)
+                         else btnY + btnPx + dpToPx(8)
+            r.union(android.graphics.Rect(subLeft, subTop, subLeft + subW, subTop + dpToPx(72)))
+        }
+        if (quickPromptsPanel.visibility == View.VISIBLE) {
+            val panelW = dpToPx(230)
+            val panelLeft = (btnX + btnPx / 2 - panelW / 2)
+                .coerceIn(dpToPx(8), (screenW - panelW - dpToPx(8)).coerceAtLeast(dpToPx(8)))
+            val panelTop = if (btnY - dpToPx(260) >= dpToPx(24)) btnY - dpToPx(260)
+                           else btnY + btnPx + dpToPx(8)
+            r.union(android.graphics.Rect(panelLeft, panelTop, panelLeft + panelW, panelTop + dpToPx(260)))
+        }
+        overlayParams.touchableRegion = r
+        runCatching { windowManager.updateViewLayout(overlayRoot, overlayParams) }
     }
 
     // ─── View factories ───────────────────────────────────────────────────────
@@ -364,6 +390,7 @@ class FloatingOverlayService : Service() {
             .scaleX(1f).scaleY(1f).alpha(1f)
             .setDuration(220)
             .setInterpolator(OvershootInterpolator(1.4f))
+            .withEndAction { updateTouchableRegion() }
             .start()
         repositionViews()
     }
@@ -373,7 +400,7 @@ class FloatingOverlayService : Service() {
         subMenu.animate()
             .scaleX(0.75f).scaleY(0.75f).alpha(0f)
             .setDuration(160)
-            .withEndAction { subMenu.visibility = View.GONE }
+            .withEndAction { subMenu.visibility = View.GONE; updateTouchableRegion() }
             .start()
     }
 
@@ -381,11 +408,16 @@ class FloatingOverlayService : Service() {
         if (quickPromptsPanel.visibility != View.VISIBLE) return
         quickPromptsPanel.animate()
             .alpha(0f).setDuration(160)
-            .withEndAction { quickPromptsPanel.visibility = View.GONE; quickPromptsPanel.alpha = 1f }
+            .withEndAction {
+                quickPromptsPanel.visibility = View.GONE
+                quickPromptsPanel.alpha = 1f
+                updateTouchableRegion()
+            }
             .start()
     }
 
     private fun repositionViews() {
+        updateTouchableRegion()
         (mainBtn.layoutParams as FrameLayout.LayoutParams).apply {
             leftMargin = btnX; topMargin = btnY
         }.also { mainBtn.layoutParams = it }
@@ -456,7 +488,9 @@ class FloatingOverlayService : Service() {
         expanded = false
         quickPromptsPanel.alpha = 0f
         quickPromptsPanel.visibility = View.VISIBLE
-        quickPromptsPanel.animate().alpha(1f).setDuration(200).start()
+        quickPromptsPanel.animate().alpha(1f).setDuration(200)
+            .withEndAction { updateTouchableRegion() }
+            .start()
         repositionViews()
     }
 
