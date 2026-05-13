@@ -91,14 +91,14 @@ private fun toDisplay(model: AiModel): ModelDisplay {
         "gemini"  in id -> "✨"
         "gpt"     in id -> "🧬"
         "kimi"    in id || "moonshot" in id -> "🌙"
-        "deepseek"in id -> "🔍"
+        "deepseek" in id -> "🔍"
         "qwen"    in id -> "🌟"
         "mistral" in id || "mixtral" in id -> "🌀"
         "claude"  in id -> "🎭"
-        "nemotron"in id || "nvidia" in id -> "⚡"
+        "nemotron" in id || "nvidia" in id -> "⚡"
         "minimax" in id -> "🔮"
         "baidu"   in id || "cobuddy" in id -> "🔵"
-        "poolside"in id || "laguna"  in id -> "🏊"
+        "poolside" in id || "laguna"  in id -> "🏊"
         "liquid"  in id || "lfm"     in id -> "💧"
         else -> "🤖"
     }
@@ -107,9 +107,9 @@ private fun toDisplay(model: AiModel): ModelDisplay {
         "claude"  in id -> Color(0xFF8B5CF6)
         "gpt"     in id || "openai"   in id -> Color(0xFF3B82F6)
         "llama"   in id || "meta"     in id -> Color(0xFFF97316)
-        "deepseek"in id -> Color(0xFF06B6D4)
+        "deepseek" in id -> Color(0xFF06B6D4)
         "kimi"    in id || "moonshot" in id -> Color(0xFFF59E0B)
-        "nemotron"in id || "nvidia"   in id -> Color(0xFF76B900)
+        "nemotron" in id || "nvidia"   in id -> Color(0xFF76B900)
         "qwen"    in id -> Color(0xFFF59E0B)
         "mistral" in id || "mixtral"  in id -> Color(0xFF22D3EE)
         "minimax" in id -> Color(0xFFA78BFA)
