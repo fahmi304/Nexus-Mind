@@ -86,6 +86,11 @@ class AppPreferences(context: Context) {
     fun getTtsEnabled(): Boolean = prefs.getBoolean(KEY_TTS_ENABLED, false)
     fun setTtsEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_TTS_ENABLED, enabled).apply()
 
+    // ─── Overlay ─────────────────────────────────────────────────────────────
+
+    fun getOverlayEnabled(): Boolean = prefs.getBoolean(KEY_OVERLAY_ENABLED, false)
+    fun setOverlayEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_OVERLAY_ENABLED, enabled).apply()
+
     // ─── Misc ────────────────────────────────────────────────────────────────
 
     fun getInstalledClaudeVersion(): String = prefs.getString(KEY_CLAUDE_VERSION, "") ?: ""
@@ -128,6 +133,7 @@ class AppPreferences(context: Context) {
         private const val KEY_MCP_SERVERS          = "mcp_servers_json"
         private const val KEY_MCP_STDIO_SERVERS    = "mcp_stdio_servers_json"
         private const val KEY_TTS_ENABLED          = "tts_enabled"
+        private const val KEY_OVERLAY_ENABLED      = "overlay_enabled"
 
         const val MODE_SUBSCRIPTION = "subscription"
         const val MODE_PROXY        = "proxy"

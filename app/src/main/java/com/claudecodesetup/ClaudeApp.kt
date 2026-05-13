@@ -53,11 +53,21 @@ class ClaudeApp : Application() {
         ).apply {
             description = "Notifies when the AI finishes responding while the app is in the background"
         }.also { manager.createNotificationChannel(it) }
+
+        NotificationChannel(
+            CHANNEL_OVERLAY,
+            "Floating Overlay",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Shown while the floating Claude assistant is active"
+            setShowBadge(false)
+        }.also { manager.createNotificationChannel(it) }
     }
 
     companion object {
         const val CHANNEL_RUNNING  = "claude_running"
         const val CHANNEL_SETUP    = "claude_setup"
         const val CHANNEL_RESPONSE = "claude_response"
+        const val CHANNEL_OVERLAY  = "claude_overlay"
     }
 }
