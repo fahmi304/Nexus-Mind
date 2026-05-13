@@ -182,8 +182,7 @@ class FloatingOverlayService : Service() {
 
     private fun addOverlayToWindow() {
         overlayParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
+            btnPx, btnPx, btnX, btnY,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
@@ -191,31 +190,7 @@ class FloatingOverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.TOP or Gravity.START }
         windowManager.addView(overlayRoot, overlayParams)
-        updateTouchableRegion()
-    }
-
-    // Only the button (and open menus) are touchable — empty overlay areas pass through to the app
-    private fun updateTouchableRegion() {
-        val r = android.graphics.Region()
-        r.union(android.graphics.Rect(btnX, btnY, btnX + btnPx, btnY + btnPx))
-        if (subMenu.visibility == View.VISIBLE) {
-            val subW = dpToPx(48) * 5 + dpToPx(10) * 4 + dpToPx(24)
-            val subLeft = (btnX + btnPx / 2 - subW / 2)
-                .coerceIn(dpToPx(8), (screenW - subW - dpToPx(8)).coerceAtLeast(dpToPx(8)))
-            val subTop = if (btnY - dpToPx(72) >= dpToPx(24)) btnY - dpToPx(72)
-                         else btnY + btnPx + dpToPx(8)
-            r.union(android.graphics.Rect(subLeft, subTop, subLeft + subW, subTop + dpToPx(72)))
-        }
-        if (quickPromptsPanel.visibility == View.VISIBLE) {
-            val panelW = dpToPx(230)
-            val panelLeft = (btnX + btnPx / 2 - panelW / 2)
-                .coerceIn(dpToPx(8), (screenW - panelW - dpToPx(8)).coerceAtLeast(dpToPx(8)))
-            val panelTop = if (btnY - dpToPx(260) >= dpToPx(24)) btnY - dpToPx(260)
-                           else btnY + btnPx + dpToPx(8)
-            r.union(android.graphics.Rect(panelLeft, panelTop, panelLeft + panelW, panelTop + dpToPx(260)))
-        }
-        overlayParams.touchableRegion = r
-        runCatching { windowManager.updateViewLayout(overlayRoot, overlayParams) }
+        repositionViews()
     }
 
     // ─── View factories ───────────────────────────────────────────────────────
@@ -390,7 +365,6 @@ class FloatingOverlayService : Service() {
             .scaleX(1f).scaleY(1f).alpha(1f)
             .setDuration(220)
             .setInterpolator(OvershootInterpolator(1.4f))
-            .withEndAction { updateTouchableRegion() }
             .start()
         repositionViews()
     }
@@ -400,7 +374,7 @@ class FloatingOverlayService : Service() {
         subMenu.animate()
             .scaleX(0.75f).scaleY(0.75f).alpha(0f)
             .setDuration(160)
-            .withEndAction { subMenu.visibility = View.GONE; updateTouchableRegion() }
+            .withEndAction { subMenu.visibility = View.GONE; repositionViews() }
             .start()
     }
 
@@ -411,51 +385,66 @@ class FloatingOverlayService : Service() {
             .withEndAction {
                 quickPromptsPanel.visibility = View.GONE
                 quickPromptsPanel.alpha = 1f
-                updateTouchableRegion()
+                repositionViews()
             }
             .start()
     }
 
+    // Computes the minimal bounding box covering the button and any visible menus, then updates
+    // the window size/position accordingly. Child views are positioned relative to this box,
+    // so touches outside the box pass through to the underlying app via FLAG_NOT_TOUCH_MODAL.
     private fun repositionViews() {
-        updateTouchableRegion()
-        (mainBtn.layoutParams as FrameLayout.LayoutParams).apply {
-            leftMargin = btnX; topMargin = btnY
-        }.also { mainBtn.layoutParams = it }
-
-        // Sub-menu: centered above main button
         val subW = dpToPx(48) * 5 + dpToPx(10) * 4 + dpToPx(24)
         val subLeft = (btnX + btnPx / 2 - subW / 2)
             .coerceIn(dpToPx(8), (screenW - subW - dpToPx(8)).coerceAtLeast(dpToPx(8)))
         val subTop = if (btnY - dpToPx(72) >= dpToPx(24)) btnY - dpToPx(72)
-                     else btnY + btnPx + dpToPx(8)        // flip below if near top
-        (subMenu.layoutParams as FrameLayout.LayoutParams).apply {
-            leftMargin = subLeft; topMargin = subTop
-        }.also { subMenu.layoutParams = it }
+                     else btnY + btnPx + dpToPx(8)
 
-        // Quick panel: same horizontal centre, above sub-menu
         val panelW = dpToPx(230)
         val panelLeft = (btnX + btnPx / 2 - panelW / 2)
             .coerceIn(dpToPx(8), (screenW - panelW - dpToPx(8)).coerceAtLeast(dpToPx(8)))
         val panelTop = if (btnY - dpToPx(260) >= dpToPx(24)) btnY - dpToPx(260)
                        else btnY + btnPx + dpToPx(8)
+
+        // Bounding box in screen coords — start with button, expand to visible menus
+        var winL = btnX; var winT = btnY; var winR = btnX + btnPx; var winB = btnY + btnPx
+        if (subMenu.visibility == View.VISIBLE) {
+            winL = minOf(winL, subLeft); winT = minOf(winT, subTop)
+            winR = maxOf(winR, subLeft + subW); winB = maxOf(winB, subTop + dpToPx(72))
+        }
+        if (quickPromptsPanel.visibility == View.VISIBLE) {
+            winL = minOf(winL, panelLeft); winT = minOf(winT, panelTop)
+            winR = maxOf(winR, panelLeft + panelW); winB = maxOf(winB, panelTop + dpToPx(260))
+        }
+
+        overlayParams.x = winL; overlayParams.y = winT
+        overlayParams.width = winR - winL; overlayParams.height = winB - winT
+        runCatching { windowManager.updateViewLayout(overlayRoot, overlayParams) }
+
+        // Child positions are relative to the window's own top-left
+        (mainBtn.layoutParams as FrameLayout.LayoutParams).apply {
+            leftMargin = btnX - winL; topMargin = btnY - winT
+        }.also { mainBtn.layoutParams = it }
+
+        (subMenu.layoutParams as FrameLayout.LayoutParams).apply {
+            leftMargin = subLeft - winL; topMargin = subTop - winT
+        }.also { subMenu.layoutParams = it }
+
         (quickPromptsPanel.layoutParams as FrameLayout.LayoutParams).apply {
-            leftMargin = panelLeft; topMargin = panelTop; width = panelW
+            leftMargin = panelLeft - winL; topMargin = panelTop - winT; width = panelW
         }.also { quickPromptsPanel.layoutParams = it }
     }
 
     // ─── Layout params ────────────────────────────────────────────────────────
 
-    private fun mainBtnLp() = FrameLayout.LayoutParams(btnPx, btnPx).apply {
-        leftMargin = btnX; topMargin = btnY
-    }
+    private fun mainBtnLp() = FrameLayout.LayoutParams(btnPx, btnPx)
     private fun subMenuLp() = FrameLayout.LayoutParams(
         FrameLayout.LayoutParams.WRAP_CONTENT,
         FrameLayout.LayoutParams.WRAP_CONTENT
-    ).apply { leftMargin = btnX; topMargin = (btnY - dpToPx(72)).coerceAtLeast(dpToPx(24)) }
-
+    )
     private fun quickPanelLp() = FrameLayout.LayoutParams(
         dpToPx(230), FrameLayout.LayoutParams.WRAP_CONTENT
-    ).apply { leftMargin = btnX; topMargin = (btnY - dpToPx(260)).coerceAtLeast(dpToPx(24)) }
+    )
 
     // ─── Sub-button actions ───────────────────────────────────────────────────
 
@@ -488,9 +477,7 @@ class FloatingOverlayService : Service() {
         expanded = false
         quickPromptsPanel.alpha = 0f
         quickPromptsPanel.visibility = View.VISIBLE
-        quickPromptsPanel.animate().alpha(1f).setDuration(200)
-            .withEndAction { updateTouchableRegion() }
-            .start()
+        quickPromptsPanel.animate().alpha(1f).setDuration(200).start()
         repositionViews()
     }
 

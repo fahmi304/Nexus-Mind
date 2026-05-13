@@ -112,7 +112,7 @@ HTTP server on port 8082 converts Anthropic Messages API → OpenAI Chat Complet
 Written by `NodeBridgeManager.writeConfig()` before each `startBridge()`. Re-written by `refreshConfig()` on model/provider change in Settings. Includes `modelList` array for 429 fallback. `bridge.js` reads it fresh per message.
 
 ### Floating overlay (FloatingOverlayService)
-`TYPE_APPLICATION_OVERLAY` full-screen window (`MATCH_PARENT`). Uses `WindowManager.LayoutParams.touchableRegion` (API 29+) to restrict input to the button + any open menus — empty areas pass through to the app. Region is updated via `updateTouchableRegion()` on every drag, show, and hide.
+`TYPE_APPLICATION_OVERLAY` window sized to a minimal bounding box (button only when idle, expanded to cover visible menus). `FLAG_NOT_TOUCH_MODAL` passes touches outside the window to the underlying app. `repositionViews()` recalculates the bounding box and updates `overlayParams.x/y/width/height` + child margins (window-relative) on every drag, menu show/hide.
 
 ---
 
@@ -164,7 +164,7 @@ Written by `NodeBridgeManager.writeConfig()` before each `startBridge()`. Re-wri
 
 23. **Background response notification: `CHANNEL_RESPONSE`, `RESPONSE_NOTIF_ID = 1002`** — Debounced 1.5 s in `ClaudeService`. Call `cancelResponseNotification()` from `TerminalActivity` whenever activity becomes visible.
 
-24. **Floating overlay touchableRegion must be updated on every state change** — `updateTouchableRegion()` calls `windowManager.updateViewLayout()`. Must be called after: button drag (`repositionViews`), sub-menu show/hide, quick-panel show/hide. Failing to update leaves the old region active, either blocking taps or missing newly-visible panels.
+24. **Floating overlay window must be resized on every state change** — `repositionViews()` computes the bounding box of button + visible menus and updates `overlayParams.x/y/width/height` then calls `windowManager.updateViewLayout()`. Child margins are window-relative. Must be called after: button drag, sub-menu show/hide (with GONE set before the call), quick-panel show/hide. `WindowManager.LayoutParams.touchableRegion` is NOT in the public SDK — do not use it.
 
 ---
 
@@ -177,7 +177,11 @@ Written by `NodeBridgeManager.writeConfig()` before each `startBridge()`. Re-wri
 
 ---
 
-## Latest changes (Session 11)
+## Latest changes (Session 12)
 
-- **Fixed: floating overlay blocks all screen touches** — `FloatingOverlayService` used a full-screen `MATCH_PARENT` window. `FLAG_NOT_TOUCH_MODAL` only passes events *outside* the window frame — which never existed since the frame was the full screen. Fixed by using `WindowManager.LayoutParams.touchableRegion` (API 29+) to declare only the button and any open menus as interactive. `updateTouchableRegion()` is called on every drag and menu show/hide. (`525651f`)
+- **Fixed: build fails with `Unresolved reference: touchableRegion`** — `WindowManager.LayoutParams.touchableRegion` is a `@hide` AOSP field absent from the public Android SDK. Replaced the MATCH_PARENT window + hidden-field approach with a dynamically-sized window: `overlayParams` starts at button size, and `repositionViews()` expands it to cover visible menus. Child views use window-relative margins. `FLAG_NOT_TOUCH_MODAL` passes touches outside the window to the underlying app.
+
+## Previous changes (Session 11)
+
+- **Fixed: floating overlay blocks all screen touches** — `FloatingOverlayService` used a full-screen `MATCH_PARENT` window. Attempted fix used `WindowManager.LayoutParams.touchableRegion` (hidden API — broke CI). See session 12 for the correct fix.
 - **Trimmed CLAUDE.md** — Removed session progress logs, completed roadmap, capability table, and the verbose "Current status / Done" list. Kept all 23 rules + architecture. File: 56 KB → ~8 KB.
