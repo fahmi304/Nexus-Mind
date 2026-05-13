@@ -70,6 +70,56 @@ const PACKAGE_CATALOG = {
         url: 'https://github.com/jqlang/jq/releases/latest/download/jq-linux-arm64',
         bin: 'jq', type: 'binary'
     },
+    'python3': {
+        desc: 'Python 3 — full interpreter + stdlib, ARM64 musl-static (resolves latest release automatically)',
+        size: '~30 MB',
+        type: 'archive',
+        post: 'python3'
+    },
+    'git': {
+        desc: 'git — native ARM64 binary via Termux packages (requires !install busybox first)',
+        size: '~12 MB',
+        type: 'termux-debs',
+        packages: ['libandroid-support', 'libpcre2', 'git'],
+        dest: 'opt/git',
+        post: 'git-termux'
+    },
+    'go': {
+        desc: 'Go — full toolchain (go build/run/test/get), ARM64 static (resolves latest release automatically)',
+        size: '~100 MB',
+        type: 'archive',
+        post: 'go'
+    },
+    'zig': {
+        desc: 'Zig — systems language + C/C++ compiler toolchain, ARM64 static (resolves latest release automatically)',
+        size: '~100 MB',
+        type: 'archive-xz',
+        post: 'zig'
+    },
+    'ssh': {
+        desc: 'OpenSSH — ssh, scp, sftp, ssh-keygen client tools (ARM64, requires !install busybox)',
+        size: '~5 MB',
+        type: 'termux-debs',
+        packages: ['libandroid-support', 'openssl', 'openssh'],
+        dest: 'opt/ssh',
+        post: 'ssh-termux'
+    },
+    'ruby': {
+        desc: 'Ruby — full interpreter + gems support (ARM64, requires !install busybox)',
+        size: '~20 MB',
+        type: 'termux-debs',
+        packages: ['libandroid-support', 'openssl', 'libgmp', 'libyaml', 'libffi', 'ncurses', 'readline', 'ruby'],
+        dest: 'opt/ruby',
+        post: 'ruby-termux'
+    },
+    'clang': {
+        desc: 'Clang/LLVM — C/C++ compiler + linker (ARM64, large ~300 MB, requires !install busybox)',
+        size: '~300 MB',
+        type: 'termux-debs',
+        packages: ['libandroid-support', 'libllvm', 'clang'],
+        dest: 'opt/clang',
+        post: 'clang-termux'
+    },
     // ── npm packages ──
     'serve': {
         desc: 'serve — zero-config static HTTP file server (serve . -p 8080)',
@@ -625,6 +675,131 @@ function downloadFile(url, dest) {
             res.on('error', err => { try { fs.unlinkSync(dest); } catch (_) {} reject(err); });
         } catch (e) { reject(e); }
     });
+}
+
+// ─── Package install helpers ─────────────────────────────────────────────────
+
+// Fetches the latest python-build-standalone musl ARM64 asset URL via GitHub API.
+async function resolveLatestPythonUrl() {
+    const API = 'https://api.github.com/repos/indygreg/python-build-standalone/releases/latest';
+    const res = await httpsGet(API, { headers: { 'User-Agent': 'ClaudeCodeApp/1.0', 'Accept': 'application/vnd.github.v3+json' } });
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+        res.on('data', c => chunks.push(c));
+        res.on('end', resolve);
+        res.on('error', reject);
+    });
+    if (res.statusCode !== 200) throw new Error('GitHub API HTTP ' + res.statusCode);
+    const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    const asset = (data.assets || []).find(a =>
+        a.name.includes('aarch64-unknown-linux-musl-install_only') && a.name.endsWith('.tar.gz'));
+    if (!asset) throw new Error('No aarch64 musl install_only asset in latest python-build-standalone release');
+    return asset.browser_download_url;
+}
+
+// Fetches the latest Go linux/arm64 tarball URL from go.dev JSON API.
+async function resolveLatestGoUrl() {
+    const res = await httpsGet('https://go.dev/dl/?mode=json',
+        { headers: { 'User-Agent': 'ClaudeCodeApp/1.0' } });
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+        res.on('data', c => chunks.push(c));
+        res.on('end', resolve);
+        res.on('error', reject);
+    });
+    if (res.statusCode !== 200) throw new Error('go.dev HTTP ' + res.statusCode);
+    const releases = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    const stable = releases.find(r => r.stable);
+    if (!stable) throw new Error('No stable Go release found');
+    const file = stable.files.find(f => f.os === 'linux' && f.arch === 'arm64' && f.kind === 'archive');
+    if (!file) throw new Error('No linux/arm64 archive in Go release');
+    return 'https://go.dev/dl/' + file.filename;
+}
+
+// Fetches the latest stable Zig linux-aarch64 tarball URL from ziglang.org JSON API.
+async function resolveLatestZigUrl() {
+    const res = await httpsGet('https://ziglang.org/download/index.json',
+        { headers: { 'User-Agent': 'ClaudeCodeApp/1.0' } });
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+        res.on('data', c => chunks.push(c));
+        res.on('end', resolve);
+        res.on('error', reject);
+    });
+    if (res.statusCode !== 200) throw new Error('ziglang.org HTTP ' + res.statusCode);
+    const index = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    // Pick latest stable (first non-master key)
+    const version = Object.keys(index).find(k => k !== 'master');
+    if (!version) throw new Error('No stable Zig version found');
+    const entry = index[version]['aarch64-linux'];
+    if (!entry || !entry.tarball) throw new Error('No aarch64-linux tarball in Zig ' + version);
+    return entry.tarball;
+}
+
+// Fetches the Termux APT package index and returns download URLs for the named packages.
+async function resolveTermuxUrls(packageNames) {
+    const BASE = 'https://packages.termux.dev/apt/termux-main/';
+    const PKG_URL = BASE + 'dists/stable/main/binary-aarch64/Packages.gz';
+    const res = await httpsGet(PKG_URL);
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+        res.on('data', c => chunks.push(c));
+        res.on('end', resolve);
+        res.on('error', reject);
+    });
+    if (res.statusCode !== 200) throw new Error('Termux package index HTTP ' + res.statusCode);
+    const text = await new Promise((resolve, reject) =>
+        require('zlib').gunzip(Buffer.concat(chunks), (err, buf) =>
+            err ? reject(err) : resolve(buf.toString('utf8'))));
+    const index = {};
+    let cur = {};
+    for (const line of text.split('\n')) {
+        if (line === '') {
+            if (cur.Package && cur.Filename) index[cur.Package] = BASE + cur.Filename;
+            cur = {};
+        } else {
+            const m = line.match(/^([^:]+):\s*(.*)/);
+            if (m) cur[m[1]] = m[2];
+        }
+    }
+    return packageNames.map(name => {
+        if (!index[name]) throw new Error('Package not found in Termux index: ' + name);
+        return { name, url: index[name] };
+    });
+}
+
+// Extracts a Termux .deb file into destDir, stripping the Termux path prefix.
+// Requires busybox (bb = path to busybox binary).
+async function extractDeb(debPath, destDir, bb, env) {
+    const tmpDir = debPath + '-tmp';
+    fs.mkdirSync(tmpDir, { recursive: true });
+    try {
+        await new Promise((res, rej) => {
+            const ar = spawn(bb, ['ar', 'x', debPath], { env, cwd: tmpDir });
+            ar.on('error', e => rej(new Error('ar: ' + e.message)));
+            ar.on('close', code => code === 0 ? res() : rej(new Error('ar exit ' + code)));
+        });
+        const dataTarName = fs.readdirSync(tmpDir).find(f => f.startsWith('data.tar'));
+        if (!dataTarName) throw new Error('No data.tar in ' + path.basename(debPath));
+        if (dataTarName.endsWith('.zst'))
+            throw new Error(
+                'Package uses zstd compression (.zst). zstd is not in busybox.\n' +
+                'Try: !install busybox (if not installed) then retry. If still failing,\n' +
+                'the Termux package has been recompressed — contact app support.');
+        const dataTarPath = path.join(tmpDir, dataTarName);
+        fs.mkdirSync(destDir, { recursive: true });
+        // Termux path inside deb: ./data/data/com.termux/files/usr/{bin,lib,libexec,...}
+        // --strip-components=6 strips: . / data / data / com.termux / files / usr
+        await new Promise((res, rej) => {
+            const tar = spawn(bb, ['tar', '-xf', dataTarPath, '-C', destDir, '--strip-components=6'],
+                { env });
+            tar.stderr.on('data', d => log('tar(deb): ' + d));
+            tar.on('error', e => rej(new Error('tar: ' + e.message)));
+            tar.on('close', code => code === 0 ? res() : rej(new Error('tar exit ' + code)));
+        });
+    } finally {
+        try { fs.rmSync(tmpDir, { recursive: true }); } catch(_) {}
+    }
 }
 
 // ─── Patch cli.js for Android (no Unicode property escape support) ───────────
@@ -1964,7 +2139,8 @@ function openTcpBridge() {
             try { socket.write(msg); } catch (_) {}
         });
 
-        socket.on('data', d => {
+        // normalDataHandler is named so !pty can re-attach it after a PTY session ends.
+        const normalDataHandler = d => {
             inputBuf += d.toString();
 
             // Process all complete lines in the buffer
@@ -2179,6 +2355,65 @@ function openTcpBridge() {
                     continue;
                 }
 
+                // !pty <command> — run a command inside a real POSIX PTY for interactive use
+                // (python3 -i, ruby, vim, ssh, etc.)  Requires the libpty-helper.so native binary.
+                if (line.startsWith('!pty ') || line === '!pty') {
+                    const ptyCmd = line.slice(5).trim();
+                    if (!ptyCmd) {
+                        try { socket.write(
+                            '\x1b[33mUsage: !pty <command>\x1b[0m\r\n' +
+                            'Example: \x1b[33m!pty python3\x1b[0m  or  \x1b[33m!pty ruby\x1b[0m  or  \x1b[33m!pty bash\x1b[0m\r\n' +
+                            '\x1b[2mPress Ctrl+D or type exit to end the session.\x1b[0m\r\n\r\n'
+                        ); } catch(_) {}
+                        continue;
+                    }
+                    const ptyHelper = path.join(path.dirname(LAUNCHER), 'libpty-helper.so');
+                    if (!fs.existsSync(ptyHelper)) {
+                        try { socket.write(
+                            '\x1b[31m✗ libpty-helper.so not found.\x1b[0m\r\n' +
+                            '\x1b[2mRebuild the app — PTY support requires a native binary bundled with the APK.\x1b[0m\r\n\r\n'
+                        ); } catch(_) {}
+                        continue;
+                    }
+                    const ptyCmdParts = ptyCmd.split(/\s+/);
+                    const ptyEnv = Object.assign({}, buildEnv(), { TERM: 'xterm-256color' });
+                    try { socket.write(
+                        '\x1b[33m[PTY] Starting: ' + ptyCmd + '\x1b[0m\r\n' +
+                        '\x1b[2mCtrl+D or "exit" to return to normal mode.\x1b[0m\r\n\r\n'
+                    ); } catch(_) {}
+
+                    let ptyProc;
+                    try {
+                        ptyProc = spawn(ptyHelper, ptyCmdParts, { env: ptyEnv, cwd: shellCwd });
+                    } catch(e) {
+                        try { socket.write('\x1b[31m[PTY] Failed to start: ' + e.message + '\x1b[0m\r\n\r\n'); } catch(_) {}
+                        continue;
+                    }
+
+                    // Kill any busy AI session while PTY is active
+                    if (busy && current) { try { current.kill('SIGTERM'); } catch(_) {} }
+
+                    // Switch socket into raw PTY relay mode
+                    socket.removeAllListeners('data');
+                    const relayData = (d) => { try { ptyProc.stdin.write(d); } catch(_) {} };
+                    socket.on('data', relayData);
+
+                    ptyProc.stdout.on('data', d => { try { socket.write(d); } catch(_) {} });
+                    ptyProc.stderr.on('data', d => { try { socket.write(d); } catch(_) {} });
+                    ptyProc.on('error', e => {
+                        socket.removeListener('data', relayData);
+                        // Restore normal line-based data handler
+                        socket.on('data', normalDataHandler);
+                        try { socket.write('\r\n\x1b[31m[PTY] Error: ' + e.message + '\x1b[0m\r\n\r\n'); } catch(_) {}
+                    });
+                    ptyProc.on('close', code => {
+                        socket.removeListener('data', relayData);
+                        socket.on('data', normalDataHandler);
+                        try { socket.write('\r\n\x1b[33m[PTY] Session ended (exit ' + (code || 0) + ')\x1b[0m\r\n\r\n'); } catch(_) {}
+                    });
+                    continue;
+                }
+
                 // !install-git — install isomorphic-git as a $ git command (pure JS, no native binary)
                 if (line === '!install-git') {
                     const gitBin  = path.join(FILES_DIR, 'bin', 'git');
@@ -2364,7 +2599,21 @@ function openTcpBridge() {
                             ['Provider URL', cfg2.providerUrl || '(not set)'],
                             ['cwd', shellCwd],
                             ['BusyBox', fs.existsSync(path.join(BIN_DIR, 'busybox')) ? '✓ installed' : '✗ run !install busybox'],
-                            ['git', fs.existsSync(path.join(BIN_DIR, 'git')) ? '✓ installed' : '✗ run !install-git'],
+                            ['git', (() => {
+                                const gf = path.join(BIN_DIR, 'git');
+                                if (!fs.existsSync(gf)) return '✗ run !install git (native) or !install-git (JS)';
+                                try {
+                                    const src = fs.readFileSync(gf, 'utf8');
+                                    return src.includes('isomorphic') ? '✓ isomorphic-git (JS)' : '✓ native ARM64 binary';
+                                } catch(_) { return '✓ installed'; }
+                            })()],
+                            ['python3', fs.existsSync(path.join(BIN_DIR, 'python3')) ? '✓ installed' : '✗ run !install python3'],
+                            ['go',      fs.existsSync(path.join(BIN_DIR, 'go'))      ? '✓ installed' : '✗ run !install go'],
+                            ['zig',     fs.existsSync(path.join(BIN_DIR, 'zig'))     ? '✓ installed' : '✗ run !install zig'],
+                            ['ssh',     fs.existsSync(path.join(BIN_DIR, 'ssh'))     ? '✓ installed' : '✗ run !install ssh'],
+                            ['ruby',    fs.existsSync(path.join(BIN_DIR, 'ruby'))    ? '✓ installed' : '✗ run !install ruby'],
+                            ['clang',   fs.existsSync(path.join(BIN_DIR, 'clang'))   ? '✓ installed' : '✗ run !install clang'],
+                            ['PTY',     fs.existsSync(path.join(path.dirname(LAUNCHER), 'libpty-helper.so')) ? '✓ available (!pty <cmd>)' : '✗ rebuild app'],
                             ['CLAUDE.md', (() => { const p2 = path.join(shellCwd, 'CLAUDE.md'); return fs.existsSync(p2) ? '✓ found' : '✗ not found (run /init)'; })()],
                         ];
                         let msg = '\r\n\x1b[1m/doctor — Environment\x1b[0m\r\n';
@@ -2515,12 +2764,31 @@ function openTcpBridge() {
                         const entries = Object.entries(PACKAGE_CATALOG);
                         let msg = '\r\n\x1b[1mAvailable packages\x1b[0m\r\n';
                         const binaries = entries.filter(([,v]) => v.type === 'binary');
+                        const archives = entries.filter(([,v]) => v.type === 'archive' || v.type === 'termux-debs');
                         const npms = entries.filter(([,v]) => v.type === 'npm');
+
+                        const isInstalled = (k, v) => {
+                            if (v.type === 'binary')      return fs.existsSync(path.join(BIN_DIR, v.bin || k));
+                            if (v.type === 'archive')     return fs.existsSync(path.join(BIN_DIR, k));
+                            if (v.type === 'termux-debs') {
+                                const gf = path.join(BIN_DIR, 'git');
+                                return fs.existsSync(gf) && !fs.readFileSync(gf,'utf8').includes('isomorphic');
+                            }
+                            return false;
+                        };
+
                         if (binaries.length) {
                             msg += '\r\n\x1b[36mStatic ARM64 binaries:\x1b[0m\r\n';
                             for (const [k, v] of binaries) {
-                                const installed = fs.existsSync(path.join(BIN_DIR, v.bin || k));
-                                msg += '  \x1b[33m!install ' + k + '\x1b[0m' + (installed ? ' \x1b[32m✓\x1b[0m' : '') + '  — ' + v.desc + '\r\n';
+                                const chk = isInstalled(k, v) ? ' \x1b[32m✓\x1b[0m' : '';
+                                msg += '  \x1b[33m!install ' + k + '\x1b[0m' + chk + '  — ' + v.desc + '\r\n';
+                            }
+                        }
+                        if (archives.length) {
+                            msg += '\r\n\x1b[36mRuntime packages:\x1b[0m\r\n';
+                            for (const [k, v] of archives) {
+                                const chk = isInstalled(k, v) ? ' \x1b[32m✓\x1b[0m' : '';
+                                msg += '  \x1b[33m!install ' + k + '\x1b[0m' + chk + '  — ' + v.desc + '\r\n';
                             }
                         }
                         if (npms.length) {
@@ -2668,37 +2936,40 @@ function openTcpBridge() {
 
                 if (line === '!help') {
                     try {
+                        // Command column is 26 chars wide (accommodates longest cmd).
+                        // Format: '  ' + colored_cmd + \x1b[0m + padding + description
                         socket.write(
-                            '\r\n\x1b[1mSlash commands (AI tasks):\x1b[0m\r\n' +
-                            '  \x1b[36m/init\x1b[0m         Scan project and generate CLAUDE.md\r\n' +
-                            '  \x1b[36m/review\x1b[0m       Review staged git diff with AI\r\n' +
-                            '  \x1b[36m/cost\x1b[0m         Show token usage and estimated API cost\r\n' +
-                            '  \x1b[36m/doctor\x1b[0m       Check environment health\r\n' +
-                            '  \x1b[36m/compact\x1b[0m      Manually summarize and compact context\r\n' +
-                            '\r\n\x1b[1mShell commands:\x1b[0m\r\n' +
-                            '  \x1b[33m$ <command>\x1b[0m   Run any shell command\r\n' +
-                            '  \x1b[33m$ cd <dir>\x1b[0m    Change working directory\r\n' +
+                            '\r\n\x1b[1mSlash commands:\x1b[0m\r\n' +
+                            '  \x1b[36m/init\x1b[0m                     Scan project, generate CLAUDE.md\r\n' +
+                            '  \x1b[36m/review\x1b[0m                   Review staged git diff with AI\r\n' +
+                            '  \x1b[36m/cost\x1b[0m                     Token usage and estimated cost\r\n' +
+                            '  \x1b[36m/doctor\x1b[0m                   Check environment health\r\n' +
+                            '  \x1b[36m/compact\x1b[0m                  Summarize and compact context\r\n' +
+                            '\r\n\x1b[1mShell:\x1b[0m\r\n' +
+                            '  \x1b[33m$ <command>\x1b[0m               Run any shell command\r\n' +
+                            '  \x1b[33m$ cd <dir>\x1b[0m                Change working directory\r\n' +
                             '\r\n\x1b[1mAI conversation:\x1b[0m\r\n' +
-                            '  Type normally to chat with the AI model\r\n' +
-                            '  \x1b[33m!clear\x1b[0m        Clear conversation history\r\n' +
-                            '  \x1b[33m!history\x1b[0m      Show history turn count\r\n' +
-                            '  \x1b[33m!context [path]\x1b[0m Load directory + key files as context\r\n' +
-                            '  \x1b[33m!attach <file>\x1b[0m Attach document/CSV as next-message context\r\n' +
-                            '  \x1b[33m!fetch <url>\x1b[0m  Fetch URL and inject as context\r\n' +
-                            '  \x1b[33m!stats\x1b[0m        Session stats (same as /cost)\r\n' +
-                            '  \x1b[33m!export\x1b[0m       Export conversation to Markdown\r\n' +
-                            '  \x1b[33m!import <file>\x1b[0m Restore exported conversation\r\n' +
-                            '  \x1b[33m!undo\x1b[0m         Restore most recently overwritten file\r\n' +
+                            '  (type normally)              Chat with the AI model\r\n' +
+                            '  \x1b[33m!clear\x1b[0m                    Clear conversation history\r\n' +
+                            '  \x1b[33m!history\x1b[0m                  Show history turn count\r\n' +
+                            '  \x1b[33m!context [path]\x1b[0m           Load dir + key files as context\r\n' +
+                            '  \x1b[33m!attach <file>\x1b[0m            Attach doc/CSV as next-message context\r\n' +
+                            '  \x1b[33m!fetch <url>\x1b[0m              Fetch URL and inject as context\r\n' +
+                            '  \x1b[33m!stats\x1b[0m                    Session stats (same as /cost)\r\n' +
+                            '  \x1b[33m!export\x1b[0m                   Export conversation to Markdown\r\n' +
+                            '  \x1b[33m!import <file>\x1b[0m            Restore exported conversation\r\n' +
+                            '  \x1b[33m!undo\x1b[0m                     Restore most recently overwritten file\r\n' +
                             '\r\n\x1b[1mSetup & tools:\x1b[0m\r\n' +
-                            '  \x1b[33m!install [name]\x1b[0m Install binary or npm pkg (no args = catalog)\r\n' +
-                            '  \x1b[33m!install-git\x1b[0m  Install isomorphic-git for $ git commands\r\n' +
-                            '  \x1b[33m!gh-auth <tok>\x1b[0m Save GitHub token for git push/clone\r\n' +
-                            '  \x1b[33m!agentic [on|off]\x1b[0m Toggle agentic tool-calling loop\r\n' +
-                            '  \x1b[33m!mcp-stdio [list|reload]\x1b[0m Manage stdio MCP servers\r\n' +
-                            '  \x1b[33m!update\x1b[0m       Re-install claude-code v2.1.112\r\n' +
-                            '  \x1b[33m!log [N]\x1b[0m      Show last N lines of setup.log\r\n' +
-                            '  \x1b[33m!ver\x1b[0m / \x1b[33m!test\x1b[0m / \x1b[33m!test-cli\x1b[0m  Diagnostics\r\n' +
-                            '  \x1b[33m!help\x1b[0m         Show this message\r\n\r\n'
+                            '  \x1b[33m!install [name]\x1b[0m           Install binary or npm pkg (no args = catalog)\r\n' +
+                            '  \x1b[33m!pty <command>\x1b[0m            Run command in real PTY (python3, ruby, vim…)\r\n' +
+                            '  \x1b[33m!install-git\x1b[0m              Install isomorphic-git for $ git commands\r\n' +
+                            '  \x1b[33m!gh-auth <token>\x1b[0m          Save GitHub token for git push/clone\r\n' +
+                            '  \x1b[33m!agentic [on|off]\x1b[0m         Toggle agentic tool-calling loop\r\n' +
+                            '  \x1b[33m!mcp-stdio [list|reload]\x1b[0m  Manage stdio MCP servers\r\n' +
+                            '  \x1b[33m!update\x1b[0m                   Re-install claude-code v2.1.112\r\n' +
+                            '  \x1b[33m!log [N]\x1b[0m                  Show last N lines of setup.log\r\n' +
+                            '  \x1b[33m!ver / !test / !test-cli\x1b[0m  Diagnostics\r\n' +
+                            '  \x1b[33m!help\x1b[0m                     Show this message\r\n\r\n'
                         );
                     } catch (_) {}
                     continue;
@@ -3067,7 +3338,9 @@ function openTcpBridge() {
                     try { socket.write('\r\n'); } catch (_) {}
                 });
             }
-        });
+        }; // end normalDataHandler
+
+        socket.on('data', normalDataHandler);
 
         socket.on('close', () => {
             if (currentTid) { clearTimeout(currentTid); currentTid = null; }
@@ -3193,6 +3466,219 @@ function installPackage(name, socket) {
             try { fs.unlinkSync(tmpPath); } catch(_) {}
             try { socket.write('\x1b[31m✗ Download failed: ' + e.message + '\x1b[0m\r\n\r\n'); } catch(_) {}
             log('[install] ' + name + ' download failed: ' + e.message + '\n');
+        });
+
+    } else if (pkg.type === 'archive' || pkg.type === 'archive-xz') {
+        // ── Generic archive installer (tar.gz or tar.xz) ─────────────────────
+        const isXz   = pkg.type === 'archive-xz';
+        const distDir = path.join(FILES_DIR, 'opt', name + '-dist');
+        const primaryBin = path.join(BIN_DIR, name === 'python3' ? 'python3' : name);
+        if (fs.existsSync(primaryBin)) {
+            try { socket.write('\x1b[32m✓ ' + name + ' already installed.\x1b[0m Run \x1b[33m$ ' + name + ' --version\x1b[0m\r\n\r\n'); } catch(_) {}
+            return;
+        }
+        const ext  = isXz ? '.tar.xz' : '.tar.gz';
+        const archivePath = path.join(FILES_DIR, name + ext);
+        const tarPath     = path.join(FILES_DIR, name + '.tar');
+
+        if (isXz && !fs.existsSync(path.join(BIN_DIR, 'busybox'))) {
+            try { socket.write('\x1b[31m✗ ' + name + ' requires busybox for .tar.xz.\x1b[0m Run \x1b[33m!install busybox\x1b[0m first.\r\n\r\n'); } catch(_) {}
+            return;
+        }
+
+        (async () => {
+            // Resolve URL dynamically
+            let url;
+            if (name === 'python3')     { try { socket.write('\x1b[33mResolving latest Python ARM64…\x1b[0m\r\n'); } catch(_) {} url = await resolveLatestPythonUrl(); }
+            else if (name === 'go')     { try { socket.write('\x1b[33mResolving latest Go ARM64…\x1b[0m\r\n'); } catch(_) {} url = await resolveLatestGoUrl(); }
+            else if (name === 'zig')    { try { socket.write('\x1b[33mResolving latest Zig ARM64…\x1b[0m\r\n'); } catch(_) {} url = await resolveLatestZigUrl(); }
+            else if (pkg.url)           { url = pkg.url; }
+            else throw new Error('No URL resolver for ' + name);
+
+            try { socket.write('\x1b[33mDownloading ' + name + ' (' + (pkg.size || '') + ')…\x1b[0m\r\n'); } catch(_) {}
+            log('[install] ' + name + ' url: ' + url + '\n');
+            await downloadFile(url, archivePath);
+            fs.mkdirSync(distDir, { recursive: true });
+
+            if (isXz) {
+                // busybox tar -Jxf handles xz natively
+                try { socket.write('\x1b[33mExtracting ' + name + '… (this may take a minute)\x1b[0m\r\n'); } catch(_) {}
+                const bb = path.join(BIN_DIR, 'busybox');
+                await new Promise((res, rej) => {
+                    const tar = spawn(bb, ['tar', '-Jxf', archivePath, '-C', distDir],
+                        { env: { PATH: BIN_DIR + ':/system/bin:/system/xbin', TMPDIR: FILES_DIR } });
+                    tar.stderr.on('data', d => log('tar(xz): ' + d));
+                    tar.on('error', e => rej(new Error('tar: ' + e.message)));
+                    tar.on('close', code => code === 0 ? res() : rej(new Error('tar exit ' + code)));
+                });
+                try { fs.unlinkSync(archivePath); } catch(_) {}
+            } else {
+                // Decompress gz in Node.js (toybox tar may lack -z), then system tar
+                try { socket.write('\x1b[33mDecompressing…\x1b[0m\r\n'); } catch(_) {}
+                await new Promise((res, rej) => {
+                    const zlib = require('zlib');
+                    fs.createReadStream(archivePath).pipe(zlib.createGunzip())
+                        .pipe(fs.createWriteStream(tarPath)).on('finish', res).on('error', rej);
+                });
+                try { fs.unlinkSync(archivePath); } catch(_) {}
+                try { socket.write('\x1b[33mExtracting ' + name + '… (this may take a minute)\x1b[0m\r\n'); } catch(_) {}
+                await new Promise((res, rej) => {
+                    const tar = spawn('/system/bin/tar', ['-xf', tarPath, '-C', distDir],
+                        { env: { PATH: '/system/bin:/system/xbin' } });
+                    tar.stderr.on('data', d => log('tar: ' + d));
+                    tar.on('error', e => rej(new Error('/system/bin/tar: ' + e.message)));
+                    tar.on('close', code => code === 0 ? res() : rej(new Error('tar exit ' + code)));
+                });
+                try { fs.unlinkSync(tarPath); } catch(_) {}
+            }
+
+            // Helper: write a shell wrapper into BIN_DIR
+            const mkWrap = (wrapName, execPath, envPairs) => {
+                let s = '#!/system/bin/sh\n';
+                if (envPairs) for (const [k, v] of Object.entries(envPairs))
+                    s += 'export ' + k + '="' + v + '"\n';
+                s += 'exec "' + execPath + '" "$@"\n';
+                fs.writeFileSync(path.join(BIN_DIR, wrapName), s);
+                fs.chmodSync(path.join(BIN_DIR, wrapName), 0o755);
+            };
+
+            if (pkg.post === 'python3') {
+                const pyBinDir = path.join(distDir, 'python', 'bin');
+                const pyHome   = path.join(distDir, 'python');
+                const bins     = fs.readdirSync(pyBinDir);
+                const realPy   = bins.find(f => /^python3\.\d+$/.test(f)) || 'python3';
+                const realPyPath = path.join(pyBinDir, realPy);
+                mkWrap('python3', realPyPath, { PYTHONHOME: pyHome });
+                mkWrap('python',  realPyPath, { PYTHONHOME: pyHome });
+                const pip3 = bins.find(f => /^pip3(\.\d+)?$/.test(f));
+                if (pip3) {
+                    mkWrap('pip3', path.join(pyBinDir, pip3), { PYTHONHOME: pyHome });
+                    mkWrap('pip',  path.join(pyBinDir, pip3), { PYTHONHOME: pyHome });
+                }
+                try { socket.write('\x1b[32m✓ python3 installed.\x1b[0m Run \x1b[33m$ python3 --version\x1b[0m\r\n' +
+                    '\x1b[2mCommands: python3, python' + (pip3 ? ', pip3, pip' : '') + '\x1b[0m\r\n\r\n'); } catch(_) {}
+            } else if (pkg.post === 'go') {
+                const goRoot = path.join(distDir, 'go');
+                const goPath = path.join(FILES_DIR, 'go-workspace');
+                fs.mkdirSync(goPath, { recursive: true });
+                mkWrap('go',    path.join(goRoot, 'bin', 'go'),    { GOROOT: goRoot, GOPATH: goPath, HOME: FILES_DIR });
+                mkWrap('gofmt', path.join(goRoot, 'bin', 'gofmt'), { GOROOT: goRoot, GOPATH: goPath, HOME: FILES_DIR });
+                try { socket.write('\x1b[32m✓ go installed.\x1b[0m Run \x1b[33m$ go version\x1b[0m\r\n' +
+                    '\x1b[2mCommands: go, gofmt  |  GOPATH: ' + goPath + '\x1b[0m\r\n\r\n'); } catch(_) {}
+            } else if (pkg.post === 'zig') {
+                // Zig extracts to zig-linux-aarch64-VERSION/ inside distDir
+                const zigSubDir = fs.readdirSync(distDir).find(e => e.startsWith('zig-'));
+                if (!zigSubDir) throw new Error('Could not find zig sub-directory after extraction');
+                const zigBin = path.join(distDir, zigSubDir, 'zig');
+                mkWrap('zig', zigBin);
+                // Expose 'zig cc' and 'zig c++' as convenient aliases
+                const ccW = '#!/system/bin/sh\nexec "' + zigBin + '" cc "$@"\n';
+                const cppW = '#!/system/bin/sh\nexec "' + zigBin + '" c++ "$@"\n';
+                fs.writeFileSync(path.join(BIN_DIR, 'zig-cc'),  ccW);  fs.chmodSync(path.join(BIN_DIR, 'zig-cc'),  0o755);
+                fs.writeFileSync(path.join(BIN_DIR, 'zig-c++'), cppW); fs.chmodSync(path.join(BIN_DIR, 'zig-c++'), 0o755);
+                try { socket.write('\x1b[32m✓ zig installed.\x1b[0m Run \x1b[33m$ zig version\x1b[0m\r\n' +
+                    '\x1b[2mCommands: zig, zig-cc (C), zig-c++ (C++)\x1b[0m\r\n\r\n'); } catch(_) {}
+            }
+            log('[install] ' + name + ' installed at ' + distDir + '\n');
+        })().catch(e => {
+            try { fs.unlinkSync(archivePath); } catch(_) {}
+            try { fs.unlinkSync(tarPath); } catch(_) {}
+            try { socket.write('\x1b[31m✗ ' + name + ' install failed: ' + e.message + '\x1b[0m\r\n\r\n'); } catch(_) {}
+            log('[install] ' + name + ' failed: ' + e.message + '\n');
+        });
+
+    } else if (pkg.type === 'termux-debs') {
+        // ── Generic Termux .deb installer ────────────────────────────────────
+        // "already installed" check: primary binary is first entry in pkg.packages
+        // (the actual package name) or the catalog key itself.
+        const primaryBin = path.join(BIN_DIR, name === 'git' ? 'git' : name);
+        const isGit = name === 'git';
+        const alreadyOk = fs.existsSync(primaryBin) &&
+            (!isGit || !fs.readFileSync(primaryBin, 'utf8').includes('isomorphic'));
+        if (alreadyOk) {
+            try { socket.write('\x1b[32m✓ ' + name + ' already installed.\x1b[0m\r\n\r\n'); } catch(_) {}
+            return;
+        }
+        const bb = path.join(BIN_DIR, 'busybox');
+        if (!fs.existsSync(bb)) {
+            try { socket.write('\x1b[31m✗ busybox required first.\x1b[0m Run \x1b[33m!install busybox\x1b[0m then retry.\r\n\r\n'); } catch(_) {}
+            return;
+        }
+        const bbEnv  = { PATH: BIN_DIR + ':/system/bin:/system/xbin', TMPDIR: FILES_DIR };
+        const destDir = path.join(FILES_DIR, pkg.dest);
+
+        (async () => {
+            try { socket.write('\x1b[33mFetching Termux package index…\x1b[0m\r\n'); } catch(_) {}
+            const pkgs = await resolveTermuxUrls(pkg.packages);
+
+            for (const { name: pkgName, url } of pkgs) {
+                try { socket.write('\x1b[33mDownloading ' + pkgName + '…\x1b[0m\r\n'); } catch(_) {}
+                const debPath = path.join(FILES_DIR, pkgName + '.deb');
+                await downloadFile(url, debPath);
+                try { socket.write('\x1b[33mExtracting ' + pkgName + '…\x1b[0m\r\n'); } catch(_) {}
+                await extractDeb(debPath, destDir, bb, bbEnv);
+                try { fs.unlinkSync(debPath); } catch(_) {}
+            }
+
+            const libDir = path.join(destDir, 'lib');
+            const mkWrap = (wrapName, realBin, extra) => {
+                let s = '#!/system/bin/sh\nexport LD_LIBRARY_PATH="' + libDir + ':${LD_LIBRARY_PATH:-}"\n';
+                if (extra) s += extra;
+                s += 'exec "' + realBin + '" "$@"\n';
+                fs.writeFileSync(path.join(BIN_DIR, wrapName), s);
+                fs.chmodSync(path.join(BIN_DIR, wrapName), 0o755);
+            };
+
+            if (pkg.post === 'git-termux') {
+                mkWrap('git', path.join(destDir, 'bin', 'git'),
+                    'export GIT_EXEC_PATH="' + path.join(destDir, 'libexec', 'git-core') + '"\n' +
+                    'export GIT_TEMPLATE_DIR="' + path.join(destDir, 'share', 'git-core', 'templates') + '"\n');
+                try { socket.write('\x1b[32m✓ git installed.\x1b[0m Run \x1b[33m$ git --version\x1b[0m\r\n' +
+                    '\x1b[2mFor HTTPS push/pull: !gh-auth <token>\x1b[0m\r\n\r\n'); } catch(_) {}
+            } else if (pkg.post === 'ssh-termux') {
+                const sshBinDir = path.join(destDir, 'bin');
+                for (const b of ['ssh', 'scp', 'sftp', 'ssh-keygen', 'ssh-add', 'ssh-agent']) {
+                    const real = path.join(sshBinDir, b);
+                    if (fs.existsSync(real)) mkWrap(b, real);
+                }
+                try { fs.mkdirSync(path.join(FILES_DIR, '.ssh'), { mode: 0o700 }); } catch(_) {}
+                try { socket.write('\x1b[32m✓ ssh installed.\x1b[0m Run \x1b[33m$ ssh -V\x1b[0m\r\n' +
+                    '\x1b[2mCommands: ssh, scp, sftp, ssh-keygen\x1b[0m\r\n\r\n'); } catch(_) {}
+            } else if (pkg.post === 'ruby-termux') {
+                const rubyBinDir = path.join(destDir, 'bin');
+                const rubyBins   = fs.existsSync(rubyBinDir) ? fs.readdirSync(rubyBinDir) : [];
+                const rubyExec   = rubyBins.find(f => /^ruby\d/.test(f)) || 'ruby';
+                mkWrap('ruby', path.join(rubyBinDir, rubyExec));
+                for (const b of ['irb', 'gem', 'rake', 'erb']) {
+                    const real = path.join(rubyBinDir, b);
+                    if (fs.existsSync(real)) mkWrap(b, real);
+                }
+                try { socket.write('\x1b[32m✓ ruby installed.\x1b[0m Run \x1b[33m$ ruby --version\x1b[0m\r\n' +
+                    '\x1b[2mCommands: ruby, irb, gem, rake\x1b[0m\r\n\r\n'); } catch(_) {}
+            } else if (pkg.post === 'clang-termux') {
+                const clangBinDir = path.join(destDir, 'bin');
+                const clangBins   = fs.existsSync(clangBinDir) ? fs.readdirSync(clangBinDir) : [];
+                for (const b of clangBins) {
+                    try { mkWrap(b, path.join(clangBinDir, b)); } catch(_) {}
+                }
+                // cc / c++ aliases
+                const clangWrap = path.join(BIN_DIR, 'clang');
+                const clangppWrap = path.join(BIN_DIR, 'clang++');
+                if (fs.existsSync(clangWrap))   { try { fs.symlinkSync(clangWrap,   path.join(BIN_DIR, 'cc'));  } catch(_) {} }
+                if (fs.existsSync(clangppWrap)) { try { fs.symlinkSync(clangppWrap, path.join(BIN_DIR, 'c++')); } catch(_) {} }
+                try { socket.write('\x1b[32m✓ clang installed.\x1b[0m Run \x1b[33m$ clang --version\x1b[0m\r\n' +
+                    '\x1b[2mCommands: clang, clang++, cc, c++\x1b[0m\r\n\r\n'); } catch(_) {}
+            } else {
+                // Generic: wrap all binaries found in bin/
+                const binDir2 = path.join(destDir, 'bin');
+                if (fs.existsSync(binDir2))
+                    for (const b of fs.readdirSync(binDir2)) { try { mkWrap(b, path.join(binDir2, b)); } catch(_) {} }
+                try { socket.write('\x1b[32m✓ ' + name + ' installed.\x1b[0m\r\n\r\n'); } catch(_) {}
+            }
+            log('[install] ' + name + ' installed at ' + destDir + '\n');
+        })().catch(e => {
+            try { socket.write('\x1b[31m✗ ' + name + ' install failed: ' + e.message + '\x1b[0m\r\n\r\n'); } catch(_) {}
+            log('[install] ' + name + ' failed: ' + e.message + '\n');
         });
 
     } else if (pkg.type === 'npm') {
