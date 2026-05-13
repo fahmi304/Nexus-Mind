@@ -1281,19 +1281,19 @@ window.termSetInput=function(text){
 };
 
 // ── Image attachment state ────────────────────────────────────────────────────
-let pendingImageB64 = null;
-let pendingImageMime = 'image/jpeg';
+let pendingImageAttached = false;
 const imgPreviewEl = document.getElementById('img-preview');
 
-window.termSetImage = function(b64, mime) {
-  pendingImageB64 = b64;
-  pendingImageMime = mime || 'image/jpeg';
+// Called by Kotlin after image is written to pending_image.b64 on disk
+window.termSetImageReady = function() {
+  pendingImageAttached = true;
   imgPreviewEl.style.display = 'block';
 };
 
 imgPreviewEl.addEventListener('click', function() {
-  pendingImageB64 = null;
+  pendingImageAttached = false;
   imgPreviewEl.style.display = 'none';
+  if(typeof Android!=='undefined') Android.cancelPendingImage();
 });
 
 // ── Input buffer ──────────────────────────────────────────────────────────────
@@ -1311,7 +1311,8 @@ function submitLine(text){
   historyIdx=-1;
   savedInput='';
   updateInputDisp();
-  if(!msg) return;
+  if(!msg && !pendingImageAttached) return;
+  const displayMsg = msg || '📷';
   // Push to input history (skip duplicates of the last entry)
   if(msg.length>0&&inputHistory[inputHistory.length-1]!==msg){
     inputHistory.push(msg);
@@ -1322,12 +1323,12 @@ function submitLine(text){
   sysAnsi=makeAnsiState();
   // Remove suggestions bar if present
   const sb=document.getElementById('suggestions-bar');if(sb)sb.remove();
-  addUserBubble(msg);
+  addUserBubble(displayMsg);
   if(typeof Android!=='undefined'){
-    if(pendingImageB64!==null){
-      Android.submitMessageWithImage(msg,pendingImageB64,pendingImageMime);
-      pendingImageB64=null;
+    if(pendingImageAttached){
+      pendingImageAttached=false;
       imgPreviewEl.style.display='none';
+      Android.submitMessageWithImage(msg);
     } else {
       Android.submitMessage(msg);
     }

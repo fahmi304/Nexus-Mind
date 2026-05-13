@@ -580,11 +580,11 @@ class TerminalActivity : AppCompatActivity() {
                 val baos = ByteArrayOutputStream()
                 scaled.compress(Bitmap.CompressFormat.JPEG, 80, baos)
                 val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
-                val escaped = b64.replace("\"", "\\\"")
+                // Write directly to file — avoids passing large base64 through JS interface
+                File(filesDir, "pending_image.b64").writeText(b64)
+                File(filesDir, "pending_image.mime").writeText("image/jpeg")
                 runOnUiThread {
-                    binding.webViewTerminal.evaluateJavascript(
-                        "window.termSetImage(\"$escaped\", \"image/jpeg\")", null
-                    )
+                    binding.webViewTerminal.evaluateJavascript("window.termSetImageReady()", null)
                 }
             } catch (e: Exception) {
                 android.widget.Toast.makeText(this, "Image error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
@@ -847,18 +847,14 @@ class TerminalActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
-        fun submitMessageWithImage(text: String, imageB64: String, mime: String) {
+        fun submitMessageWithImage(text: String) {
             if (!isOnline()) {
                 runOnUiThread {
                     showStatusError("No internet connection — check your network and try again")
                 }
                 return
             }
-            // Write image to temp file so bridge.js can pick it up
-            try {
-                File(filesDir, "pending_image.b64").writeText(imageB64)
-                File(filesDir, "pending_image.mime").writeText(mime)
-            } catch (_: Exception) {}
+            // Image files (pending_image.b64 / .mime) already written by onActivityResult
             val msg = text.ifEmpty { "What do you see in this image?" }
             lastSentMessage[activeSessionId] = msg
             sessionBusy[activeSessionId] = true
@@ -867,6 +863,14 @@ class TerminalActivity : AppCompatActivity() {
                 startThinkingTimeout()
             }
             claudeService?.sendInput(msg + "\r")
+        }
+
+        @JavascriptInterface
+        fun cancelPendingImage() {
+            try {
+                File(filesDir, "pending_image.b64").delete()
+                File(filesDir, "pending_image.mime").delete()
+            } catch (_: Exception) {}
         }
 
         @JavascriptInterface
