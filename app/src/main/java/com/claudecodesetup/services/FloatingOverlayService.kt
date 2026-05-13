@@ -5,12 +5,13 @@ import android.content.*
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.os.*
-import android.speech.*
 import android.speech.tts.TextToSpeech
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.*
+import android.view.animation.OvershootInterpolator
 import android.widget.*
 import com.claudecodesetup.ClaudeApp
 import com.claudecodesetup.R
@@ -30,6 +31,8 @@ class FloatingOverlayService : Service() {
         const val NOTIF_ID                = 1003
         private const val BRIDGE_PORT     = 8083
         private const val TAG             = "FloatingOverlay"
+        private const val IDLE_DELAY_MS   = 3500L
+        private const val IDLE_ALPHA      = 0.20f
     }
 
     private lateinit var windowManager: WindowManager
@@ -52,10 +55,16 @@ class FloatingOverlayService : Service() {
     private var btnY = 0
     private var screenW = 0
     private var screenH = 0
-    private val btnPx get() = dpToPx(56)
+    private val btnPx get() = dpToPx(60)
     private var expanded = false
 
     private var pendingScreenshotQuery: String? = null
+
+    // Idle-fade: fades to IDLE_ALPHA after IDLE_DELAY_MS of no interaction
+    private val idleHandler  = Handler(Looper.getMainLooper())
+    private val idleRunnable = Runnable {
+        mainBtn.animate().alpha(IDLE_ALPHA).setDuration(900).start()
+    }
 
     private val resultReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -65,10 +74,11 @@ class FloatingOverlayService : Service() {
                     val query = pendingScreenshotQuery ?: "Describe what you see in this screenshot."
                     pendingScreenshotQuery = null
                     attachImageAndSend(path, query)
+                    wakeUp()
                 }
                 ACTION_VOICE_RESULT -> {
                     val text = intent.getStringExtra("text") ?: return
-                    mainBtn.alpha = 0.88f
+                    wakeUp()
                     handleVoiceResult(text)
                 }
             }
@@ -105,10 +115,12 @@ class FloatingOverlayService : Service() {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
 
         connectSocket()
+        wakeUp()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        idleHandler.removeCallbacks(idleRunnable)
         unregisterReceiver(resultReceiver)
         scope.cancel()
         tts.shutdown()
@@ -123,46 +135,46 @@ class FloatingOverlayService : Service() {
         return START_STICKY
     }
 
+    // ─── Idle fade ────────────────────────────────────────────────────────────
+
+    private fun wakeUp() {
+        idleHandler.removeCallbacks(idleRunnable)
+        mainBtn.animate().alpha(1f).setDuration(200).start()
+        idleHandler.postDelayed(idleRunnable, IDLE_DELAY_MS)
+    }
+
     // ─── Overlay construction ─────────────────────────────────────────────────
 
     private fun buildOverlayView() {
         overlayRoot = FrameLayout(this)
 
-        // Sub-menu row (5 action buttons)
+        // Sub-menu: glassmorphic horizontal pill
         subMenu = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             visibility  = View.GONE
-            setPadding(dpToPx(10), dpToPx(10), dpToPx(10), dpToPx(10))
-            background = roundRect(0xCC1A1A2E.toInt(), dpToPx(28))
-            elevation  = dpToPx(8).toFloat()
+            setPadding(dpToPx(12), dpToPx(12), dpToPx(12), dpToPx(12))
+            background = glassPill(dpToPx(32))
+            elevation  = dpToPx(12).toFloat()
         }
 
-        val subDefs = listOf(
-            "📋" to "Clipboard",
-            "📸" to "Screenshot",
-            "⚡" to "Quick",
-            "🔊" to "TTS",
-            "📱" to "App"
-        )
-        subDefs.forEachIndexed { i, (emoji, _) ->
-            val btn = subButton(emoji)
+        val subDefs = listOf("📋", "📸", "⚡", "🔊", "📱")
+        subDefs.forEachIndexed { i, emoji ->
+            val btn = glassSubButton(emoji)
             if (emoji == "🔊") ttsSubBtn = btn
-            btn.setOnClickListener { collapseAll(); onSubAction(i) }
+            btn.setOnClickListener { collapseAll(); wakeUp(); onSubAction(i) }
             subMenu.addView(btn, LinearLayout.LayoutParams(dpToPx(48), dpToPx(48)).apply {
-                if (i > 0) leftMargin = dpToPx(8)
+                if (i > 0) leftMargin = dpToPx(10)
             })
         }
 
-        // Quick-prompts panel
         quickPromptsPanel = buildQuickPromptsPanel()
 
-        // Main button
         mainBtn = makeMainButton()
         setupDragAndTap()
 
-        overlayRoot.addView(subMenu,         subMenuLp())
-        overlayRoot.addView(quickPromptsPanel, quickPanelLp())
-        overlayRoot.addView(mainBtn,          mainBtnLp())
+        overlayRoot.addView(subMenu,            subMenuLp())
+        overlayRoot.addView(quickPromptsPanel,  quickPanelLp())
+        overlayRoot.addView(mainBtn,            mainBtnLp())
 
         refreshTtsColor()
     }
@@ -180,51 +192,103 @@ class FloatingOverlayService : Service() {
         windowManager.addView(overlayRoot, params)
     }
 
+    // ─── View factories ───────────────────────────────────────────────────────
+
     private fun makeMainButton(): ImageView {
         val iv = ImageView(this)
         iv.setImageResource(R.mipmap.ic_launcher)
-        iv.scaleType  = ImageView.ScaleType.CENTER_CROP
-        iv.alpha      = 0.88f
-        iv.background = oval(0xCC1A1A2E.toInt())
+        iv.scaleType  = ImageView.ScaleType.FIT_CENTER
         iv.setPadding(dpToPx(10), dpToPx(10), dpToPx(10), dpToPx(10))
-        iv.elevation  = dpToPx(8).toFloat()
+        iv.background = glassMainButtonBg()
+        iv.elevation  = dpToPx(12).toFloat()
         return iv
     }
 
-    private fun subButton(emoji: String) = TextView(this).apply {
-        text       = emoji
-        textSize   = 20f
-        gravity    = Gravity.CENTER
-        background = oval(0xFF2D2D44.toInt())
-        elevation  = dpToPx(4).toFloat()
+    /**
+     * Two-layer drawable:
+     *  Layer 0 — purple→cyan gradient glow ring (full size oval)
+     *  Layer 1 — dark glass fill with white stroke (inset 2dp so the glow peeks out as a border)
+     */
+    private fun glassMainButtonBg(): LayerDrawable {
+        val glow = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(0xFF7C3AED.toInt(), 0xFF06B6D4.toInt())
+        ).apply { shape = GradientDrawable.OVAL }
+
+        val glass = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(0xCC0D0D1F.toInt())          // 80% very dark navy
+            setStroke(dpToPx(1), 0x60FFFFFF)       // 37% white inner ring
+        }
+
+        val inset = dpToPx(2)
+        return LayerDrawable(arrayOf(glow, glass)).also {
+            it.setLayerInset(1, inset, inset, inset, inset)
+        }
+    }
+
+    private fun glassSubButton(emoji: String) = TextView(this).apply {
+        text      = emoji
+        textSize  = 21f
+        gravity   = Gravity.CENTER
+        elevation = dpToPx(4).toFloat()
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(0x1AFFFFFF)                   // 10% white fill
+            setStroke(dpToPx(1), 0x40FFFFFF)       // 25% white border
+        }
+    }
+
+    /** Frosted-glass horizontal pill behind the 5 sub-buttons */
+    private fun glassPill(radius: Int) = GradientDrawable().apply {
+        shape         = GradientDrawable.RECTANGLE
+        cornerRadius  = radius.toFloat()
+        setColor(0xCC0D0D1F.toInt())               // 80% very dark navy
+        setStroke(dpToPx(1), 0x33FFFFFF)           // 20% white border
     }
 
     private fun buildQuickPromptsPanel(): LinearLayout {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility  = View.GONE
-            setPadding(dpToPx(6), dpToPx(6), dpToPx(6), dpToPx(6))
-            background = roundRect(0xEE1A1A2E.toInt(), dpToPx(16))
-            elevation  = dpToPx(10).toFloat()
+            setPadding(dpToPx(4), dpToPx(6), dpToPx(4), dpToPx(6))
+            elevation   = dpToPx(14).toFloat()
+            background  = GradientDrawable().apply {
+                shape        = GradientDrawable.RECTANGLE
+                cornerRadius = dpToPx(18).toFloat()
+                setColor(0xF00D0D1F.toInt())       // 94% dark navy
+                setStroke(dpToPx(1), 0x33FFFFFF)
+            }
         }
+
         val prompts = listOf(
-            "Summarize this",
-            "Fact check this",
-            "Translate to English",
-            "Fix grammar",
-            "Explain like I'm 5"
+            "⚡  Summarize this",
+            "🔍  Fact check this",
+            "🌐  Translate to English",
+            "✏️  Fix grammar",
+            "💡  Explain like I'm 5"
         )
-        prompts.forEach { p ->
+        prompts.forEachIndexed { i, label ->
+            if (i > 0) {
+                // thin divider
+                panel.addView(View(this).apply {
+                    setBackgroundColor(0x20FFFFFF)
+                }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(1)).apply {
+                    leftMargin = dpToPx(14); rightMargin = dpToPx(14)
+                })
+            }
             val tv = TextView(this).apply {
-                text      = p
-                textSize  = 14f
+                text     = label
+                textSize = 14f
                 setTextColor(0xFFE2E8F0.toInt())
-                setPadding(dpToPx(14), dpToPx(10), dpToPx(14), dpToPx(10))
-                background = roundRect(0x00000000, dpToPx(10))
+                setPadding(dpToPx(16), dpToPx(12), dpToPx(16), dpToPx(12))
                 setOnClickListener {
                     collapseAll()
-                    sendToSocket("$p\n")
-                    toast("Sent: $p")
+                    wakeUp()
+                    // Strip the leading emoji prefix before sending
+                    val prompt = label.substringAfter("  ")
+                    sendToSocket("$prompt\n")
+                    toast("Sent: $prompt")
                 }
             }
             panel.addView(tv, LinearLayout.LayoutParams(
@@ -245,25 +309,30 @@ class FloatingOverlayService : Service() {
         mainBtn.setOnTouchListener { _, ev ->
             when (ev.action) {
                 MotionEvent.ACTION_DOWN -> {
+                    wakeUp()
                     downX = ev.rawX; downY = ev.rawY; moved = false
                     longRunnable = Runnable { startVoice() }
                     longHandler.postDelayed(longRunnable!!, 600)
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val threshold = dpToPx(8).toFloat()
-                    if (!moved && (ev.rawX - downX).let { it * it } + (ev.rawY - downY).let { it * it } > threshold * threshold) {
+                    if (!moved &&
+                        (ev.rawX - downX).let { it * it } +
+                        (ev.rawY - downY).let { it * it } > threshold * threshold
+                    ) {
                         moved = true
                         longHandler.removeCallbacks(longRunnable!!)
                     }
                     if (moved) {
                         btnX = (ev.rawX - btnPx / 2).toInt().coerceIn(0, screenW - btnPx)
-                        btnY = (ev.rawY - btnPx / 2).toInt().coerceIn(dpToPx(24), screenH - btnPx - dpToPx(24))
+                        btnY = (ev.rawY - btnPx / 2).toInt()
+                            .coerceIn(dpToPx(24), screenH - btnPx - dpToPx(24))
                         repositionViews()
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     longHandler.removeCallbacks(longRunnable!!)
-                    if (!moved) { toggleMenu() } else { snapToEdge() }
+                    if (!moved) toggleMenu() else snapToEdge()
                 }
             }
             true
@@ -271,25 +340,49 @@ class FloatingOverlayService : Service() {
     }
 
     private fun snapToEdge() {
-        btnX = if (btnX + btnPx / 2 < screenW / 2) dpToPx(12) else screenW - btnPx - dpToPx(12)
+        btnX = if (btnX + btnPx / 2 < screenW / 2) dpToPx(12)
+               else screenW - btnPx - dpToPx(12)
         repositionViews()
     }
 
     private fun toggleMenu() {
-        if (quickPromptsPanel.visibility == View.VISIBLE) {
-            collapseAll(); return
-        }
+        if (quickPromptsPanel.visibility == View.VISIBLE) { collapseAll(); return }
         expanded = !expanded
-        subMenu.visibility = if (expanded) View.VISIBLE else View.GONE
-        mainBtn.alpha = if (expanded) 1f else 0.88f
-        repositionViews()
+        if (expanded) showSubMenu() else hideSubMenu()
     }
 
     private fun collapseAll() {
         expanded = false
-        subMenu.visibility          = View.GONE
-        quickPromptsPanel.visibility = View.GONE
-        mainBtn.alpha = 0.88f
+        hideSubMenu()
+        hideQuickPanel()
+    }
+
+    private fun showSubMenu() {
+        subMenu.visibility = View.VISIBLE
+        subMenu.scaleX = 0.75f; subMenu.scaleY = 0.75f; subMenu.alpha = 0f
+        subMenu.animate()
+            .scaleX(1f).scaleY(1f).alpha(1f)
+            .setDuration(220)
+            .setInterpolator(OvershootInterpolator(1.4f))
+            .start()
+        repositionViews()
+    }
+
+    private fun hideSubMenu() {
+        if (subMenu.visibility != View.VISIBLE) return
+        subMenu.animate()
+            .scaleX(0.75f).scaleY(0.75f).alpha(0f)
+            .setDuration(160)
+            .withEndAction { subMenu.visibility = View.GONE }
+            .start()
+    }
+
+    private fun hideQuickPanel() {
+        if (quickPromptsPanel.visibility != View.VISIBLE) return
+        quickPromptsPanel.animate()
+            .alpha(0f).setDuration(160)
+            .withEndAction { quickPromptsPanel.visibility = View.GONE; quickPromptsPanel.alpha = 1f }
+            .start()
     }
 
     private fun repositionViews() {
@@ -297,35 +390,40 @@ class FloatingOverlayService : Service() {
             leftMargin = btnX; topMargin = btnY
         }.also { mainBtn.layoutParams = it }
 
-        val subW = dpToPx(48) * 5 + dpToPx(8) * 4 + dpToPx(20)
-        val subLeft = (btnX + btnPx / 2 - subW / 2).coerceIn(0, (screenW - subW).coerceAtLeast(0))
+        // Sub-menu: centered above main button
+        val subW = dpToPx(48) * 5 + dpToPx(10) * 4 + dpToPx(24)
+        val subLeft = (btnX + btnPx / 2 - subW / 2)
+            .coerceIn(dpToPx(8), (screenW - subW - dpToPx(8)).coerceAtLeast(dpToPx(8)))
+        val subTop = if (btnY - dpToPx(72) >= dpToPx(24)) btnY - dpToPx(72)
+                     else btnY + btnPx + dpToPx(8)        // flip below if near top
         (subMenu.layoutParams as FrameLayout.LayoutParams).apply {
-            leftMargin = subLeft
-            topMargin  = (btnY - dpToPx(66)).coerceAtLeast(dpToPx(24))
+            leftMargin = subLeft; topMargin = subTop
         }.also { subMenu.layoutParams = it }
 
-        val panelW = dpToPx(220)
-        val panelLeft = (btnX + btnPx / 2 - panelW / 2).coerceIn(0, (screenW - panelW).coerceAtLeast(0))
+        // Quick panel: same horizontal centre, above sub-menu
+        val panelW = dpToPx(230)
+        val panelLeft = (btnX + btnPx / 2 - panelW / 2)
+            .coerceIn(dpToPx(8), (screenW - panelW - dpToPx(8)).coerceAtLeast(dpToPx(8)))
+        val panelTop = if (btnY - dpToPx(260) >= dpToPx(24)) btnY - dpToPx(260)
+                       else btnY + btnPx + dpToPx(8)
         (quickPromptsPanel.layoutParams as FrameLayout.LayoutParams).apply {
-            leftMargin = panelLeft
-            topMargin  = (btnY - dpToPx(230)).coerceAtLeast(dpToPx(24))
-            width      = panelW
+            leftMargin = panelLeft; topMargin = panelTop; width = panelW
         }.also { quickPromptsPanel.layoutParams = it }
     }
 
-    // ─── Layout params helpers ────────────────────────────────────────────────
+    // ─── Layout params ────────────────────────────────────────────────────────
 
-    private fun mainBtnLp()  = FrameLayout.LayoutParams(btnPx, btnPx).apply {
+    private fun mainBtnLp() = FrameLayout.LayoutParams(btnPx, btnPx).apply {
         leftMargin = btnX; topMargin = btnY
     }
-    private fun subMenuLp()  = FrameLayout.LayoutParams(
-        FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
-        leftMargin = btnX; topMargin = (btnY - dpToPx(66)).coerceAtLeast(dpToPx(24))
-    }
-    private fun quickPanelLp() = FrameLayout.LayoutParams(dpToPx(220),
-        FrameLayout.LayoutParams.WRAP_CONTENT).apply {
-        leftMargin = btnX; topMargin = (btnY - dpToPx(230)).coerceAtLeast(dpToPx(24))
-    }
+    private fun subMenuLp() = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.WRAP_CONTENT,
+        FrameLayout.LayoutParams.WRAP_CONTENT
+    ).apply { leftMargin = btnX; topMargin = (btnY - dpToPx(72)).coerceAtLeast(dpToPx(24)) }
+
+    private fun quickPanelLp() = FrameLayout.LayoutParams(
+        dpToPx(230), FrameLayout.LayoutParams.WRAP_CONTENT
+    ).apply { leftMargin = btnX; topMargin = (btnY - dpToPx(260)).coerceAtLeast(dpToPx(24)) }
 
     // ─── Sub-button actions ───────────────────────────────────────────────────
 
@@ -354,9 +452,11 @@ class FloatingOverlayService : Service() {
     }
 
     private fun showQuickPrompts() {
-        quickPromptsPanel.visibility = View.VISIBLE
-        subMenu.visibility = View.GONE
+        hideSubMenu()
         expanded = false
+        quickPromptsPanel.alpha = 0f
+        quickPromptsPanel.visibility = View.VISIBLE
+        quickPromptsPanel.animate().alpha(1f).setDuration(200).start()
         repositionViews()
     }
 
@@ -374,7 +474,7 @@ class FloatingOverlayService : Service() {
 
     private fun refreshTtsColor() {
         if (::ttsSubBtn.isInitialized)
-            ttsSubBtn.alpha = if (ttsEnabled) 1f else 0.45f
+            ttsSubBtn.alpha = if (ttsEnabled) 1f else 0.38f
     }
 
     private fun attachImageAndSend(jpegPath: String, query: String) {
@@ -406,7 +506,7 @@ class FloatingOverlayService : Service() {
         val lc = text.lowercase()
         val wantsVision = lc.contains("see") || lc.contains("look") ||
             lc.contains("screen") || (lc.contains("this") && lc.contains("check")) ||
-            lc.contains("showing") || lc.contains("what") && lc.contains("here")
+            lc.contains("showing") || (lc.contains("what") && lc.contains("here"))
         if (wantsVision) {
             toast("Taking screenshot…")
             requestScreenshot(text)
@@ -440,8 +540,8 @@ class FloatingOverlayService : Service() {
             while (inp.read(buf).also { n = it } != -1) {
                 if (ttsEnabled && ttsReady) {
                     val clean = String(buf, 0, n, Charsets.UTF_8)
-                        .replace(Regex("\\[[0-9;]*[a-zA-Z]"), "")
-                        .replace(Regex("][^]*"), "")
+                        .replace(Regex("\\[[0-9;]*[a-zA-Z]"), "")
+                        .replace(Regex("][^]*"), "")
                     resp.append(clean)
                 }
             }
@@ -494,21 +594,13 @@ class FloatingOverlayService : Service() {
         return Notification.Builder(this, ClaudeApp.CHANNEL_OVERLAY)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Claude Overlay")
-            .setContentText("Floating assistant active — tap to dismiss")
+            .setContentText("Floating assistant active")
             .setOngoing(true)
             .addAction(Notification.Action.Builder(null, "Stop", stopPi).build())
             .build()
     }
 
-    // ─── Drawing helpers ──────────────────────────────────────────────────────
-
-    private fun oval(color: Int) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL; setColor(color)
-    }
-
-    private fun roundRect(color: Int, radius: Int) = GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE; cornerRadius = radius.toFloat(); setColor(color)
-    }
+    // ─── Helpers ─────────────────────────────────────────────────────────────
 
     private fun dpToPx(dp: Int) = (dp * resources.displayMetrics.density + 0.5f).toInt()
 
