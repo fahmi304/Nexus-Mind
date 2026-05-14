@@ -3920,17 +3920,23 @@ function openPersistentSession() {
             return;
         }
 
-        const cfg = readConfig();
-        const env = buildEnv();
-        const cwd = cfg.projectPath || FILES_DIR;
+        const cfg  = readConfig();
+        const env  = buildEnv();
+        const cwd  = cfg.projectPath || FILES_DIR;
+        const cols = String(cfg.ptyCols || 220);
+        const rows = String(cfg.ptyRows || 50);
 
-        // Spawn one persistent claude process.
-        // No PTY here — stream-json output must stay clean NDJSON; a PTY stdin
-        // would let claude emit interactive prompts that break the JSON parser.
+        // Claude Code exits immediately if stdin is not a real TTY, even in
+        // interactive mode with --output-format stream-json.  We must use
+        // PTY_HELPER so claude sees a proper terminal on stdin.
+        // Any prompt chars (">" etc.) that slip into stdout are stripped by the
+        // NDJSON parser (raw.indexOf('{') below) before JSON.parse.
         const evalCode = buildInteractiveEvalCode();
         let proc;
         try {
-            proc = spawn(LAUNCHER, ['-e', evalCode], { env, cwd });
+            proc = fs.existsSync(PTY_HELPER)
+                ? spawn(PTY_HELPER, [cols, rows, LAUNCHER, '-e', evalCode], { env, cwd })
+                : spawn(LAUNCHER, ['-e', evalCode], { env, cwd });
         } catch(e) {
             try { socket.write('\x1b[31m[PTY] Failed to start claude: ' + e.message + '\x1b[0m\r\n'); socket.end(); } catch(_) {}
             return;
@@ -3959,8 +3965,11 @@ function openPersistentSession() {
 
             for (const raw of lines) {
                 if (!raw.trim()) continue;
+                // Strip any prompt/decoration chars that may precede the JSON object
+                const jsonStart = raw.indexOf('{');
+                if (jsonStart < 0) continue;
                 let ev;
-                try { ev = JSON.parse(raw); } catch(_) { continue; }
+                try { ev = JSON.parse(raw.slice(jsonStart)); } catch(_) { continue; }
 
                 // system/init fires once at startup — claude is ready
                 if (ev.type === 'system' && ev.subtype === 'init') {
@@ -4020,8 +4029,12 @@ function openPersistentSession() {
 
         // ── Input handler ─────────────────────────────────────────────────────
         const persistentDataHandler = d => {
-            // Drop in-band resize sequences — the persistent claude process has no PTY
-            if (d.length >= 6 && d[0] === 0x1b && d[1] === 0xfe) return;
+            // In-band resize: ESC 0xFE → ESC 0xFF for pty_helper
+            if (d.length >= 6 && d[0] === 0x1b && d[1] === 0xfe) {
+                const resize = Buffer.from([0x1b, 0xff, d[2], d[3], d[4], d[5]]);
+                try { proc.stdin.write(resize); } catch(_) {}
+                return;
+            }
 
             const raw = d.toString();
 
