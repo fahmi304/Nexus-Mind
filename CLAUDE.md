@@ -181,6 +181,9 @@ Written by `NodeBridgeManager.writeConfig()` before each `startBridge()`. Re-wri
 
 ## Latest changes (Session 14)
 
+### PTY mode (Phase 2) — persistent session
+- **`bridge.js`** — New `buildInteractiveEvalCode()` builds bootstrap eval for interactive mode: `--output-format stream-json` only (no `--print`, no message arg), stdin stays open. New `openPersistentSession()` replaces per-message spawn loop when `ptyMode` is on: spawns one persistent claude process per TCP connection via pty_helper, parses NDJSON events (`system/init` → session ready, `assistant` → stream text/thinking/tool_use, `result` → end-of-turn + token accumulation). Input handler (`persistentDataHandler`) routes: resize (`ESC 0xFE`), Ctrl+C (`\x03` → proc.stdin), `!commands`, `$ shell`, and everything else → `proc.stdin.write(msg + '\n')`. Claude manages its own conversation history — no `buildMessageWithHistory()`, no 50-turn cap. `/cost`, `/compact`, `/doctor`, `/review`, `/clear` all forwarded directly to claude stdin. 60 s timeout sends `\x03`. Socket close → `SIGHUP`. `startBridgeServer()` branches: `cfg.ptyMode ? openPersistentSession() : openTcpBridge()`.
+
 ### PTY mode (Phase 1)
 - **`pty_helper.c`** — Updated to accept `<cols> <rows>` as first two args (previously `<command>`). Adds `relay_with_resize()` to intercept in-band `ESC 0xFF cols_hi cols_lo rows_hi rows_lo` resize sequences from bridge.js and issue `TIOCSWINSZ` + `SIGWINCH` to child. Fixes termios on slave: `ECHO` off, `ISIG` on (Ctrl+C → SIGINT), `ONLCR` off (no `\n→\r\n` so NDJSON parsing still works).
 - **`bridge.js`** — New `PTY_HELPER` constant. New `spawnClaude(evalCode, env, cwd)` replaces direct `spawn(LAUNCHER, ...)` in `runMessage()` — uses pty_helper when `cfg.ptyMode` is true. `normalDataHandler` intercepts `ESC 0xFE` resize signals from the socket and re-encodes as `ESC 0xFF` for pty_helper. `!pty` command updated to pass cols/rows. `MAX_HISTORY` raised 20 → 50.

@@ -3885,11 +3885,352 @@ async function autoCompact(history, socket) {
     });
 }
 
+// ─── PTY Phase 2: persistent claude session ───────────────────────────────────
+
+// Build the bootstrap eval string for interactive mode.
+// No --print flag, no message in argv — stdin stays open so the user can
+// send multiple turns to one persistent process.
+function buildInteractiveEvalCode() {
+    const cliUrl  = 'file://' + CLAUDE_CLI;
+    const exitLog = JSON.stringify(path.join(FILES_DIR, 'session_exit.log'));
+    return (
+        'process.on("exit",function(c){' +
+        'try{require("fs").appendFileSync(' + exitLog + ',"[exit] "+c+"\\n");}catch(_){}}); ' +
+        'process.on("unhandledRejection",function(r){' +
+        'try{require("fs").appendFileSync(' + exitLog + ',' +
+        '"[unhandledRejection] "+String(r&&(r.stack||r.message)||r).slice(0,400)+"\\n");}catch(_){}});' +
+        regexpShim +
+        intlShim +
+        'process.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';' +
+        'process.argv[2]="--output-format";' +
+        'process.argv[3]="stream-json";' +
+        'process.argv.length=4;' +
+        'import(' + JSON.stringify(cliUrl) + ')' +
+        '.catch(function(e){process.stderr.write("import-err:"+String(e)+"\\n");process.exit(1);});'
+    );
+}
+
+// One persistent claude process per TCP connection.
+// Claude manages its own history; bridge.js routes !commands locally and
+// forwards everything else (messages, /slash commands) to claude stdin.
+function openPersistentSession() {
+    const server = net.createServer(socket => {
+        if (!isClaudeInstalled()) {
+            try { socket.write('\r\n\x1b[31mClaude Code not installed — run Setup from the app.\x1b[0m\r\n'); socket.end(); } catch(_) {}
+            return;
+        }
+
+        const cfg  = readConfig();
+        const env  = buildEnv();
+        const cwd  = cfg.projectPath || FILES_DIR;
+        const cols = String(cfg.ptyCols || 220);
+        const rows = String(cfg.ptyRows || 50);
+
+        // Spawn one persistent claude process (via PTY if available)
+        const evalCode = buildInteractiveEvalCode();
+        let proc;
+        try {
+            proc = fs.existsSync(PTY_HELPER)
+                ? spawn(PTY_HELPER, [cols, rows, LAUNCHER, '-e', evalCode], { env, cwd })
+                : spawn(LAUNCHER, ['-e', evalCode], { env, cwd });
+        } catch(e) {
+            try { socket.write('\x1b[31m[PTY] Failed to start claude: ' + e.message + '\x1b[0m\r\n'); socket.end(); } catch(_) {}
+            return;
+        }
+
+        // Per-connection state
+        let busy          = false;
+        let thinkingDone  = false;
+        let stdoutBuf     = '';
+        let currentTid    = null;
+        let inputBuf      = '';
+        let contextBlock  = '';
+        let pendingAttach = null;
+        let sessionTokens = 0;
+
+        // Show spinner while claude boots; send agentic state
+        const agenticOn = fs.existsSync(AGENTIC_FILE);
+        try { socket.write('\x1b]9;agentic:' + (agenticOn ? 'on' : 'off') + '\x07'); } catch(_) {}
+        try { socket.write('\x1b]9;thinking-start\x07'); } catch(_) {}
+
+        // ── NDJSON event parser ───────────────────────────────────────────────
+        proc.stdout.on('data', chunk => {
+            stdoutBuf += chunk.toString();
+            const lines = stdoutBuf.split('\n');
+            stdoutBuf = lines.pop();
+
+            for (const raw of lines) {
+                if (!raw.trim()) continue;
+                let ev;
+                try { ev = JSON.parse(raw); } catch(_) { continue; }
+
+                // system/init fires once at startup — claude is ready
+                if (ev.type === 'system' && ev.subtype === 'init') {
+                    try { socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
+                    try { socket.write('\x1b[2m[PTY] Persistent session ready\x1b[0m\r\n'); } catch(_) {}
+                    continue;
+                }
+
+                // Signal thinking-done on first event of each turn
+                if (busy && !thinkingDone) {
+                    thinkingDone = true;
+                    try { socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
+                }
+
+                if (ev.type === 'assistant') {
+                    for (const block of (ev.message && ev.message.content) || []) {
+                        if (block.type === 'text' && block.text) {
+                            try { socket.write(block.text); } catch(_) {}
+                        } else if (block.type === 'thinking' && block.thinking) {
+                            const enc = Buffer.from(block.thinking.slice(0, 3000)).toString('base64');
+                            try { socket.write('\x1b]9;think-block:' + enc + '\x07'); } catch(_) {}
+                        } else if (block.type === 'tool_use') {
+                            const preview = block.input ? JSON.stringify(block.input).slice(0, 120) : '';
+                            try { socket.write('\x1b[36m▶ ' + (block.name || 'tool') + '\x1b[0m ' + preview + '\r\n'); } catch(_) {}
+                        }
+                    }
+                }
+
+                if (ev.type === 'result') {
+                    if (currentTid) { clearTimeout(currentTid); currentTid = null; }
+                    busy         = false;
+                    thinkingDone = false;
+                    const toks   = (ev.usage && ev.usage.output_tokens) || 0;
+                    sessionTokens += toks;
+                    try { socket.write('\x1b]9;tokens:' + sessionTokens + '\x07'); } catch(_) {}
+                }
+            }
+        });
+
+        proc.stderr.on('data', d => {
+            const s = d.toString();
+            if (/^\[(eval-ok|import-resolved|exit-event|unhandledRejection|regex-compat|intl-shim)\]/.test(s.trim())) return;
+            try { socket.write('\x1b[33m' + s + '\x1b[0m'); } catch(_) {}
+        });
+
+        proc.on('error', e => {
+            try { socket.write('\x1b[31m[PTY] Process error: ' + e.message + '\x1b[0m\r\n'); } catch(_) {}
+        });
+
+        proc.on('close', code => {
+            if (currentTid) { clearTimeout(currentTid); currentTid = null; }
+            try {
+                socket.write('\r\n\x1b[33m[PTY] Session ended (exit ' + (code || 0) + ') — tap Restart to reconnect.\x1b[0m\r\n');
+                socket.end();
+            } catch(_) {}
+        });
+
+        // ── Input handler ─────────────────────────────────────────────────────
+        const persistentDataHandler = d => {
+            // In-band resize: ESC 0xFE → ESC 0xFF for pty_helper
+            if (d.length >= 6 && d[0] === 0x1b && d[1] === 0xfe) {
+                const resize = Buffer.from([0x1b, 0xff, d[2], d[3], d[4], d[5]]);
+                try { proc.stdin.write(resize); } catch(_) {}
+                return;
+            }
+
+            const raw = d.toString();
+
+            // Ctrl+C: interrupt
+            if (raw.includes('\x03')) {
+                if (busy) {
+                    try { proc.stdin.write('\x03'); } catch(_) {}
+                    try { socket.write('\r\n\x1b[33m^C — interrupted\x1b[0m\r\n'); } catch(_) {}
+                    if (currentTid) { clearTimeout(currentTid); currentTid = null; }
+                    busy = false;
+                }
+                inputBuf = '';
+                return;
+            }
+
+            inputBuf += raw;
+            let nl;
+            while ((nl = inputBuf.search(/[\r\n]/)) !== -1) {
+                const line = inputBuf.slice(0, nl).replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '').trim();
+                inputBuf   = inputBuf.slice(nl + 1);
+                if (!line) continue;
+
+                if (busy) {
+                    try { socket.write('\x1b[33m[busy — please wait]\x1b[0m\r\n'); } catch(_) {}
+                    continue;
+                }
+
+                // ── bridge-local !commands ────────────────────────────────────
+                if (line === '!help') {
+                    try { socket.write(
+                        '\x1b[1m[PTY — persistent session]\x1b[0m\r\n' +
+                        '  \x1b[33m!clear\x1b[0m           Clear claude history\r\n' +
+                        '  \x1b[33m!context [path]\x1b[0m  Load file/dir as context\r\n' +
+                        '  \x1b[33m!attach <file>\x1b[0m   Attach file to next message\r\n' +
+                        '  \x1b[33m!pty <cmd>\x1b[0m       Run interactive program (python3, bash…)\r\n' +
+                        '  \x1b[33m!agentic\x1b[0m         Toggle agentic mode\r\n' +
+                        '  \x1b[33m!log\x1b[0m             Show bridge log\r\n' +
+                        '  /cost  /compact  /doctor  /clear — forwarded to claude directly\r\n' +
+                        '  \x1b[2m$ <cmd>  — run shell command\x1b[0m\r\n\r\n'
+                    ); } catch(_) {}
+                    continue;
+                }
+
+                if (line === '!clear') {
+                    contextBlock  = '';
+                    pendingAttach = null;
+                    sessionTokens = 0;
+                    try { socket.write('\x1b]9;tokens:0\x07'); } catch(_) {}
+                    try { proc.stdin.write('/clear\n'); } catch(_) {}
+                    try { socket.write('\x1b[33m[history cleared]\x1b[0m\r\n'); } catch(_) {}
+                    continue;
+                }
+
+                if (line.startsWith('!log')) {
+                    const n = parseInt(line.slice(4).trim()) || 40;
+                    try {
+                        const logData = fs.readFileSync(SETUP_LOG, 'utf8');
+                        socket.write('\x1b[2m' + logData.split('\n').slice(-n).join('\r\n') + '\x1b[0m\r\n');
+                    } catch(_) { try { socket.write('[no log]\r\n'); } catch(_) {} }
+                    continue;
+                }
+
+                if (line.startsWith('!agentic')) {
+                    const arg = line.slice(8).trim();
+                    const on  = arg === 'on' ? true : arg === 'off' ? false : !fs.existsSync(AGENTIC_FILE);
+                    if (on) { try { fs.writeFileSync(AGENTIC_FILE, '1'); } catch(_) {} }
+                    else   { try { fs.unlinkSync(AGENTIC_FILE); } catch(_) {} }
+                    try { socket.write('\x1b]9;agentic:' + (on ? 'on' : 'off') + '\x07'); } catch(_) {}
+                    try { socket.write((on ? '\x1b[35m[AGENTIC ON]\x1b[0m' : '\x1b[2m[AGENTIC OFF]\x1b[0m') + '\r\n'); } catch(_) {}
+                    continue;
+                }
+
+                if (line.startsWith('!context')) {
+                    const p = line.slice(8).trim() || (cfg.projectPath || FILES_DIR);
+                    try {
+                        const stat = fs.statSync(p);
+                        if (stat.isDirectory()) {
+                            const tree = fs.readdirSync(p).slice(0, 80).join('\n');
+                            contextBlock = '[Directory: ' + p + ']\n' + tree;
+                        } else {
+                            contextBlock = '[File: ' + p + ']\n' + fs.readFileSync(p, 'utf8').slice(0, 30000);
+                        }
+                        try { socket.write('\x1b[33m[context loaded: ' + p + ']\x1b[0m\r\n'); } catch(_) {}
+                    } catch(e) { try { socket.write('\x1b[31m[!context: ' + e.message + ']\x1b[0m\r\n'); } catch(_) {} }
+                    continue;
+                }
+
+                if (line.startsWith('!attach')) {
+                    const p = line.slice(7).trim();
+                    try {
+                        pendingAttach = '[Attached: ' + p + ']\n' + fs.readFileSync(p, 'utf8').slice(0, 30000);
+                        try { socket.write('\x1b[33m[attached: ' + p + ']\x1b[0m\r\n'); } catch(_) {}
+                    } catch(e) { try { socket.write('\x1b[31m[!attach: ' + e.message + ']\x1b[0m\r\n'); } catch(_) {} }
+                    continue;
+                }
+
+                // !pty <cmd> — relay socket to an interactive PTY subprocess temporarily
+                if (line.startsWith('!pty ') || line === '!pty') {
+                    const ptyCmd = line.slice(5).trim();
+                    if (!ptyCmd) {
+                        try { socket.write('\x1b[33mUsage: !pty <command>\x1b[0m\r\n\r\n'); } catch(_) {}
+                        continue;
+                    }
+                    if (!fs.existsSync(PTY_HELPER)) {
+                        try { socket.write('\x1b[31m✗ libpty-helper.so not found — rebuild app.\x1b[0m\r\n'); } catch(_) {}
+                        continue;
+                    }
+                    const ptyCmdParts = ptyCmd.split(/\s+/);
+                    const ptyCfg2     = readConfig();
+                    const ptyEnv2     = Object.assign({}, buildEnv(), { TERM: 'xterm-256color' });
+                    let ptyProc2;
+                    try {
+                        ptyProc2 = spawn(PTY_HELPER,
+                            [String(ptyCfg2.ptyCols || 220), String(ptyCfg2.ptyRows || 50), ...ptyCmdParts],
+                            { env: ptyEnv2, cwd: cwd });
+                    } catch(e) {
+                        try { socket.write('\x1b[31m[PTY] Failed: ' + e.message + '\x1b[0m\r\n'); } catch(_) {}
+                        continue;
+                    }
+                    try { socket.write('\x1b[33m[PTY] ' + ptyCmd + ' — Ctrl+D or exit to return\x1b[0m\r\n\r\n'); } catch(_) {}
+                    socket.removeListener('data', persistentDataHandler);
+                    const relay2 = d2 => { try { ptyProc2.stdin.write(d2); } catch(_) {} };
+                    socket.on('data', relay2);
+                    ptyProc2.stdout.on('data', d2 => { try { socket.write(d2); } catch(_) {} });
+                    ptyProc2.stderr.on('data', d2 => { try { socket.write(d2); } catch(_) {} });
+                    const restoreHandler = () => {
+                        socket.removeListener('data', relay2);
+                        socket.on('data', persistentDataHandler);
+                    };
+                    ptyProc2.on('error', e => { restoreHandler(); try { socket.write('\x1b[31m[PTY] Error: ' + e.message + '\x1b[0m\r\n\r\n'); } catch(_) {} });
+                    ptyProc2.on('close', code => { restoreHandler(); try { socket.write('\r\n\x1b[33m[PTY] Session ended (exit ' + (code || 0) + ')\x1b[0m\r\n\r\n'); } catch(_) {} });
+                    continue;
+                }
+
+                // ── Shell commands: $ cmd ─────────────────────────────────────
+                if (line.startsWith('$ ')) {
+                    const cmd = line.slice(2).trim();
+                    if (cmd.startsWith('cd ')) {
+                        const newDir = cmd.slice(3).trim();
+                        try {
+                            process.chdir(newDir);
+                            try { socket.write('\x1b[2m[cwd: ' + newDir + ']\x1b[0m\r\n'); } catch(_) {}
+                        } catch(e) {
+                            try { socket.write('\x1b[31m[cd: ' + e.message + ']\x1b[0m\r\n'); } catch(_) {}
+                        }
+                    } else {
+                        busy = true;
+                        try { socket.write('\x1b]9;thinking-start\x07'); } catch(_) {}
+                        const sh = spawn('/system/bin/sh', ['-c', cmd], { env: buildEnv(), cwd: cwd });
+                        sh.stdout.on('data', d => { try { socket.write(d); } catch(_) {} });
+                        sh.stderr.on('data', d => { try { socket.write(d); } catch(_) {} });
+                        sh.on('close', () => {
+                            try { socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
+                            busy         = false;
+                            thinkingDone = false;
+                        });
+                    }
+                    continue;
+                }
+
+                // ── Forward everything else to claude stdin ────────────────────
+                let msg = line;
+                if (contextBlock)  { msg = contextBlock  + '\n\n' + msg; contextBlock  = ''; }
+                if (pendingAttach) { msg = pendingAttach + '\n\n' + msg; pendingAttach = null; }
+
+                busy         = true;
+                thinkingDone = false;
+                try { socket.write('\x1b]9;thinking-start\x07'); } catch(_) {}
+                try { proc.stdin.write(msg + '\n'); } catch(_) {}
+
+                currentTid = setTimeout(() => {
+                    try { proc.stdin.write('\x03'); } catch(_) {}
+                    try { socket.write('\x1b]9;thinking-done\x07\r\n\x1b[31m✗ Timed out (60 s).\x1b[0m\r\n'); } catch(_) {}
+                    busy = false; thinkingDone = false; currentTid = null;
+                }, 60000);
+            }
+        };
+
+        socket.on('data', persistentDataHandler);
+        socket.on('close', () => { try { proc.kill('SIGHUP'); } catch(_) {} });
+        socket.on('error', () => { try { proc.kill('SIGHUP'); } catch(_) {} });
+    });
+
+    server.on('error', err => {
+        process.stderr.write('PTY bridge error: ' + err.message + '\n');
+        setTimeout(openPersistentSession, 3000);
+    });
+
+    server.listen(PORT, HOST, () => {
+        log('PTY Bridge ready on ' + HOST + ':' + PORT + '\n');
+    });
+}
+
 function startBridgeServer() {
     // Start proxy first — port 8082 must be listening before Claude Code spawns,
     // otherwise its first API call gets ECONNREFUSED and it exits immediately.
     startProxyServer(() => {
-        openTcpBridge();
+        const cfg = readConfig();
+        if (cfg.ptyMode) {
+            openPersistentSession();
+        } else {
+            openTcpBridge();
+        }
         // Load stdio MCP servers after the bridge is up (non-blocking)
         loadMcpStdioServers().catch(e => log('[mcp-stdio] startup error: ' + e.message + '\n'));
     });
