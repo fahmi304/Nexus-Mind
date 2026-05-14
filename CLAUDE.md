@@ -174,10 +174,42 @@ Written by `NodeBridgeManager.writeConfig()` before each `startBridge()`. Re-wri
 - **`ProvidersRepository.REMOTE_URL` wired but empty** — Live provider updates disabled. Enable to push new models without an app update.
 - **Sub-agents** — Parallel tool-calling workstreams. Not yet implemented.
 - **Interactive PTY mode** — Replace `--print` per-message with a persistent PTY. Fundamental Android limitation; may not be fully achievable.
+- **Per-tab working directory** — All 4 session tabs share the same `shellCwd`. Could allow different project per tab.
+- **Custom slash commands** — Claude Code supports `~/.claude/commands/`. Not yet exposed in-app.
 
 ---
 
-## Latest changes (Session 12)
+## Latest changes (Session 13)
+
+### Overlay bugs fixed
+- **Clipboard always empty** — `FloatingOverlayService` has `FLAG_NOT_FOCUSABLE`; Android 10+ blocks clipboard reads from unfocused contexts. Fixed via new `ClipboardHelperActivity` (transparent, reads clipboard, broadcasts `ACTION_CLIPBOARD_READY` / `ACTION_CLIPBOARD_EMPTY` back to service).
+- **Screenshot shows cast dialog every time** — `MediaProjectionActivity` now caches the `MediaProjection` object in a companion object after first user approval. Subsequent screenshots skip the dialog. Cache is cleared if the projection becomes invalid.
+- **Voice opens Google speech UI** — Both `VoiceInputActivity` (overlay) and `startVoiceInput()` (terminal) replaced `RecognizerIntent.ACTION_RECOGNIZE_SPEECH` with `SpeechRecognizer.startListening()`. Background recognition, no popup.
+
+### Working directory picker
+- `ProjectManagerActivity` now registers `ActivityResultContracts.OpenDocumentTree()` and passes an `onPickFolder` callback to `ProjectManagerScreen`. Converts the tree URI (`primary:path`) to a real filesystem path.
+- `ProjectManagerScreen` "New Project" dialog: manual path field replaced with a "Browse" button + auto-filled path display.
+- **Bug fixed:** `ProjectManagerActivity` now calls `NodeBridgeManager.refreshConfig(prefs)` before starting `TerminalActivity`, so `bridge_config.json` has the correct `projectPath` when the socket connects.
+- Active project shows as a green `📂 folder-name` pill in the terminal header (below model name). Tapping it opens Project Manager. Updated on `onResume`.
+
+### Terminal features added
+- **Cancel (Ctrl+C)** — `normalDataHandler` in bridge.js stripped all control chars; `\x03` never reached the kill logic. Fixed by checking for `\x03` in the raw socket bytes before line-buffering and immediately calling `current.kill('SIGTERM')`.
+- **Image picker fix** — In `--print` mode, bridge.js used to add a text note saying "use agentic mode". Now detects `pending_image.b64` and redirects the message through `runAgentic()` so the image goes via the proxy API (multimodal support).
+- **Copy button on AI bubble** — `⎘` button appears on each finalized response (alongside regen). Stores `rawAiText` on the element before it's cleared; calls `Android.copyText()`.
+- **Font size A- / A+** — Two toolbar buttons change chat font size (10–22px), persisted in `localStorage`.
+- **/compact button** — Toolbar button sends `/compact\r` directly to bridge.
+- **Pinch-to-zoom** — Enabled on the terminal WebView (`setSupportZoom`, `builtInZoomControls`, `displayZoomControls=false`).
+- **`!help` button** — Pink `?` toolbar button sends `!help\r`, printing the full command cheatsheet inline.
+- **Agentic badge** — Purple `⚡ AGENTIC` pill at top-center of terminal. bridge.js sends `9;agentic:on/off` OSC at connection start and on every `!agentic` toggle. Tapping the badge sends `!agentic\r` to toggle.
+- **Context window bar** — 2px bar along top edge of terminal grows with token count (200K limit). Orange >120K, red >180K. Token counter text also changes colour.
+- **File browser → Attach** — `showFileContent` "Insert as Context" replaced with `🔗 Attach to Claude` which sends `!attach <filepath>\r` to bridge.js.
+
+### Overlay quick prompts (customisable)
+- `AppPreferences` gains `getOverlayPrompts()` / `setOverlayPrompts()` backed by `KEY_OVERLAY_PROMPTS`. Defaults are the original 5 prompts.
+- `FloatingOverlayService.buildQuickPromptsPanel()` reads from prefs instead of hardcoding.
+- `SettingsActivity` gains "Edit overlay quick prompts" button with a multi-line editor dialog and "Reset defaults" neutral button.
+
+## Previous changes (Session 12)
 
 - **Fixed: build fails with `Unresolved reference: touchableRegion`** — `WindowManager.LayoutParams.touchableRegion` is a `@hide` AOSP field absent from the public Android SDK. Replaced the MATCH_PARENT window + hidden-field approach with a dynamically-sized window: `overlayParams` starts at button size, and `repositionViews()` expands it to cover visible menus. Child views use window-relative margins. `FLAG_NOT_TOUCH_MODAL` passes touches outside the window to the underlying app.
 
