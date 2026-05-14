@@ -196,7 +196,43 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:$packageName")))
         }
+
+        binding.btnEditOverlayPrompts.setOnClickListener { showEditPromptsDialog() }
     }
+
+    private fun showEditPromptsDialog() {
+        val prompts = prefs.getOverlayPrompts().toMutableList()
+        val input   = android.widget.EditText(this).apply {
+            setText(prompts.joinToString("\n"))
+            hint       = "One prompt per line"
+            inputType  = android.text.InputType.TYPE_CLASS_TEXT or
+                         android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minLines   = 5
+            gravity    = android.view.Gravity.TOP
+            setPadding(dpToPx(16), dpToPx(12), dpToPx(16), dpToPx(12))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Overlay quick prompts")
+            .setMessage("One prompt per line (max 10)")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val updated = input.text.toString()
+                    .split("\n")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+                    .take(10)
+                prefs.setOverlayPrompts(updated)
+                Toast.makeText(this, "Prompts saved — reopen overlay to see changes", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .setNeutralButton("Reset defaults") { _, _ ->
+                prefs.setOverlayPrompts(com.claudecodesetup.data.AppPreferences.DEFAULT_OVERLAY_PROMPTS)
+                Toast.makeText(this, "Reset to defaults", Toast.LENGTH_SHORT).show()
+            }
+            .show()
+    }
+
+    private fun dpToPx(dp: Int) = (dp * resources.displayMetrics.density + 0.5f).toInt()
 
     private fun syncOverlaySwitchState() {
         val hasPermission = Settings.canDrawOverlays(this)

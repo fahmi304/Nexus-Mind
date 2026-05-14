@@ -2196,7 +2196,19 @@ function openTcpBridge() {
 
         // normalDataHandler is named so !pty can re-attach it after a PTY session ends.
         const normalDataHandler = d => {
-            inputBuf += d.toString();
+            const raw = d.toString();
+            // Ctrl+C (0x03): cancel the running process immediately, don't buffer it
+            if (raw.includes('\x03')) {
+                if (busy && current) {
+                    try { current.kill('SIGTERM'); } catch(_) {}
+                    try { socket.write('\r\n\x1b[33m^C — stopped\x1b[0m\r\n'); } catch(_) {}
+                    if (currentTid) { clearTimeout(currentTid); currentTid = null; }
+                    busy = false; current = null;
+                }
+                inputBuf = '';
+                return;
+            }
+            inputBuf += raw;
 
             // Process all complete lines in the buffer
             let nl;
@@ -3280,15 +3292,36 @@ function openTcpBridge() {
                 sessionMsgCount++;
                 sessionTokenEstimate += Math.round(line.length / 4);
 
-                // Check for pending image attachment (for --print mode, add as text note)
+                // Check for pending image attachment — images require the proxy API so
+                // redirect to runAgentic for this one message even in --print mode.
                 const imgB64FilePrint = path.join(FILES_DIR, 'pending_image.b64');
                 const imgMimeFilePrint = path.join(FILES_DIR, 'pending_image.mime');
-                let printImageNote = '';
                 if (fs.existsSync(imgB64FilePrint)) {
                     try {
-                        printImageNote = '\n[User attached an image — use agentic mode (!agentic on) for image analysis]';
+                        const agImg = {
+                            b64:  fs.readFileSync(imgB64FilePrint, 'utf8').trim(),
+                            mime: fs.existsSync(imgMimeFilePrint)
+                                ? fs.readFileSync(imgMimeFilePrint, 'utf8').trim()
+                                : 'image/jpeg'
+                        };
                         fs.unlinkSync(imgB64FilePrint);
                         if (fs.existsSync(imgMimeFilePrint)) fs.unlinkSync(imgMimeFilePrint);
+                        busy = true;
+                        let agMsg2 = contextBlock ? '[Context]\n' + contextBlock + '\n[Message]\n' + line : line;
+                        contextBlock = '';
+                        if (pendingAttachment) { agMsg2 = pendingAttachment + '\n\n' + agMsg2; pendingAttachment = null; }
+                        runAgentic(socket, agMsg2, history.slice(), shellCwd, agImg).then(async result => {
+                            if (result.text) {
+                                history.push({ role: 'user',      content: agMsg2 });
+                                history.push({ role: 'assistant', content: result.text });
+                                history = await autoCompact(history, socket).catch(() => history);
+                                if (history.length > MAX_HISTORY) history = history.slice(-MAX_HISTORY);
+                                saveSession(history);
+                            }
+                            if (result.cwd && result.cwd !== shellCwd) shellCwd = result.cwd;
+                            busy = false; current = null;
+                        }).catch(() => { busy = false; current = null; });
+                        continue;
                     } catch(_) {}
                 }
 

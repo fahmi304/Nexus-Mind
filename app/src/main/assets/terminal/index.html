@@ -556,6 +556,9 @@ html, body {
   <button class="tb-btn" id="btn-down">↓</button>
   <button class="tb-btn" id="btn-esc">Esc</button>
   <button class="tb-btn" id="btn-backspace">⌫</button>
+  <button class="tb-btn" id="btn-compact" style="color:#93c5fd">/compact</button>
+  <button class="tb-btn" id="btn-font-dec" style="color:#94a3b8">A-</button>
+  <button class="tb-btn" id="btn-font-inc" style="color:#94a3b8">A+</button>
   <button class="tb-btn" id="btn-export" style="color:#86efac">⇪ Export</button>
   <button class="tb-btn" id="btn-files" style="color:#7dd3fc">📂 Files</button>
   <button class="tb-btn" id="btn-preview" style="color:#7dd3fc">🌐 Preview</button>
@@ -1173,7 +1176,7 @@ function startAiBubble(){
   const bub=document.createElement('div');
   bub.className='bubble ai-bubble';
   bub.innerHTML='<span class="ai-loading"><span></span><span></span><span></span></span>';
-  // Regenerate button — hidden until response finalized
+  // Action buttons — hidden until response finalized
   const regenBtn=document.createElement('button');
   regenBtn.textContent='↺';
   regenBtn.title='Regenerate response';
@@ -1181,9 +1184,18 @@ function startAiBubble(){
   regenBtn.addEventListener('click',function(){
     if(typeof Android!=='undefined') Android.regenerateLastResponse();
   });
+  const copyBtn=document.createElement('button');
+  copyBtn.textContent='⎘';
+  copyBtn.title='Copy response';
+  copyBtn.style.cssText='position:absolute;top:6px;right:38px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:rgba(255,255,255,0.35);font-size:12px;padding:2px 6px;cursor:pointer;display:none;';
+  copyBtn.addEventListener('click',function(){
+    var text=bub._rawText||bub.textContent||'';
+    if(typeof Android!=='undefined') Android.copyText(text);
+  });
   row.appendChild(av);
   row.appendChild(bub);
   row.appendChild(regenBtn);
+  row.appendChild(copyBtn);
   msgs.appendChild(row);
   currentAiBubble=bub;
   currentAiAnsi=makeAnsiState();
@@ -1223,9 +1235,13 @@ function finalizeAiBubble(){
       const row=currentAiBubble.parentElement;
       if(row) row.remove();
     }
-    // Show regenerate button
+    // Store raw text so copy button can access it after rawAiText is cleared
+    currentAiBubble._rawText=rawAiText;
+    // Show regenerate + copy buttons
     const regenBtn=currentAiBubble.parentElement&&currentAiBubble.parentElement.querySelector('button[title="Regenerate response"]');
     if(regenBtn) regenBtn.style.display='';
+    const copyBtn=currentAiBubble.parentElement&&currentAiBubble.parentElement.querySelector('button[title="Copy response"]');
+    if(copyBtn) copyBtn.style.display='';
     // TTS: speak the response
     if(typeof Android!=='undefined'&&rawAiText.trim()){
       const ttsText=rawAiText.replace(/\x1b\[[0-9;]*m/g,'').replace(/```[\s\S]*?```/g,'[code block]').replace(/[*_#`]/g,'').trim().slice(0,500);
@@ -1442,6 +1458,23 @@ document.getElementById('btn-backspace').addEventListener('click',function(){
     ghost.value=inputBuffer;
     updateInputDisp();
   }
+  ghost.focus();
+});
+
+// ── Font size ─────────────────────────────────────────────────────────────────
+var termFontSize=parseInt(localStorage.getItem('termFontSize')||'14');
+function applyFontSize(sz){
+  termFontSize=Math.max(10,Math.min(22,sz));
+  localStorage.setItem('termFontSize',String(termFontSize));
+  msgs.style.fontSize=termFontSize+'px';
+}
+applyFontSize(termFontSize);
+document.getElementById('btn-font-dec').addEventListener('click',function(){applyFontSize(termFontSize-1);ghost.focus();});
+document.getElementById('btn-font-inc').addEventListener('click',function(){applyFontSize(termFontSize+1);ghost.focus();});
+
+// ── Compact ───────────────────────────────────────────────────────────────────
+document.getElementById('btn-compact').addEventListener('click',function(){
+  if(typeof Android!=='undefined') Android.sendInput('/compact\r');
   ghost.focus();
 });
 

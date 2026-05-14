@@ -53,7 +53,6 @@ class TerminalActivity : AppCompatActivity() {
     private val tabButtons = LinkedHashMap<Int, Button>()
 
     companion object {
-        private const val REQUEST_VOICE = 1001
         private const val REQUEST_IMAGE = 1002
     }
 
@@ -153,6 +152,8 @@ class TerminalActivity : AppCompatActivity() {
         tts?.stop()
         tts?.shutdown()
         tts = null
+        speechRecognizer?.destroy()
+        speechRecognizer = null
         if (serviceBound) {
             claudeService?.isActivityVisible = false
             claudeService?.onOutput = null
@@ -172,6 +173,9 @@ class TerminalActivity : AppCompatActivity() {
             domStorageEnabled = true
             cacheMode = WebSettings.LOAD_DEFAULT
             allowFileAccess = true
+            setSupportZoom(true)
+            builtInZoomControls = true
+            displayZoomControls = false   // hide the +/- overlay buttons
         }
 
         wv.addJavascriptInterface(TerminalBridge(), "Android")
@@ -556,34 +560,47 @@ class TerminalActivity : AppCompatActivity() {
         startActivityForResult(intent, REQUEST_IMAGE)
     }
 
-    // ─── Voice input ──────────────────────────────────────────────────────────
+    // ─── Voice input (background SpeechRecognizer — no Google popup) ─────────
+
+    private var speechRecognizer: SpeechRecognizer? = null
 
     private fun startVoiceInput() {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             android.widget.Toast.makeText(this, "Voice recognition not available", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
+        speechRecognizer?.destroy()
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+        speechRecognizer?.setRecognitionListener(object : android.speech.RecognitionListener {
+            override fun onReadyForSpeech(params: android.os.Bundle?) {}
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
+            override fun onEndOfSpeech() {}
+            override fun onPartialResults(p: android.os.Bundle?) {}
+            override fun onEvent(t: Int, p: android.os.Bundle?) {}
+            override fun onError(error: Int) {
+                android.widget.Toast.makeText(this@TerminalActivity, "Voice error — try again", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            override fun onResults(results: android.os.Bundle?) {
+                val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull() ?: return
+                val escaped = text.replace("\\", "\\\\").replace("\"", "\\\"")
+                runOnUiThread {
+                    binding.webViewTerminal.evaluateJavascript("window.termSetInput(\"$escaped\")", null)
+                }
+            }
+        })
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak your message to Claude…")
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
         }
-        try {
-            startActivityForResult(intent, REQUEST_VOICE)
-        } catch (e: Exception) {
-            android.widget.Toast.makeText(this, "Voice input not supported", android.widget.Toast.LENGTH_SHORT).show()
-        }
+        speechRecognizer?.startListening(intent)
     }
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_VOICE && resultCode == Activity.RESULT_OK) {
-            val results = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            val text = results?.firstOrNull() ?: return
-            val escaped = text.replace("\\", "\\\\").replace("\"", "\\\"")
-            binding.webViewTerminal.evaluateJavascript("window.termSetInput(\"$escaped\")", null)
-        }
         if (requestCode == REQUEST_IMAGE && resultCode == Activity.RESULT_OK && data?.data != null) {
             try {
                 val uri = data.data!!

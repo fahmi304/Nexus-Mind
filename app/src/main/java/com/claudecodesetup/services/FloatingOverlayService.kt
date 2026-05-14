@@ -274,16 +274,9 @@ class FloatingOverlayService : Service() {
             }
         }
 
-        val prompts = listOf(
-            "⚡  Summarize this",
-            "🔍  Fact check this",
-            "🌐  Translate to English",
-            "✏️  Fix grammar",
-            "💡  Explain like I'm 5"
-        )
-        prompts.forEachIndexed { i, label ->
+        val prompts = prefs.getOverlayPrompts()
+        prompts.forEachIndexed { i, prompt ->
             if (i > 0) {
-                // thin divider
                 panel.addView(View(this).apply {
                     setBackgroundColor(0x20FFFFFF)
                 }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(1)).apply {
@@ -291,15 +284,13 @@ class FloatingOverlayService : Service() {
                 })
             }
             val tv = TextView(this).apply {
-                text     = label
+                text     = prompt
                 textSize = 14f
                 setTextColor(0xFFE2E8F0.toInt())
                 setPadding(dpToPx(16), dpToPx(12), dpToPx(16), dpToPx(12))
                 setOnClickListener {
                     collapseAll()
                     wakeUp()
-                    // Strip the leading emoji prefix before sending
-                    val prompt = label.substringAfter("  ")
                     sendToSocket("$prompt\n")
                     toast("Sent: $prompt")
                 }
