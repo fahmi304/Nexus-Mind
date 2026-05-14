@@ -456,6 +456,43 @@ html, body {
   transition: color 0.3s;
 }
 #token-counter.warn { color: rgba(255,160,60,0.6); }
+#token-counter.crit { color: rgba(255,80,80,0.8); }
+
+/* ── Context bar ─────────────────────────────────────────────────────────── */
+#ctx-bar-wrap {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  z-index: 199;
+  pointer-events: none;
+  background: transparent;
+}
+#ctx-bar-fill {
+  height: 2px;
+  width: 0%;
+  background: rgba(0,200,255,0.5);
+  transition: width 0.6s ease, background 0.4s;
+}
+
+/* ── Agentic mode badge ───────────────────────────────────────────────────── */
+#agentic-badge {
+  position: fixed;
+  top: 8px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(168,85,247,0.18);
+  border: 1px solid rgba(168,85,247,0.45);
+  border-radius: 20px;
+  color: rgba(216,180,254,0.9);
+  font-size: 9px;
+  font-family: 'Space Mono','Courier New',monospace;
+  letter-spacing: 1.5px;
+  padding: 3px 10px;
+  z-index: 200;
+  cursor: pointer;
+  display: none;
+  user-select: none;
+}
+#agentic-badge:active { background: rgba(168,85,247,0.35); }
 
 /* ── Mermaid diagrams ─────────────────────────────────────────────────────── */
 .md-mermaid {
@@ -509,6 +546,12 @@ html, body {
 <!-- Token counter (top-right, shown after first response) -->
 <div id="token-counter"></div>
 
+<!-- Context window fill bar (top edge) -->
+<div id="ctx-bar-wrap"><div id="ctx-bar-fill"></div></div>
+
+<!-- Agentic mode badge (top-center, tappable to toggle) -->
+<div id="agentic-badge">⚡ AGENTIC</div>
+
 <!-- Messages -->
 <div id="msgs"></div>
 
@@ -556,6 +599,7 @@ html, body {
   <button class="tb-btn" id="btn-down">↓</button>
   <button class="tb-btn" id="btn-esc">Esc</button>
   <button class="tb-btn" id="btn-backspace">⌫</button>
+  <button class="tb-btn" id="btn-help" style="color:#f9a8d4">?</button>
   <button class="tb-btn" id="btn-compact" style="color:#93c5fd">/compact</button>
   <button class="tb-btn" id="btn-font-dec" style="color:#94a3b8">A-</button>
   <button class="tb-btn" id="btn-font-inc" style="color:#94a3b8">A+</button>
@@ -924,10 +968,22 @@ function handleOSC(content){
   } else if(content.startsWith('9;tokens:')){
     var toks=parseInt(content.slice(9))||0;
     var tokEl=document.getElementById('token-counter');
+    var barFill=document.getElementById('ctx-bar-fill');
     if(tokEl&&toks>0){
       tokEl.textContent='~'+formatTokens(toks)+' tokens';
-      tokEl.className=toks>150000?'warn':'';
+      var pct=Math.min(100,Math.round(toks/2000)); // 200K limit → 100%
+      if(toks>180000){ tokEl.className='crit'; }
+      else if(toks>120000){ tokEl.className='warn'; }
+      else { tokEl.className=''; }
+      if(barFill){
+        barFill.style.width=pct+'%';
+        barFill.style.background=toks>180000?'rgba(255,80,80,0.8)':toks>120000?'rgba(255,160,60,0.6)':'rgba(0,200,255,0.5)';
+      }
     }
+  } else if(content.startsWith('9;agentic:')){
+    var agOn=content.slice(10)==='on';
+    var badge=document.getElementById('agentic-badge');
+    if(badge) badge.style.display=agOn?'block':'none';
   } else if(content.startsWith('9;think-block:')){
     var enc=content.slice(14);
     var thinkText='';
@@ -1472,10 +1528,21 @@ applyFontSize(termFontSize);
 document.getElementById('btn-font-dec').addEventListener('click',function(){applyFontSize(termFontSize-1);ghost.focus();});
 document.getElementById('btn-font-inc').addEventListener('click',function(){applyFontSize(termFontSize+1);ghost.focus();});
 
+// ── Help ──────────────────────────────────────────────────────────────────────
+document.getElementById('btn-help').addEventListener('click',function(){
+  if(typeof Android!=='undefined') Android.sendInput('!help\r');
+  ghost.focus();
+});
+
 // ── Compact ───────────────────────────────────────────────────────────────────
 document.getElementById('btn-compact').addEventListener('click',function(){
   if(typeof Android!=='undefined') Android.sendInput('/compact\r');
   ghost.focus();
+});
+
+// ── Agentic badge tap ─────────────────────────────────────────────────────────
+document.getElementById('agentic-badge').addEventListener('click',function(){
+  if(typeof Android!=='undefined') Android.sendInput('!agentic\r');
 });
 
 document.getElementById('btn-export').addEventListener('click',function(){

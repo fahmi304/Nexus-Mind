@@ -2183,6 +2183,8 @@ function openTcpBridge() {
             '\x1b[2mcwd: ' + shellCwd + '\x1b[0m\r\n' +
             agenticHint + '\r\n'
         );
+        // Notify terminal UI of initial agentic state
+        try { socket.write('\x1b]9;agentic:' + (agenticEnabled ? 'on' : 'off') + '\x07'); } catch(_) {}
 
         // Run launcher self-test once per connection — helps diagnose
         // whether the child Node.js process can actually start on this device.
@@ -2428,6 +2430,7 @@ function openTcpBridge() {
                               '\x1b[2mBest with Gemini Flash/Pro or Anthropic subscription. Turn off: !agentic off\x1b[0m\r\n\r\n'
                             : '\x1b[2m[AGENTIC OFF]\x1b[0m Back to standard --print mode.\r\n\r\n'
                         );
+                        socket.write('\x1b]9;agentic:' + (agenticEnabled ? 'on' : 'off') + '\x07');
                     } catch(_) {}
                     continue;
                 }

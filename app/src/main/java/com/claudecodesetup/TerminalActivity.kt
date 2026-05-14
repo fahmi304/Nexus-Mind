@@ -711,11 +711,10 @@ class TerminalActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle(file.name)
             .setView(scrollView)
-            .setPositiveButton("Insert as Context") { _, _ ->
-                val escaped = content.take(4000).replace("\\", "\\\\").replace("\"", "\\\"")
-                    .replace("\n", "\\n").replace("\r", "\\r")
-                val ctxMsg = "Here is the content of ${file.name}:\\n$escaped"
-                binding.webViewTerminal.evaluateJavascript("window.termSetInput(\"$ctxMsg\")", null)
+            .setPositiveButton("🔗 Attach to Claude") { _, _ ->
+                // !attach sends file content as next-message context via bridge.js
+                claudeService?.sendInput("!attach ${file.absolutePath}\r")
+                android.widget.Toast.makeText(this, "Attached: ${file.name}", android.widget.Toast.LENGTH_SHORT).show()
             }
             .setNeutralButton("Edit") { _, _ -> openCodeEditor(file) }
             .setNegativeButton("Close", null)
