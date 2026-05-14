@@ -65,7 +65,7 @@ class NodeBridgeManager(private val context: Context) {
 
     fun startBridge(mode: String, apiKey: String, modelId: String, baseUrl: String, providerId: String = "",
                     projectPath: String = "", customSystemPrompt: String = "", prefs: AppPreferences? = null) {
-        writeConfig(mode, apiKey, modelId, baseUrl, providerId, projectPath, customSystemPrompt)
+        writeConfig(mode, apiKey, modelId, baseUrl, providerId, projectPath, customSystemPrompt, prefs)
         writeDeviceContext()
         if (prefs != null) {
             writeProjectsForBridge(prefs)
@@ -141,7 +141,8 @@ class NodeBridgeManager(private val context: Context) {
             baseUrl            = prefs.getBaseUrl(),
             providerId         = prefs.getProviderId(),
             projectPath        = prefs.getProjectPath(),
-            customSystemPrompt = prefs.getCustomSystemPrompt()
+            customSystemPrompt = prefs.getCustomSystemPrompt(),
+            prefs              = prefs
         )
         writeDeviceContext()
         writeProjectsForBridge(prefs)
@@ -211,7 +212,7 @@ class NodeBridgeManager(private val context: Context) {
 
     private fun writeConfig(mode: String, apiKey: String, modelId: String, baseUrl: String,
                             providerId: String = "", projectPath: String = "",
-                            customSystemPrompt: String = "") {
+                            customSystemPrompt: String = "", prefs: AppPreferences? = null) {
         val isSubscription = mode == AppPreferences.MODE_SUBSCRIPTION
         val authToken = if (!isSubscription) "freecc" else ""
         val effectiveBaseUrl = if (!isSubscription) "http://127.0.0.1:8082" else baseUrl
@@ -228,6 +229,9 @@ class NodeBridgeManager(private val context: Context) {
             put("modelList",          modelList)
             put("projectPath",        projectPath)
             put("customSystemPrompt", customSystemPrompt)
+            put("ptyMode",            prefs?.getPtyMode() ?: false)
+            put("ptyCols",            prefs?.getPtyCols() ?: 220)
+            put("ptyRows",            prefs?.getPtyRows() ?: 50)
         }
         try {
             File(context.filesDir, CONFIG_FILE).writeText(json.toString())

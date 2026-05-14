@@ -184,6 +184,17 @@ class ClaudeService : LifecycleService() {
         }
     }
 
+    fun sendResizeAll(cols: Int, rows: Int) {
+        val hiC = (cols shr 8) and 0xff
+        val loC = cols and 0xff
+        val hiR = (rows shr 8) and 0xff
+        val loR = rows and 0xff
+        val resize = byteArrayOf(0x1b, 0xfe.toByte(), hiC.toByte(), loC.toByte(), hiR.toByte(), loR.toByte())
+        sessions.values.forEach { s ->
+            try { s.outputStream?.write(resize); s.outputStream?.flush() } catch (_: Exception) {}
+        }
+    }
+
     fun stopAllSessions() {
         sessions.values.forEach { s -> runCatching { s.socket?.close() }; s.alive = false }
         sessions.clear()

@@ -791,6 +791,17 @@ class TerminalActivity : AppCompatActivity() {
             claudeService?.sendInput(text)
         }
 
+        /** Called by JS when the terminal dimensions change. Saves the new size and
+         *  forwards an in-band resize sequence to bridge.js so libpty-helper.so
+         *  can issue TIOCSWINSZ + SIGWINCH to the running claude process. */
+        @JavascriptInterface
+        fun notifyResize(cols: Int, rows: Int) {
+            if (cols !in 10..999 || rows !in 5..500) return
+            prefs.setPtyCols(cols)
+            prefs.setPtyRows(rows)
+            claudeService?.sendResizeAll(cols, rows)
+        }
+
         @JavascriptInterface
         fun onTerminalReady() {}
 

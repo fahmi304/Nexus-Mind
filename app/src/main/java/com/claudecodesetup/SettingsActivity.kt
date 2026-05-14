@@ -36,6 +36,7 @@ class SettingsActivity : AppCompatActivity() {
         populateFields()
         setupActions()
         setupOverlaySwitch()
+        setupPtySwitch()
     }
 
     override fun onResume() {
@@ -165,6 +166,16 @@ class SettingsActivity : AppCompatActivity() {
 
         binding.btnMcpServers.setOnClickListener {
             startActivity(Intent(this, com.claudecodesetup.ui.McpActivity::class.java))
+        }
+    }
+
+    private fun setupPtySwitch() {
+        binding.switchPtyMode.isChecked = prefs.getPtyMode()
+        binding.switchPtyMode.setOnCheckedChangeListener { _, isChecked ->
+            prefs.setPtyMode(isChecked)
+            bridgeManager.refreshConfig(prefs)
+            val msg = if (isChecked) "PTY mode enabled — takes effect on next message" else "PTY mode disabled"
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
         }
     }
 

@@ -30,6 +30,7 @@ const { spawn } = require('child_process');
 const FILES_DIR  = process.argv[2] || '/data/data/com.claudecodesetup/files';
 const LAUNCHER   = process.argv[3] || process.execPath;
 const NATIVE_DIR = path.dirname(LAUNCHER);  // directory holding libnode.so
+const PTY_HELPER = path.join(NATIVE_DIR, 'libpty-helper.so');
 
 const NPM_PREFIX  = path.join(FILES_DIR, 'npm-global');
 const CLAUDE_CLI  = path.join(
@@ -1953,7 +1954,7 @@ function buildMessageWithHistory(message, history) {
     return '[System]\n' + sysPrompt + '\n\n' + ctx + '\n\nHuman: ' + message;
 }
 
-const MAX_HISTORY = 20; // max stored messages (10 turns) per session
+const MAX_HISTORY = 50; // max stored messages (25 turns) per session
 
 /**
  * Run a quick launcher self-test. Spawns LAUNCHER with a trivial JS one-liner
@@ -1993,6 +1994,18 @@ function testLauncher() {
             resolve(false);
         }, 8000);
     });
+}
+
+// Spawn claude via libpty-helper.so when ptyMode is on, plain launcher otherwise.
+// PTY mode gives claude a real TTY (isTTY=true, correct COLS/ROWS, Ctrl+C via SIGINT).
+function spawnClaude(evalCode, env, cwd) {
+    const cfg = readConfig();
+    if (cfg.ptyMode && fs.existsSync(PTY_HELPER)) {
+        const cols = String(cfg.ptyCols || 220);
+        const rows = String(cfg.ptyRows || 50);
+        return spawn(PTY_HELPER, [cols, rows, LAUNCHER, '-e', evalCode], { env, cwd });
+    }
+    return spawn(LAUNCHER, ['-e', evalCode], { env, cwd });
 }
 
 function runMessage(message, socket, history) {
@@ -2056,7 +2069,7 @@ function runMessage(message, socket, history) {
         'try{require("fs").appendFileSync(' + exitLogPath + ',"[import-resolved]\\n");}catch(_){}})' +
         '.catch(function(e){process.stderr.write("import-err:"+String(e)+"\\n");process.exit(1)});';
 
-    const child = spawn(LAUNCHER, ['-e', evalCode], { env, cwd: FILES_DIR });
+    const child = spawnClaude(evalCode, env, FILES_DIR);
     child.stdin.end();
 
     // Collect stderr separately so we can include it in error messages
@@ -2198,6 +2211,15 @@ function openTcpBridge() {
 
         // normalDataHandler is named so !pty can re-attach it after a PTY session ends.
         const normalDataHandler = d => {
+            // In-band resize: ESC 0xFE cols_hi cols_lo rows_hi rows_lo (6 bytes from TerminalActivity)
+            // Re-encode as ESC 0xFF for pty_helper's relay_with_resize().
+            if (d.length >= 6 && d[0] === 0x1b && d[1] === 0xfe) {
+                if (current) {
+                    const resize = Buffer.from([0x1b, 0xff, d[2], d[3], d[4], d[5]]);
+                    try { current.stdin.write(resize); } catch(_) {}
+                }
+                return;
+            }
             const raw = d.toString();
             // Ctrl+C (0x03): cancel the running process immediately, don't buffer it
             if (raw.includes('\x03')) {
@@ -2447,8 +2469,7 @@ function openTcpBridge() {
                         ); } catch(_) {}
                         continue;
                     }
-                    const ptyHelper = path.join(path.dirname(LAUNCHER), 'libpty-helper.so');
-                    if (!fs.existsSync(ptyHelper)) {
+                    if (!fs.existsSync(PTY_HELPER)) {
                         try { socket.write(
                             '\x1b[31m✗ libpty-helper.so not found.\x1b[0m\r\n' +
                             '\x1b[2mRebuild the app — PTY support requires a native binary bundled with the APK.\x1b[0m\r\n\r\n'
@@ -2456,6 +2477,9 @@ function openTcpBridge() {
                         continue;
                     }
                     const ptyCmdParts = ptyCmd.split(/\s+/);
+                    const cfg2 = readConfig();
+                    const ptyCols = String(cfg2.ptyCols || 220);
+                    const ptyRows = String(cfg2.ptyRows || 50);
                     const ptyEnv = Object.assign({}, buildEnv(), { TERM: 'xterm-256color' });
                     try { socket.write(
                         '\x1b[33m[PTY] Starting: ' + ptyCmd + '\x1b[0m\r\n' +
@@ -2464,7 +2488,7 @@ function openTcpBridge() {
 
                     let ptyProc;
                     try {
-                        ptyProc = spawn(ptyHelper, ptyCmdParts, { env: ptyEnv, cwd: shellCwd });
+                        ptyProc = spawn(PTY_HELPER, [ptyCols, ptyRows, ...ptyCmdParts], { env: ptyEnv, cwd: shellCwd });
                     } catch(e) {
                         try { socket.write('\x1b[31m[PTY] Failed to start: ' + e.message + '\x1b[0m\r\n\r\n'); } catch(_) {}
                         continue;
@@ -2693,7 +2717,7 @@ function openTcpBridge() {
                             ['ssh',     fs.existsSync(path.join(BIN_DIR, 'ssh'))     ? '✓ installed' : '✗ run !install ssh'],
                             ['ruby',    fs.existsSync(path.join(BIN_DIR, 'ruby'))    ? '✓ installed' : '✗ run !install ruby'],
                             ['clang',   fs.existsSync(path.join(BIN_DIR, 'clang'))   ? '✓ installed' : '✗ run !install clang'],
-                            ['PTY',     fs.existsSync(path.join(path.dirname(LAUNCHER), 'libpty-helper.so')) ? '✓ available (!pty <cmd>)' : '✗ rebuild app'],
+                            ['PTY',     fs.existsSync(PTY_HELPER) ? '✓ available (!pty <cmd>)' : '✗ rebuild app'],
                             ['CLAUDE.md', (() => { const p2 = path.join(shellCwd, 'CLAUDE.md'); return fs.existsSync(p2) ? '✓ found' : '✗ not found (run /init)'; })()],
                         ];
                         let msg = '\r\n\x1b[1m/doctor — Environment\x1b[0m\r\n';

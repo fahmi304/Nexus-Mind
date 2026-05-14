@@ -111,6 +111,15 @@ class AppPreferences(context: Context) {
     fun getOverlayEnabled(): Boolean = prefs.getBoolean(KEY_OVERLAY_ENABLED, false)
     fun setOverlayEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_OVERLAY_ENABLED, enabled).apply()
 
+    fun getPtyMode(): Boolean = prefs.getBoolean("pty_mode", false)
+    fun setPtyMode(enabled: Boolean) = prefs.edit().putBoolean("pty_mode", enabled).apply()
+
+    fun getPtyCols(): Int = prefs.getInt("pty_cols", 220)
+    fun setPtyCols(cols: Int) = prefs.edit().putInt("pty_cols", cols).apply()
+
+    fun getPtyRows(): Int = prefs.getInt("pty_rows", 50)
+    fun setPtyRows(rows: Int) = prefs.edit().putInt("pty_rows", rows).apply()
+
     // ─── Misc ────────────────────────────────────────────────────────────────
 
     fun getInstalledClaudeVersion(): String = prefs.getString(KEY_CLAUDE_VERSION, "") ?: ""

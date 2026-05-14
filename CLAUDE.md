@@ -179,7 +179,19 @@ Written by `NodeBridgeManager.writeConfig()` before each `startBridge()`. Re-wri
 
 ---
 
-## Latest changes (Session 13)
+## Latest changes (Session 14)
+
+### PTY mode (Phase 1)
+- **`pty_helper.c`** — Updated to accept `<cols> <rows>` as first two args (previously `<command>`). Adds `relay_with_resize()` to intercept in-band `ESC 0xFF cols_hi cols_lo rows_hi rows_lo` resize sequences from bridge.js and issue `TIOCSWINSZ` + `SIGWINCH` to child. Fixes termios on slave: `ECHO` off, `ISIG` on (Ctrl+C → SIGINT), `ONLCR` off (no `\n→\r\n` so NDJSON parsing still works).
+- **`bridge.js`** — New `PTY_HELPER` constant. New `spawnClaude(evalCode, env, cwd)` replaces direct `spawn(LAUNCHER, ...)` in `runMessage()` — uses pty_helper when `cfg.ptyMode` is true. `normalDataHandler` intercepts `ESC 0xFE` resize signals from the socket and re-encodes as `ESC 0xFF` for pty_helper. `!pty` command updated to pass cols/rows. `MAX_HISTORY` raised 20 → 50.
+- **`AppPreferences.kt`** — Added `getPtyMode/setPtyMode`, `getPtyCols/setPtyCols`, `getPtyRows/setPtyRows`.
+- **`NodeBridgeManager.kt`** — `writeConfig()` writes `ptyMode`, `ptyCols`, `ptyRows` from prefs into `bridge_config.json`. `refreshConfig()` passes `prefs` to `writeConfig()`.
+- **`ClaudeService.kt`** — New `sendResizeAll(cols, rows)` sends 6-byte resize sequence to all active session sockets.
+- **`TerminalActivity.kt`** — New `notifyResize(cols, rows)` JS bridge method: saves to prefs + calls `sendResizeAll`.
+- **`index.html`** — New `reportTermSize()` measures character grid via DOM probe, calls `Android.notifyResize`. Called on init, `window.resize`, and font size change.
+- **`activity_settings.xml` + `SettingsActivity.kt`** — New `switchPtyMode` toggle; `setupPtySwitch()` wires it to prefs + `refreshConfig()`.
+
+## Previous changes (Session 13)
 
 ### Overlay bugs fixed
 - **Clipboard always empty** — `FloatingOverlayService` has `FLAG_NOT_FOCUSABLE`; Android 10+ blocks clipboard reads from unfocused contexts. Fixed via new `ClipboardHelperActivity` (transparent, reads clipboard, broadcasts `ACTION_CLIPBOARD_READY` / `ACTION_CLIPBOARD_EMPTY` back to service).

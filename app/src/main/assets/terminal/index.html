@@ -601,6 +601,7 @@ html, body {
   <button class="tb-btn" id="btn-backspace">⌫</button>
   <button class="tb-btn" id="btn-help" style="color:#f9a8d4">?</button>
   <button class="tb-btn" id="btn-compact" style="color:#93c5fd">/compact</button>
+  <button class="tb-btn" id="btn-cost" style="color:#fde68a">$ /cost</button>
   <button class="tb-btn" id="btn-font-dec" style="color:#94a3b8">A-</button>
   <button class="tb-btn" id="btn-font-inc" style="color:#94a3b8">A+</button>
   <button class="tb-btn" id="btn-export" style="color:#86efac">⇪ Export</button>
@@ -1523,8 +1524,27 @@ function applyFontSize(sz){
   termFontSize=Math.max(10,Math.min(22,sz));
   localStorage.setItem('termFontSize',String(termFontSize));
   msgs.style.fontSize=termFontSize+'px';
+  reportTermSize();
 }
 applyFontSize(termFontSize);
+
+// ── Terminal size reporting ────────────────────────────────────────────────────
+// Measures the character grid and notifies Kotlin so bridge.js can forward
+// accurate COLS/ROWS to libpty-helper.so via TIOCSWINSZ.
+function reportTermSize(){
+  var probe=document.createElement('span');
+  probe.style.cssText='position:absolute;visibility:hidden;font-family:Space Mono,Courier New,monospace;font-size:'+termFontSize+'px;white-space:pre;';
+  probe.textContent='X';
+  document.body.appendChild(probe);
+  var r=probe.getBoundingClientRect();
+  var charW=r.width||8;
+  var charH=r.height||termFontSize*1.5;
+  document.body.removeChild(probe);
+  var cols=Math.max(40,Math.floor(window.innerWidth/charW));
+  var rows=Math.max(10,Math.floor(window.innerHeight/charH));
+  if(typeof Android!=='undefined'&&Android.notifyResize) Android.notifyResize(cols,rows);
+}
+window.addEventListener('resize',reportTermSize);
 document.getElementById('btn-font-dec').addEventListener('click',function(){applyFontSize(termFontSize-1);ghost.focus();});
 document.getElementById('btn-font-inc').addEventListener('click',function(){applyFontSize(termFontSize+1);ghost.focus();});
 
@@ -1537,6 +1557,10 @@ document.getElementById('btn-help').addEventListener('click',function(){
 // ── Compact ───────────────────────────────────────────────────────────────────
 document.getElementById('btn-compact').addEventListener('click',function(){
   if(typeof Android!=='undefined') Android.sendInput('/compact\r');
+  ghost.focus();
+});
+document.getElementById('btn-cost').addEventListener('click',function(){
+  if(typeof Android!=='undefined') Android.sendInput('/cost\r');
   ghost.focus();
 });
 
@@ -1575,6 +1599,7 @@ document.getElementById('btn-image').addEventListener('click',function(){
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 updateLayout();
+reportTermSize();
 if(typeof Android!=='undefined') Android.onTerminalReady();
 
 })();
