@@ -28,6 +28,8 @@ class FloatingOverlayService : Service() {
         const val ACTION_STOP             = "com.claudecodesetup.OVERLAY_STOP"
         const val ACTION_SCREENSHOT_READY = "com.claudecodesetup.SCREENSHOT_READY"
         const val ACTION_VOICE_RESULT     = "com.claudecodesetup.VOICE_RESULT"
+        const val ACTION_CLIPBOARD_READY  = "com.claudecodesetup.CLIPBOARD_READY"
+        const val ACTION_CLIPBOARD_EMPTY  = "com.claudecodesetup.CLIPBOARD_EMPTY"
         const val NOTIF_ID                = 1003
         private const val BRIDGE_PORT     = 8083
         private const val TAG             = "FloatingOverlay"
@@ -82,6 +84,14 @@ class FloatingOverlayService : Service() {
                     wakeUp()
                     handleVoiceResult(text)
                 }
+                ACTION_CLIPBOARD_READY -> {
+                    val text = intent.getStringExtra("text") ?: return
+                    sendToSocket("$text\n")
+                    toast("Sent to Claude ✓")
+                }
+                ACTION_CLIPBOARD_EMPTY -> {
+                    toast("Clipboard is empty")
+                }
             }
         }
     }
@@ -105,6 +115,8 @@ class FloatingOverlayService : Service() {
         val filter = IntentFilter().apply {
             addAction(ACTION_SCREENSHOT_READY)
             addAction(ACTION_VOICE_RESULT)
+            addAction(ACTION_CLIPBOARD_READY)
+            addAction(ACTION_CLIPBOARD_EMPTY)
         }
         registerReceiver(resultReceiver, filter, RECEIVER_NOT_EXPORTED)
 
@@ -459,11 +471,10 @@ class FloatingOverlayService : Service() {
     }
 
     private fun sendClipboard() {
-        val cm   = getSystemService(ClipboardManager::class.java)
-        val text = cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()
-        if (text.isNullOrBlank()) { toast("Clipboard is empty"); return }
-        sendToSocket("$text\n")
-        toast("Sent to Claude ✓")
+        // Reading clipboard requires a focused Activity context on Android 10+.
+        // ClipboardHelperActivity reads it and broadcasts the result back to us.
+        startActivity(Intent(this, ClipboardHelperActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     private fun requestScreenshot(voiceQuery: String?) {

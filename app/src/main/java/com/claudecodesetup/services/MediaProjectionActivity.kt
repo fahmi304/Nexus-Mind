@@ -23,19 +23,26 @@ class MediaProjectionActivity : Activity() {
     companion object {
         private const val REQ_CODE = 1001
         private const val TAG      = "MediaProjectionAct"
+
+        // Cached across invocations so the system dialog only appears once per session.
+        // Cleared if the projection becomes invalid.
+        private var cachedProjection: MediaProjection? = null
     }
 
-    private var mediaProjection: MediaProjection? = null
-    private var virtualDisplay: VirtualDisplay?   = null
-    private var imageReader: ImageReader?         = null
+    private var virtualDisplay: VirtualDisplay? = null
+    private var imageReader: ImageReader?        = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Transparent window — no UI
         window.setBackgroundDrawableResource(android.R.color.transparent)
 
-        val mpManager = getSystemService(MediaProjectionManager::class.java)
-        startActivityForResult(mpManager.createScreenCaptureIntent(), REQ_CODE)
+        val proj = cachedProjection
+        if (proj != null) {
+            captureWithProjection(proj)
+        } else {
+            val mgr = getSystemService(MediaProjectionManager::class.java)
+            startActivityForResult(mgr.createScreenCaptureIntent(), REQ_CODE)
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -43,10 +50,13 @@ class MediaProjectionActivity : Activity() {
         if (requestCode != REQ_CODE || resultCode != RESULT_OK || data == null) {
             finish(); return
         }
+        val mgr  = getSystemService(MediaProjectionManager::class.java)
+        val proj = mgr.getMediaProjection(resultCode, data)
+        cachedProjection = proj
+        captureWithProjection(proj)
+    }
 
-        val mpManager = getSystemService(MediaProjectionManager::class.java)
-        mediaProjection = mpManager.getMediaProjection(resultCode, data)
-
+    private fun captureWithProjection(proj: MediaProjection) {
         val dm = DisplayMetrics()
         @Suppress("DEPRECATION")
         windowManager.defaultDisplay.getMetrics(dm)
@@ -56,17 +66,22 @@ class MediaProjectionActivity : Activity() {
 
         imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
 
-        virtualDisplay = mediaProjection?.createVirtualDisplay(
-            "OverlayCapture",
-            width, height, dpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader?.surface, null, null
-        )
+        try {
+            virtualDisplay = proj.createVirtualDisplay(
+                "OverlayCapture",
+                width, height, dpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                imageReader?.surface, null, null
+            )
+        } catch (e: Exception) {
+            // Cached projection was invalidated — clear it and ask again next time
+            Log.w(TAG, "createVirtualDisplay failed, clearing cache: ${e.message}")
+            cachedProjection = null
+            finish()
+            return
+        }
 
-        // Give the virtual display one frame to render
-        Handler(Looper.getMainLooper()).postDelayed({
-            captureAndBroadcast(width, height)
-        }, 300)
+        Handler(Looper.getMainLooper()).postDelayed({ captureAndBroadcast(width, height) }, 300)
     }
 
     private fun captureAndBroadcast(width: Int, height: Int) {
@@ -75,18 +90,17 @@ class MediaProjectionActivity : Activity() {
             image = imageReader?.acquireLatestImage()
             if (image == null) { finish(); return }
 
-            val planes = image.planes
-            val buffer = planes[0].buffer
+            val planes     = image.planes
+            val buffer     = planes[0].buffer
             val pixelStride = planes[0].pixelStride
-            val rowStride   = planes[0].rowStride
-            val rowPadding  = rowStride - pixelStride * width
+            val rowStride  = planes[0].rowStride
+            val rowPadding = rowStride - pixelStride * width
 
             val bitmap = Bitmap.createBitmap(
                 width + rowPadding / pixelStride, height, Bitmap.Config.ARGB_8888
             )
             bitmap.copyPixelsFromBuffer(buffer)
 
-            // Crop to exact screen size (removes row padding)
             val cropped = Bitmap.createBitmap(bitmap, 0, 0, width, height)
 
             val outFile = File(filesDir, "overlay_screenshot.jpg")
@@ -96,16 +110,18 @@ class MediaProjectionActivity : Activity() {
             bitmap.recycle()
             cropped.recycle()
 
-            sendBroadcast(Intent(FloatingOverlayService.ACTION_SCREENSHOT_READY)
-                .setPackage(packageName)
-                .putExtra("path", outFile.absolutePath))
-
+            sendBroadcast(
+                Intent(FloatingOverlayService.ACTION_SCREENSHOT_READY)
+                    .setPackage(packageName)
+                    .putExtra("path", outFile.absolutePath)
+            )
         } catch (e: Exception) {
             Log.e(TAG, "captureAndBroadcast error", e)
         } finally {
             image?.close()
             virtualDisplay?.release()
-            mediaProjection?.stop()
+            virtualDisplay = null
+            // Do NOT stop the MediaProjection — keep it alive for next screenshot
             finish()
         }
     }

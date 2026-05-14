@@ -132,9 +132,15 @@
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
-        <!-- Transparent activity to capture voice via RecognizerIntent -->
+        <!-- Transparent activity to capture voice via SpeechRecognizer -->
         <activity
             android:name=".services.VoiceInputActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Transparent activity to read clipboard (requires Activity focus on Android 10+) -->
+        <activity
+            android:name=".services.ClipboardHelperActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
