@@ -3920,19 +3920,17 @@ function openPersistentSession() {
             return;
         }
 
-        const cfg  = readConfig();
-        const env  = buildEnv();
-        const cwd  = cfg.projectPath || FILES_DIR;
-        const cols = String(cfg.ptyCols || 220);
-        const rows = String(cfg.ptyRows || 50);
+        const cfg = readConfig();
+        const env = buildEnv();
+        const cwd = cfg.projectPath || FILES_DIR;
 
-        // Spawn one persistent claude process (via PTY if available)
+        // Spawn one persistent claude process.
+        // No PTY here — stream-json output must stay clean NDJSON; a PTY stdin
+        // would let claude emit interactive prompts that break the JSON parser.
         const evalCode = buildInteractiveEvalCode();
         let proc;
         try {
-            proc = fs.existsSync(PTY_HELPER)
-                ? spawn(PTY_HELPER, [cols, rows, LAUNCHER, '-e', evalCode], { env, cwd })
-                : spawn(LAUNCHER, ['-e', evalCode], { env, cwd });
+            proc = spawn(LAUNCHER, ['-e', evalCode], { env, cwd });
         } catch(e) {
             try { socket.write('\x1b[31m[PTY] Failed to start claude: ' + e.message + '\x1b[0m\r\n'); socket.end(); } catch(_) {}
             return;
@@ -4022,12 +4020,8 @@ function openPersistentSession() {
 
         // ── Input handler ─────────────────────────────────────────────────────
         const persistentDataHandler = d => {
-            // In-band resize: ESC 0xFE → ESC 0xFF for pty_helper
-            if (d.length >= 6 && d[0] === 0x1b && d[1] === 0xfe) {
-                const resize = Buffer.from([0x1b, 0xff, d[2], d[3], d[4], d[5]]);
-                try { proc.stdin.write(resize); } catch(_) {}
-                return;
-            }
+            // Drop in-band resize sequences — the persistent claude process has no PTY
+            if (d.length >= 6 && d[0] === 0x1b && d[1] === 0xfe) return;
 
             const raw = d.toString();
 
