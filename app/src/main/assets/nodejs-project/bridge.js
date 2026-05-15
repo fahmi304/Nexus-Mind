@@ -1453,20 +1453,27 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on42
             provRes.on('data', c => { data += c; });
             provRes.on('end', () => {
                 try {
+                    const parsed = JSON.parse(data);
                     if (provRes.statusCode !== 200) {
-                        log('[proxy-raw-error] HTTP ' + provRes.statusCode + ' body: ' + data.slice(0, 400) + '\n');
                         if (provRes.statusCode === 400 && onBadRequest) return onBadRequest();
                         if (provRes.statusCode === 429 && on429) return on429();
                         if (provRes.statusCode === 429) lastRateLimitMs = Date.now();
+                        let errMsg = parsed.error?.message || 'Provider HTTP ' + provRes.statusCode;
+                        try {
+                            const raw = parsed.error?.metadata?.raw;
+                            if (raw) {
+                                const inner = JSON.parse(raw);
+                                const innerMsg = inner.error?.message || inner.message;
+                                if (innerMsg) errMsg = innerMsg;
+                            }
+                        } catch (_) {}
+                        if (provRes.statusCode === 402)
+                            errMsg += ' — switch model or add credits at openrouter.ai/credits';
+                        return proxyError(res, provRes.statusCode, errMsg);
                     }
-                    const parsed = JSON.parse(data);
                     if (parsed.error) {
-                        return proxyError(res, provRes.statusCode || 500,
+                        return proxyError(res, 500,
                             parsed.error.message || JSON.stringify(parsed.error));
-                    }
-                    if (provRes.statusCode !== 200) {
-                        return proxyError(res, provRes.statusCode,
-                            'Provider HTTP ' + provRes.statusCode);
                     }
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify(oaiToAnth(parsed, oaiReq.model)));
@@ -1493,12 +1500,22 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on42
                         msg = 'Invalid or unauthorised API key (HTTP ' + provRes.statusCode + ') — check Settings';
                     else if (provRes.statusCode >= 500)
                         msg = 'Provider server error (HTTP ' + provRes.statusCode + ') — try again';
-                    log('[proxy-raw-error] HTTP ' + provRes.statusCode + ' body: ' + errBody.slice(0, 400) + '\n');
                     try {
                         const e = JSON.parse(errBody);
-                        const detail = e.error?.message || e.message || e.error?.code;
+                        // Try to extract the nested upstream error (e.g. OpenRouter wraps Crucible errors)
+                        let detail = e.error?.message || e.message || '';
+                        try {
+                            const raw = e.error?.metadata?.raw;
+                            if (raw) {
+                                const inner = JSON.parse(raw);
+                                const innerMsg = inner.error?.message || inner.message;
+                                if (innerMsg) detail = innerMsg;
+                            }
+                        } catch (_) {}
                         if (detail) msg += ': ' + detail;
                     } catch (_) {}
+                    if (provRes.statusCode === 402)
+                        msg += ' — switch to a different model or add credits at openrouter.ai/credits';
                     log('Provider error: ' + msg + '\n');
                     proxyError(res, provRes.statusCode, msg);
                 });
