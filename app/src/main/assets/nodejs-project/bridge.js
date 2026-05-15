@@ -1440,9 +1440,6 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on42
         headers['X-Title']      = 'ClaudeCodeSetup';
     }
 
-    const sysLen = (oaiReq.messages.find(m => m.role === 'system') || {}).content?.length || 0;
-    log('[proxy-req] host=' + targetUrl.hostname + ' model=' + oaiReq.model + ' msgs=' + oaiReq.messages.length + ' max_tokens=' + oaiReq.max_tokens + ' stream=' + oaiReq.stream + ' bodyLen=' + body.length + ' syspromptChars=' + sysLen + '\n');
-
     const provReq = lib.request({
         hostname: targetUrl.hostname,
         port, method: 'POST',
