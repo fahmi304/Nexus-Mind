@@ -4031,6 +4031,8 @@ function openPersistentSession() {
                     thinkingDone = false;
                     const toks   = (ev.usage && ev.usage.output_tokens) || 0;
                     sessionTokens += toks;
+                    // Second thinking-done finalizes the AI bubble in the terminal UI
+                    try { socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
                     try { socket.write('\x1b]9;tokens:' + sessionTokens + '\x07'); } catch(_) {}
                 }
             }
