@@ -1451,15 +1451,18 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on42
             provRes.on('data', c => { data += c; });
             provRes.on('end', () => {
                 try {
+                    if (provRes.statusCode !== 200) {
+                        log('[proxy-raw-error] HTTP ' + provRes.statusCode + ' body: ' + data.slice(0, 400) + '\n');
+                        if (provRes.statusCode === 400 && onBadRequest) return onBadRequest();
+                        if (provRes.statusCode === 429 && on429) return on429();
+                        if (provRes.statusCode === 429) lastRateLimitMs = Date.now();
+                    }
                     const parsed = JSON.parse(data);
                     if (parsed.error) {
                         return proxyError(res, provRes.statusCode || 500,
                             parsed.error.message || JSON.stringify(parsed.error));
                     }
                     if (provRes.statusCode !== 200) {
-                        if (provRes.statusCode === 400 && onBadRequest) return onBadRequest();
-                        if (provRes.statusCode === 429 && on429) return on429();
-                        if (provRes.statusCode === 429) lastRateLimitMs = Date.now();
                         return proxyError(res, provRes.statusCode,
                             'Provider HTTP ' + provRes.statusCode);
                     }
@@ -1488,9 +1491,10 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on42
                         msg = 'Invalid or unauthorised API key (HTTP ' + provRes.statusCode + ') — check Settings';
                     else if (provRes.statusCode >= 500)
                         msg = 'Provider server error (HTTP ' + provRes.statusCode + ') — try again';
+                    log('[proxy-raw-error] HTTP ' + provRes.statusCode + ' body: ' + errBody.slice(0, 400) + '\n');
                     try {
                         const e = JSON.parse(errBody);
-                        const detail = e.error?.message || e.message;
+                        const detail = e.error?.message || e.message || e.error?.code;
                         if (detail) msg += ': ' + detail;
                     } catch (_) {}
                     log('Provider error: ' + msg + '\n');
