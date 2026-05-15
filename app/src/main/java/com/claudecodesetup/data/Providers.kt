@@ -174,6 +174,27 @@ object Providers {
         )
     )
 
+    val GROQ = Provider(
+        id = "groq",
+        name = "Groq",
+        signupUrl = "https://console.groq.com/keys",
+        rateLimit = "Free · 14,400 req/day · Ultra-fast",
+        malaysiaStatus = MalaysiaStatus.GREEN,
+        malaysiaNote = "Works everywhere — no CC required",
+        baseUrl = "https://api.groq.com/openai/v1",
+        requiresProxy = true,
+        models = listOf(
+            AiModel("Llama 4 Scout 17B",      "meta-llama/llama-4-scout-17b-16e-instruct", setOf(Cap.TOOLS, Cap.VISION, Cap.FAST, Cap.FREE)),
+            AiModel("Llama 4 Maverick 17B",   "meta-llama/llama-4-maverick-17b-128e-instruct", setOf(Cap.TOOLS, Cap.VISION, Cap.FREE)),
+            AiModel("Llama 3.3 70B",          "llama-3.3-70b-versatile",                  setOf(Cap.TOOLS, Cap.FREE)),
+            AiModel("Llama 3.1 8B (Instant)", "llama-3.1-8b-instant",                     setOf(Cap.FAST, Cap.FREE)),
+            AiModel("DeepSeek R1 Distill 70B","deepseek-r1-distill-llama-70b",             setOf(Cap.REASONING, Cap.FREE)),
+            AiModel("Qwen QwQ 32B",           "qwen-qwq-32b",                             setOf(Cap.REASONING, Cap.FREE)),
+            AiModel("Gemma 2 9B",             "gemma2-9b-it",                             setOf(Cap.FAST, Cap.FREE)),
+            AiModel("Mixtral 8x7B",           "mixtral-8x7b-32768",                       setOf(Cap.TOOLS, Cap.LONG_CTX, Cap.FREE))
+        )
+    )
+
     val ANTHROPIC = Provider(
         id = "anthropic",
         name = "Anthropic (Claude.ai)",
@@ -190,7 +211,7 @@ object Providers {
         )
     )
 
-    val ALL = listOf(GEMINI, OPENROUTER, DEEPSEEK, KIMI, NVIDIA_NIM, META_LLAMA, OLLAMA)
+    val ALL = listOf(GROQ, GEMINI, OPENROUTER, DEEPSEEK, KIMI, NVIDIA_NIM, META_LLAMA, OLLAMA)
 
     fun byId(id: String): Provider? = ALL.find { it.id == id }
 
