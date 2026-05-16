@@ -99,6 +99,8 @@ class ClaudeService : LifecycleService() {
         return binder
     }
 
+    private val deviceControlServer = DeviceControlHttpServer()
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -107,6 +109,7 @@ class ClaudeService : LifecycleService() {
         val pm = getSystemService(PowerManager::class.java)
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ClaudeCode:WakeLock")
         startForeground(NOTIF_ID, buildNotification("Claude Code is ready"))
+        deviceControlServer.start()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -121,6 +124,7 @@ class ClaudeService : LifecycleService() {
     override fun onDestroy() {
         super.onDestroy()
         instance = null
+        deviceControlServer.stop()
         stopAllSessions()
         releaseWakeLock()
     }

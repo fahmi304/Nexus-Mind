@@ -134,6 +134,11 @@ class AppPreferences(context: Context) {
     fun getLanguage(): String = prefs.getString(KEY_LANGUAGE, "en") ?: "en"
     fun setLanguage(lang: String) = prefs.edit().putString(KEY_LANGUAGE, lang).apply()
 
+    // ─── Scheduled prompts ───────────────────────────────────────────────────
+
+    fun getScheduledPromptsJson(): String = prefs.getString(KEY_SCHEDULED_PROMPTS, "[]") ?: "[]"
+    fun saveScheduledPromptsJson(json: String) = prefs.edit().putString(KEY_SCHEDULED_PROMPTS, json).apply()
+
     // ─── Clear ───────────────────────────────────────────────────────────────
 
     fun clearAll() = prefs.edit().clear().apply()
@@ -170,6 +175,7 @@ class AppPreferences(context: Context) {
         private const val KEY_OVERLAY_ENABLED      = "overlay_enabled"
         private const val KEY_OVERLAY_PROMPTS      = "overlay_quick_prompts"
         private const val KEY_PROVIDER_REMOTE_URL  = "provider_remote_url"
+        private const val KEY_SCHEDULED_PROMPTS    = "scheduled_prompts_json"
 
         val DEFAULT_OVERLAY_PROMPTS = listOf(
             "Summarize what's on my screen",

@@ -331,6 +331,28 @@
 
             </LinearLayout>
 
+            <!-- Scheduled prompts -->
+            <TextView
+                style="@style/SectionHeader"
+                android:text="Scheduled Prompts" />
+
+            <Button
+                android:id="@+id/btnScheduledPrompts"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="Manage scheduled prompts"
+                android:textColor="@color/accent_blue" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="24dp"
+                android:text="Send prompts to Claude automatically at set times each day (e.g. daily standup, morning briefing)."
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+
             <!-- Custom slash commands -->
             <TextView
                 style="@style/SectionHeader"

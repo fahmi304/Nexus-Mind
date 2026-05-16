@@ -161,9 +161,10 @@ const PACKAGE_CATALOG = {
     },
 };
 
-const PORT       = 8083;
-const PROXY_PORT = 8082;
-const HOST       = '127.0.0.1';
+const PORT               = 8083;
+const PROXY_PORT         = 8082;
+const DEVICE_CONTROL_PORT = 8081;
+const HOST               = '127.0.0.1';
 
 // ─── Eval bootstrap shims ─────────────────────────────────────────────────────
 // These are injected as strings into every LAUNCHER -e evalCode bootstrap,
@@ -312,6 +313,37 @@ const AGENTIC_TOOLS = [
             properties: { path: { type: 'string', description: 'Directory path' } },
             required: ['path']
         }
+    },
+    {
+        name: 'web_search',
+        description: 'Search the web and return results. Use for current events, facts, documentation, prices, etc.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                query: { type: 'string', description: 'Search query' },
+                max_results: { type: 'number', description: 'Max results to return (default 5)' }
+            },
+            required: ['query']
+        }
+    },
+    {
+        name: 'device_control',
+        description: 'Control the Android device: read screen content, tap, type text, open apps, take screenshot.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                action: {
+                    type: 'string',
+                    enum: ['read_screen', 'tap', 'type_text', 'open_app', 'screenshot'],
+                    description: 'Action to perform'
+                },
+                x: { type: 'number', description: 'X coordinate for tap' },
+                y: { type: 'number', description: 'Y coordinate for tap' },
+                text: { type: 'string', description: 'Text to type' },
+                package: { type: 'string', description: 'App package name to open (e.g. com.discord)' }
+            },
+            required: ['action']
+        }
     }
 ];
 
@@ -406,6 +438,12 @@ async function executeTool(name, input, cwd, socket) {
             return { content: lines || '(empty)', isError: false, newCwd: cwd };
         } catch(e) { return { content: 'Error: ' + e.message, isError: true, newCwd: cwd }; }
 
+    } else if (name === 'web_search') {
+        return webSearch(input.query || '', input.max_results || 5, cwd);
+
+    } else if (name === 'device_control') {
+        return deviceControlTool(input, cwd);
+
     } else if (name.startsWith('mcp_')) {
         try {
             const content = await callMcpStdioTool(name, input);
@@ -415,6 +453,128 @@ async function executeTool(name, input, cwd, socket) {
     } else {
         return { content: 'Unknown tool: ' + name, isError: true, newCwd: cwd };
     }
+}
+
+// ─── Web Search via DuckDuckGo ────────────────────────────────────────────────
+function webSearch(query, maxResults, cwd) {
+    return new Promise(resolve => {
+        if (!query) {
+            resolve({ content: 'Error: query is required', isError: true, newCwd: cwd });
+            return;
+        }
+        const encoded = encodeURIComponent(query);
+        // DuckDuckGo Instant Answer API — no API key required
+        const req = https.get(
+            'https://api.duckduckgo.com/?q=' + encoded + '&format=json&no_redirect=1&no_html=1&skip_disambig=1',
+            { headers: { 'User-Agent': 'ClaudeCodeSetup/1.0 (Android)' } },
+            res => {
+                let body = '';
+                res.setEncoding('utf8');
+                res.on('data', c => { body += c; });
+                res.on('end', () => {
+                    try {
+                        const data = JSON.parse(body);
+                        const parts = [];
+                        if (data.Abstract) parts.push('**' + (data.Heading || query) + '**\n' + data.Abstract);
+                        if (data.Answer)   parts.push('Answer: ' + data.Answer);
+                        const topics = (data.RelatedTopics || [])
+                            .filter(t => t.Text)
+                            .slice(0, maxResults)
+                            .map(t => '• ' + t.Text + (t.FirstURL ? '\n  ' + t.FirstURL : ''));
+                        if (topics.length) parts.push('Related:\n' + topics.join('\n'));
+                        if (!parts.length) {
+                            // Fall back to DuckDuckGo HTML search scraping
+                            fetchDdgHtml(query, maxResults, cwd, resolve);
+                            return;
+                        }
+                        resolve({ content: parts.join('\n\n'), isError: false, newCwd: cwd });
+                    } catch(_) {
+                        fetchDdgHtml(query, maxResults, cwd, resolve);
+                    }
+                });
+                res.on('error', () => fetchDdgHtml(query, maxResults, cwd, resolve));
+            }
+        );
+        req.on('error', () => fetchDdgHtml(query, maxResults, cwd, resolve));
+        req.setTimeout(10000, () => { req.destroy(); fetchDdgHtml(query, maxResults, cwd, resolve); });
+    });
+}
+
+function fetchDdgHtml(query, maxResults, cwd, resolve) {
+    const encoded = encodeURIComponent(query);
+    const req = https.get(
+        'https://html.duckduckgo.com/html/?q=' + encoded,
+        { headers: { 'User-Agent': 'Mozilla/5.0 (Android; Mobile) AppleWebKit/537.36' } },
+        res => {
+            let body = '';
+            res.setEncoding('utf8');
+            res.on('data', c => { if (body.length < 200000) body += c; });
+            res.on('end', () => {
+                // Extract result snippets from HTML using simple regex
+                const results = [];
+                const titleRe  = /<a[^>]+class="result__a"[^>]*>([^<]+)<\/a>/g;
+                const snippetRe = /<a[^>]+class="result__snippet"[^>]*>([^<]+)<\/a>/g;
+                const urlRe     = /<a[^>]+class="result__url"[^>]*>([^<]+)<\/a>/g;
+                let tm, sm, um;
+                const titles = [], snippets = [], urls = [];
+                while ((tm = titleRe.exec(body)) && titles.length < maxResults) titles.push(tm[1].replace(/&amp;/g,'&').replace(/&#x27;/g,"'").trim());
+                while ((sm = snippetRe.exec(body)) && snippets.length < maxResults) snippets.push(sm[1].replace(/&amp;/g,'&').replace(/&#x27;/g,"'").trim());
+                while ((um = urlRe.exec(body)) && urls.length < maxResults) urls.push(um[1].trim());
+                for (let i = 0; i < Math.min(titles.length, maxResults); i++) {
+                    results.push((titles[i] ? '**' + titles[i] + '**' : '') +
+                        (urls[i] ? '\n' + urls[i] : '') +
+                        (snippets[i] ? '\n' + snippets[i] : ''));
+                }
+                if (!results.length) {
+                    resolve({ content: 'No results found for: ' + query, isError: false, newCwd: cwd });
+                } else {
+                    resolve({ content: 'Search results for "' + query + '":\n\n' + results.join('\n\n'), isError: false, newCwd: cwd });
+                }
+            });
+            res.on('error', e => resolve({ content: 'Search failed: ' + e.message, isError: true, newCwd: cwd }));
+        }
+    );
+    req.on('error', e => resolve({ content: 'Search failed: ' + e.message, isError: true, newCwd: cwd }));
+    req.setTimeout(12000, () => { req.destroy(); resolve({ content: 'Search timed out', isError: true, newCwd: cwd }); });
+}
+
+// ─── Device Control via HTTP (port 8081) ─────────────────────────────────────
+function deviceControlTool(input, cwd) {
+    return new Promise(resolve => {
+        const body = JSON.stringify(input);
+        const req = http.request({
+            hostname: HOST, port: DEVICE_CONTROL_PORT,
+            path: '/device', method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(body)
+            }
+        }, res => {
+            let data = '';
+            res.on('data', d => { data += d; });
+            res.on('end', () => {
+                try {
+                    const r = JSON.parse(data);
+                    resolve({ content: String(r.result || ''), isError: !!r.error, newCwd: cwd });
+                } catch(_) {
+                    resolve({ content: data || '(empty response)', isError: false, newCwd: cwd });
+                }
+            });
+        });
+        req.on('error', e => {
+            resolve({
+                content: 'Device Control not available: ' + e.message +
+                    '\nTo enable: Android Settings → Accessibility → Claude Screen & Device Control → ON',
+                isError: true, newCwd: cwd
+            });
+        });
+        req.setTimeout(15000, () => {
+            req.destroy();
+            resolve({ content: 'Device control request timed out', isError: true, newCwd: cwd });
+        });
+        req.write(body);
+        req.end();
+    });
 }
 
 // Streaming proxy call — writes text_delta chunks to socket as they arrive.
@@ -3978,6 +4138,11 @@ function openPersistentSession() {
         let pendingAttach = null;
         let sessionTokens = 0;
 
+        // Route 429 countdown notifications to this socket
+        on429CountdownNotify = function(delaySecs) {
+            try { socket.write('\x1b]9;rate-limit:' + delaySecs + '\x07'); } catch(_) {}
+        };
+
         // Show spinner while claude boots; send agentic state and cwd
         const agenticOn = fs.existsSync(AGENTIC_FILE);
         try { socket.write('\x1b]9;agentic:' + (agenticOn ? 'on' : 'off') + '\x07'); } catch(_) {}
@@ -4041,7 +4206,19 @@ function openPersistentSession() {
         proc.stderr.on('data', d => {
             const s = d.toString();
             if (/^\[(eval-ok|import-resolved|exit-event|unhandledRejection|regex-compat|intl-shim)\]/.test(s.trim())) return;
-            try { socket.write('\x1b[33m' + s + '\x1b[0m'); } catch(_) {}
+            // Detect 429 rate limit errors from proxy response passed through claude
+            if (/429|rate.?limit/i.test(s)) {
+                lastRateLimitMs = Date.now();
+                try {
+                    socket.write(
+                        '\x1b]9;thinking-done\x07\r\n' +
+                        '\x1b[33m⚠ Rate limited (HTTP 429) — proxy is retrying.\x1b[0m\r\n' +
+                        '\x1b[2mSwitch to a model with higher limits, or wait.\x1b[0m\r\n'
+                    );
+                } catch(_) {}
+            } else {
+                try { socket.write('\x1b[33m' + s + '\x1b[0m'); } catch(_) {}
+            }
         });
 
         proc.on('error', e => {
@@ -4050,8 +4227,14 @@ function openPersistentSession() {
 
         proc.on('close', code => {
             if (currentTid) { clearTimeout(currentTid); currentTid = null; }
+            busy = false;
+            const rateLimited = (Date.now() - lastRateLimitMs) < 30000;
             try {
-                socket.write('\r\n\x1b[33m[PTY] Session ended (exit ' + (code || 0) + ') — tap Restart to reconnect.\x1b[0m\r\n');
+                const hint = rateLimited
+                    ? '\x1b[33m⚠ Session ended due to rate limiting (HTTP 429).\x1b[0m\r\n' +
+                      '\x1b[2mWait 30–60 s then tap Restart, or switch to a model with higher limits.\x1b[0m\r\n'
+                    : '\x1b[33m[PTY] Session ended (exit ' + (code || 0) + ') — tap Restart to reconnect.\x1b[0m\r\n';
+                socket.write('\r\n' + hint);
                 socket.end();
             } catch(_) {}
         });

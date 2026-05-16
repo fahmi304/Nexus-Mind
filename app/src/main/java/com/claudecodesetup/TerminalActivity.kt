@@ -54,6 +54,7 @@ class TerminalActivity : AppCompatActivity() {
 
     companion object {
         private const val REQUEST_IMAGE = 1002
+        const val EXTRA_SCHEDULED_PROMPT = "scheduled_prompt"
     }
 
     // ─── TTS ──────────────────────────────────────────────────────────────────
@@ -131,6 +132,11 @@ class TerminalActivity : AppCompatActivity() {
         super.onResume()
         claudeService?.isActivityVisible = true
         claudeService?.cancelResponseNotification()
+        // Send scheduled prompt if launched from notification
+        intent.getStringExtra(EXTRA_SCHEDULED_PROMPT)?.let { prompt ->
+            intent.removeExtra(EXTRA_SCHEDULED_PROMPT)
+            claudeService?.sendInput(prompt + "\n")
+        }
         // Refresh project pill in case user changed project while away
         val projectPath = prefs.getProjectPath()
         if (projectPath.isNotEmpty()) {
