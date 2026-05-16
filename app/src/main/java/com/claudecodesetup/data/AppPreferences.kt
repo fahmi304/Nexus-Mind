@@ -172,11 +172,14 @@ class AppPreferences(context: Context) {
         private const val KEY_PROVIDER_REMOTE_URL  = "provider_remote_url"
 
         val DEFAULT_OVERLAY_PROMPTS = listOf(
-            "Summarize this",
+            "Summarize what's on my screen",
+            "Explain what I'm reading",
+            "Translate this to English",
             "Fact check this",
-            "Translate to English",
-            "Fix grammar",
-            "Explain like I'm 5"
+            "Explain this like I'm 5",
+            "What does this mean?",
+            "Fix the error on my screen",
+            "Reply to this message professionally"
         )
 
         const val MODE_SUBSCRIPTION = "subscription"

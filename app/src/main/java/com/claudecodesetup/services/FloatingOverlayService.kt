@@ -291,8 +291,9 @@ class FloatingOverlayService : Service() {
                 setOnClickListener {
                     collapseAll()
                     wakeUp()
-                    sendToSocket("$prompt\n")
-                    toast("Sending to Claude…")
+                    // Capture screen first, then send screenshot + prompt together
+                    requestScreenshot(prompt)
+                    toast("Reading screen…")
                 }
             }
             panel.addView(tv, LinearLayout.LayoutParams(
