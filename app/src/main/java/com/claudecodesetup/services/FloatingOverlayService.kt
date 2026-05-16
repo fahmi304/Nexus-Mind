@@ -292,7 +292,7 @@ class FloatingOverlayService : Service() {
                     collapseAll()
                     wakeUp()
                     sendToSocket("$prompt\n")
-                    toast("Sent: $prompt")
+                    toast("Sending to Claude…")
                 }
             }
             panel.addView(tv, LinearLayout.LayoutParams(
@@ -587,12 +587,21 @@ class FloatingOverlayService : Service() {
     }
 
     private fun sendToSocket(text: String) {
-        scope.launch(Dispatchers.IO) {
-            try {
-                outputStream?.write(text.toByteArray(Charsets.UTF_8))
-                outputStream?.flush()
-            } catch (e: Exception) {
-                Log.e(TAG, "sendToSocket failed", e)
+        val service = ClaudeService.instance
+        if (service != null) {
+            service.sendInput(text)
+            // Open terminal after short delay so the user can see the response
+            Handler(Looper.getMainLooper()).postDelayed({ openApp() }, 300)
+        } else {
+            // Fallback: own socket connection (no active ClaudeService session)
+            scope.launch(Dispatchers.IO) {
+                try {
+                    outputStream?.write(text.toByteArray(Charsets.UTF_8))
+                    outputStream?.flush()
+                } catch (e: Exception) {
+                    Log.e(TAG, "sendToSocket failed", e)
+                    withContext(Dispatchers.Main) { toast("No active session — open the terminal first") }
+                }
             }
         }
     }

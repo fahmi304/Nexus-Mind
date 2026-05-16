@@ -81,14 +81,21 @@ class MediaProjectionActivity : Activity() {
             return
         }
 
-        Handler(Looper.getMainLooper()).postDelayed({ captureAndBroadcast(width, height) }, 300)
+        Handler(Looper.getMainLooper()).postDelayed({ captureAndBroadcast(width, height, 0) }, 600)
     }
 
-    private fun captureAndBroadcast(width: Int, height: Int) {
+    private fun captureAndBroadcast(width: Int, height: Int, attempt: Int) {
         var image: Image? = null
         try {
             image = imageReader?.acquireLatestImage()
-            if (image == null) { finish(); return }
+            if (image == null) {
+                if (attempt < 5) {
+                    Handler(Looper.getMainLooper()).postDelayed(
+                        { captureAndBroadcast(width, height, attempt + 1) }, 200
+                    )
+                } else { finish() }
+                return
+            }
 
             val planes     = image.planes
             val buffer     = planes[0].buffer

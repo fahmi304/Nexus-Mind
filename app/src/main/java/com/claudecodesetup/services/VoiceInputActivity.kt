@@ -4,10 +4,14 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.view.Gravity
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 
 class VoiceInputActivity : Activity() {
@@ -20,7 +24,22 @@ class VoiceInputActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.setBackgroundDrawableResource(android.R.color.transparent)
+
+        // Semi-transparent dark background so user knows something is happening
+        val label = TextView(this).apply {
+            text     = "🎤  Listening…"
+            textSize = 20f
+            setTextColor(Color.WHITE)
+            gravity  = Gravity.CENTER
+            setPadding(48, 48, 48, 48)
+        }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity     = Gravity.CENTER
+            setBackgroundColor(0xCC000000.toInt())
+            addView(label)
+        }
+        setContentView(root)
 
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             startListening()
@@ -33,20 +52,23 @@ class VoiceInputActivity : Activity() {
         if (requestCode == REQ_AUDIO && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
             startListening()
         } else {
+            Toast.makeText(this, "Microphone permission required", Toast.LENGTH_SHORT).show()
             finish()
         }
     }
 
     private fun startListening() {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            Toast.makeText(this, "Speech recognition unavailable", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Speech recognition not available on this device", Toast.LENGTH_LONG).show()
             finish()
             return
         }
 
         recognizer = SpeechRecognizer.createSpeechRecognizer(this)
         recognizer?.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {}
+            override fun onReadyForSpeech(params: Bundle?) {
+                Toast.makeText(this@VoiceInputActivity, "Listening…", Toast.LENGTH_SHORT).show()
+            }
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
@@ -54,7 +76,19 @@ class VoiceInputActivity : Activity() {
             override fun onPartialResults(partial: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
 
-            override fun onError(error: Int) { finish() }
+            override fun onError(error: Int) {
+                val msg = when (error) {
+                    SpeechRecognizer.ERROR_NO_MATCH       -> "Didn't catch that — try again"
+                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected"
+                    SpeechRecognizer.ERROR_NETWORK,
+                    SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network error — check connection"
+                    SpeechRecognizer.ERROR_AUDIO          -> "Microphone error"
+                    SpeechRecognizer.ERROR_NOT_RECOGNIZED -> "Speech not recognized"
+                    else -> "Voice error (code $error)"
+                }
+                Toast.makeText(this@VoiceInputActivity, msg, Toast.LENGTH_SHORT).show()
+                finish()
+            }
 
             override fun onResults(results: Bundle?) {
                 val text = results
@@ -66,6 +100,8 @@ class VoiceInputActivity : Activity() {
                             .setPackage(packageName)
                             .putExtra("text", text)
                     )
+                } else {
+                    Toast.makeText(this@VoiceInputActivity, "Didn't catch that", Toast.LENGTH_SHORT).show()
                 }
                 finish()
             }
