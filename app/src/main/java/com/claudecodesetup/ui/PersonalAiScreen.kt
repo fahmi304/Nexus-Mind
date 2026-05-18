@@ -340,11 +340,10 @@ private fun RowScope.TabButton(label: String, selected: Boolean, color: Color, o
 
 @Composable
 private fun OllamaStatusCard(reachable: Boolean?, onRetry: () -> Unit) {
-    val (icon, statusText, statusColor, bgColor) = when (reachable) {
-        true  -> Quad("●", "Ollama connected · localhost:11434", green, Color(0x0F10B981))
-        false -> Quad("○", "Ollama not found · is it running?", Color(0xFFF59E0B), Color(0x0FF59E0B))
-        null  -> Quad("◌", "Checking Ollama…", Color(0xFF6B7280), Color(0x0A6B7280))
-    }
+    val icon        = when (reachable) { true -> "●"; false -> "○"; else -> "◌" }
+    val statusText  = when (reachable) { true -> "Ollama connected · localhost:11434"; false -> "Ollama not found · is it running?"; else -> "Checking Ollama…" }
+    val statusColor = when (reachable) { true -> green; false -> Color(0xFFF59E0B); else -> Color(0xFF6B7280) }
+    val bgColor     = when (reachable) { true -> Color(0x0F10B981); false -> Color(0x0FF59E0B); else -> Color(0x0A6B7280) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -544,4 +543,3 @@ private fun ActionButton(label: String, color: Color, onClick: () -> Unit) {
     }
 }
 
-private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
