@@ -208,12 +208,12 @@ fun SplashAnimationScreen(shouldPlay: Boolean = true, onFinished: () -> Unit) {
                             if (textAlpha > 0.01f) {
                                 val dx  = p.x - CX; val dy = p.y - CY
                                 val mag = sqrt(dx * dx + dy * dy).coerceAtLeast(0.001f)
-                                val lx  = (pos.x + (dx / mag) * 5.5f / 100f) * s
-                                val ly  = (pos.y + (dy / mag) * 5.5f / 100f) * s
+                                val lx  = (pos.x + (dx / mag) * 10.5f / 100f) * s
+                                val ly  = (pos.y + (dy / mag) * 10.5f / 100f) * s
                                 drawIntoCanvas { canvas ->
                                     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
                                         color     = p.color.copy(alpha = textAlpha).toArgb()
-                                        textSize  = 4f / 100f * s
+                                        textSize  = 4.8f / 100f * s
                                         textAlign = android.graphics.Paint.Align.CENTER
                                         typeface  = Typeface.MONOSPACE
                                         isFakeBoldText = true
