@@ -31,6 +31,14 @@ class NodeBridgeManager(private val context: Context) {
         const val SETUP_LOG_FILE        = "setup.log"
         const val SETUP_DONE_FILE       = "setup_done"
         const val SETUP_FAILED_FILE     = "setup_failed"
+
+        /** Preview/dated model IDs that have been retired → their stable replacements. */
+        private val RETIRED_MODEL_MAP = mapOf(
+            "gemini-2.5-flash-preview-05-20" to "gemini-2.5-flash",
+            "gemini-2.5-flash-preview-04-17" to "gemini-2.5-flash",
+            "gemini-2.5-pro-preview-05-06"   to "gemini-2.5-pro",
+            "gemini-2.5-pro-preview-03-25"   to "gemini-2.5-pro"
+        )
     }
 
     // ─── Bridge reachability ──────────────────────────────────────────────────
@@ -210,12 +218,16 @@ class NodeBridgeManager(private val context: Context) {
         val authToken = if (!isSubscription) "freecc" else ""
         val effectiveBaseUrl = if (!isSubscription) "http://127.0.0.1:8082" else baseUrl
         val providerUrl = if (!isSubscription) baseUrl else ""
-        val models = Providers.byId(providerId)?.models ?: emptyList()
+        val provider = Providers.byId(providerId)
+        val models = provider?.models ?: emptyList()
         val modelList = JSONArray().apply { models.forEach { put(it.modelId) } }
+        // Remap retired model IDs to their stable successors so stored prefs don't break on update.
+        val effectiveModelId = RETIRED_MODEL_MAP.getOrDefault(modelId, modelId)
+        if (effectiveModelId != modelId && prefs != null) prefs.setModelId(effectiveModelId)
         val json = JSONObject().apply {
             put("mode",               mode)
             put("apiKey",             apiKey)
-            put("modelId",            modelId)
+            put("modelId",            effectiveModelId)
             put("baseUrl",            effectiveBaseUrl)
             put("authToken",          authToken)
             put("providerUrl",        providerUrl)

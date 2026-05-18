@@ -161,11 +161,14 @@ fun ModelTestScreen(
     providerUrl: String,
     onBack: () -> Unit,
 ) {
-    val isLiveFetch = providerId == "openrouter" || providerId == "nvidia_nim"
-    if (isLiveFetch) {
+    val resolvedOrKey = orApiKey.ifEmpty { if (providerId == "openrouter") apiKey else "" }
+    val resolvedNvKey = nvApiKey.ifEmpty { if (providerId == "nvidia_nim") apiKey else "" }
+    val hasOrNv = resolvedOrKey.isNotEmpty() || resolvedNvKey.isNotEmpty()
+
+    if (hasOrNv) {
         TabbedModelTestScreen(
-            orApiKey = orApiKey.ifEmpty { if (providerId == "openrouter") apiKey else "" },
-            nvApiKey = nvApiKey.ifEmpty { if (providerId == "nvidia_nim") apiKey else "" },
+            orApiKey = resolvedOrKey,
+            nvApiKey = resolvedNvKey,
             initialTab = if (providerId == "nvidia_nim") 1 else 0,
             onBack = onBack
         )
@@ -428,15 +431,34 @@ private fun SingleProviderTestScreen(
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val provider = Providers.byId(providerId)
+    val isLive = provider?.supportsLiveFetch == true
 
     var loadState by remember {
         mutableStateOf<ModelLoadState>(
-            ModelLoadState.Loaded(Providers.byId(providerId)?.models ?: emptyList())
+            if (isLive) ModelLoadState.Loading
+            else ModelLoadState.Loaded(provider?.models ?: emptyList())
         )
     }
 
     var results by remember { mutableStateOf<List<ModelTestResult>>(emptyList()) }
     var isTesting by remember { mutableStateOf(false) }
+
+    fun fetchModels() {
+        if (!isLive || provider == null) return
+        loadState = ModelLoadState.Loading
+        scope.launch {
+            try {
+                val fetched = ProvidersRepository.fetchModels(provider, apiKey)
+                loadState = if (fetched.isEmpty()) ModelLoadState.Loaded(provider.models)
+                            else ModelLoadState.Loaded(fetched)
+            } catch (_: Exception) {
+                loadState = ModelLoadState.Loaded(provider.models)
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) { if (isLive) fetchModels() }
 
     LaunchedEffect(loadState) {
         if (loadState is ModelLoadState.Loaded)
@@ -481,10 +503,19 @@ private fun SingleProviderTestScreen(
                 Column {
                     Text("Testing Response", fontSize = 18.sp, fontWeight = FontWeight.Bold,
                         color = Color.White, fontFamily = DmSansFamily)
-                    Text("Provider: ${Providers.byId(providerId)?.name ?: providerId}",
+                    Text("Provider: ${provider?.name ?: providerId}",
                         fontSize = 12.sp, color = Color(0xFF64748B), fontFamily = DmSansFamily)
                 }
                 Spacer(Modifier.weight(1f))
+                if (isLive) {
+                    TestButton(
+                        label = "↻",
+                        enabled = loadState !is ModelLoadState.Loading && !isTesting,
+                        color = Color(0xFF818CF8),
+                        onClick = ::fetchModels
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
                 TestButton(
                     label = if (isTesting) "Testing…" else "Test All",
                     enabled = loadState is ModelLoadState.Loaded && !isTesting,
@@ -492,7 +523,7 @@ private fun SingleProviderTestScreen(
                     onClick = ::runAllTests
                 )
             }
-            ModelLoadContent(loadState = loadState, results = results, onRetry = {})
+            ModelLoadContent(loadState = loadState, results = results, onRetry = ::fetchModels)
         }
     }
 }

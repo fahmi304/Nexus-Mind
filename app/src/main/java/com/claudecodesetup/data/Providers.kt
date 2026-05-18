@@ -112,10 +112,11 @@ object Providers {
         baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai",
         requiresProxy = true,
         models = listOf(
-            AiModel("Gemini 2.5 Flash", "gemini-2.5-flash-preview-05-20", setOf(Cap.TOOLS, Cap.VISION, Cap.REASONING, Cap.FAST, Cap.LONG_CTX, Cap.FREE)),
-            AiModel("Gemini 2.0 Flash", "gemini-2.0-flash",               setOf(Cap.TOOLS, Cap.VISION, Cap.FAST, Cap.LONG_CTX, Cap.FREE)),
-            AiModel("Gemini 1.5 Flash", "gemini-1.5-flash",               setOf(Cap.TOOLS, Cap.VISION, Cap.FAST, Cap.LONG_CTX, Cap.FREE)),
-            AiModel("Gemini 1.5 Flash 8B", "gemini-1.5-flash-8b",         setOf(Cap.TOOLS, Cap.VISION, Cap.FAST, Cap.FREE))
+            AiModel("Gemini 2.5 Flash", "gemini-2.5-flash",   setOf(Cap.TOOLS, Cap.VISION, Cap.REASONING, Cap.FAST, Cap.LONG_CTX, Cap.FREE)),
+            AiModel("Gemini 2.5 Pro",   "gemini-2.5-pro",     setOf(Cap.TOOLS, Cap.VISION, Cap.REASONING, Cap.LONG_CTX, Cap.FREE)),
+            AiModel("Gemini 2.0 Flash", "gemini-2.0-flash",   setOf(Cap.TOOLS, Cap.VISION, Cap.FAST, Cap.LONG_CTX, Cap.FREE)),
+            AiModel("Gemini 1.5 Flash", "gemini-1.5-flash",   setOf(Cap.TOOLS, Cap.VISION, Cap.FAST, Cap.LONG_CTX, Cap.FREE)),
+            AiModel("Gemini 1.5 Flash 8B", "gemini-1.5-flash-8b", setOf(Cap.TOOLS, Cap.VISION, Cap.FAST, Cap.FREE))
         )
     )
 
