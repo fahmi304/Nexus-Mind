@@ -96,8 +96,8 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun setupActions() {
         binding.btnChangeProvider.setOnClickListener {
-            prefs.clearProviderOnly()
-            startActivity(Intent(this, com.claudecodesetup.ui.ComposeActivity::class.java))
+            startActivity(Intent(this, com.claudecodesetup.ui.ComposeActivity::class.java)
+                .putExtra("start_at", "providers"))
             finish()
         }
 
