@@ -205,6 +205,11 @@ Written by `NodeBridgeManager.writeConfig()` before each `startBridge()`. Re-wri
 - `libllamaserver.so` is NOT committed — CI builds it from source; local builds need `./scripts/build-llamaserver.sh`
 - When binary is absent (default until first CI build with the new step), `PersonalAiScreen` gracefully shows "not available in this build" instead of crashing
 
+### `!pty` command clarification (user confusion documented)
+- **`!pty on` is NOT a toggle** — `!pty <cmd>` runs an interactive program inside a real POSIX PTY (e.g. `!pty bash`, `!pty python3`). Typing `!pty on` tries to launch a binary named `on` → exit 127 (command not found).
+- **To enable persistent PTY mode** for Claude sessions: Settings → PTY Mode toggle. This is a settings flag, not a chat command.
+- **To open an interactive shell**: send `!pty bash` in the chat.
+
 ---
 
 ## Previous changes (Session 17)
