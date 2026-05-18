@@ -1536,6 +1536,26 @@ function anthToOai(a, model) {
     if (a.temperature !== undefined) req.temperature = a.temperature;
     if (a.stop_sequences && a.stop_sequences.length) req.stop = a.stop_sequences;
 
+    if (a.tools && a.tools.length) {
+        req.tools = a.tools.map(t => ({
+            type: 'function',
+            function: {
+                name: t.name,
+                description: t.description || '',
+                parameters: t.input_schema || { type: 'object', properties: {} }
+            }
+        }));
+        if (a.tool_choice) {
+            if (a.tool_choice === 'auto' || a.tool_choice === 'none') {
+                req.tool_choice = a.tool_choice;
+            } else if (a.tool_choice === 'any') {
+                req.tool_choice = 'required';
+            } else if (typeof a.tool_choice === 'object' && a.tool_choice.name) {
+                req.tool_choice = { type: 'function', function: { name: a.tool_choice.name } };
+            }
+        }
+    }
+
     return req;
 }
 
