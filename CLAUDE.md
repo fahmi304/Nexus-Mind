@@ -179,7 +179,35 @@ Written by `NodeBridgeManager.writeConfig()` before each `startBridge()`. Re-wri
 
 ---
 
-## Latest changes (Session 14)
+## Latest changes (Session 15)
+
+### Claude.ai OAuth login (subscription users)
+- **`app/src/main/java/com/claudecodesetup/ui/ClaudeLoginActivity.kt`** (new file) — Full OAuth 2.0 + PKCE WebView login flow for Claude subscription users. Intercepts redirect at `https://platform.claude.com/oauth/code/callback`, exchanges code at `https://platform.claude.com/v1/oauth/token`, writes credentials to `filesDir/.claude/.credentials.json` as `claudeAiOauth` structure (accessToken, refreshToken, expiresAt, scopes, subscriptionType, rateLimitTier). Three UI phases: `"webview"` → `"exchanging"` → `"error"`. Returns `RESULT_OK` on success, `RESULT_CANCELED` on cancel/failure.
+  - CLIENT_ID: `9d1c250a-e61b-44d9-88ed-5944d1962f5e`
+  - AUTH_URL: `https://claude.com/cai/oauth/authorize`
+  - SCOPES: `org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload`
+- **`AndroidManifest.xml`** — Registered `.ui.ClaudeLoginActivity` with `adjustResize` and `Theme.NexusMind`.
+- **`ComposeActivity.kt`** — Added `"claude_auth"` screen in the login flow:
+  - `"subscription"` → `onYes` now routes to `"claude_auth"` (was `"key"`)
+  - Back from `"key"` for Anthropic now returns to `"claude_auth"` (was `"subscription"`)
+  - `loginLauncher` (`rememberLauncherForActivityResult`) starts `ClaudeLoginActivity`; on `RESULT_OK` sets `storedKey = ""` and jumps to `"picker"`
+  - New `ClaudeAuthScreen` composable: purple "Login with claude.ai" button + dark "Use API key instead" button + back link
+
+### MCP server support
+- **`NodeBridgeManager.kt`** — Rewrote `writeMcpConfig()` to combine both HTTP/SSE and stdio servers into a single `mcp_config.json`. Now called from both `startBridge()` and `refreshConfig()`. Deletes the file when no servers are configured.
+- **`bridge.js`** — Added `MCP_CONFIG_FILE` constant. Injects `--mcp-config <path>` into claude's argv in both `--print` mode and `buildInteractiveEvalCode()` (PTY mode) when the file exists.
+
+### Parallel model testing
+- **`ModelTestScreen.kt`** — `runOrTests()`, `runNvTests()`, `runAllTests()` now fire all requests simultaneously using `coroutineScope { models.mapIndexed { async { } }.awaitAll() }`. All models show `TESTING` state immediately; results update as responses arrive.
+
+### App rename: Claude Code Proxy → Nexus Mind
+- `strings.xml`, `ClaudeApp.kt`, `ClaudeService.kt`, `TerminalActivity.kt`, `SettingsActivity.kt`, `ModelPickerScreen.kt`, `BootReceiver.kt`, `themes.xml`, `settings.gradle`, `README.md` — all user-visible "Claude Code" strings changed to "Nexus Mind". Package ID `com.claudecodesetup` intentionally unchanged.
+
+### Repo migration
+- Moved from `rektzy9903/ClaudeCodeSetup` → `fahmi304/Nexus-Mind` on GitHub.
+- Scrubbed hardcoded API keys from all 149 commits using `git-filter-repo --replace-text`.
+
+## Previous changes (Session 14)
 
 ### PTY mode (Phase 2) — persistent session
 - **`bridge.js`** — New `buildInteractiveEvalCode()` builds bootstrap eval for interactive mode: `--output-format stream-json` only (no `--print`, no message arg), stdin stays open. New `openPersistentSession()` replaces per-message spawn loop when `ptyMode` is on: spawns one persistent claude process per TCP connection via pty_helper, parses NDJSON events (`system/init` → session ready, `assistant` → stream text/thinking/tool_use, `result` → end-of-turn + token accumulation). Input handler (`persistentDataHandler`) routes: resize (`ESC 0xFE`), Ctrl+C (`\x03` → proc.stdin), `!commands`, `$ shell`, and everything else → `proc.stdin.write(msg + '\n')`. Claude manages its own conversation history — no `buildMessageWithHistory()`, no 50-turn cap. `/cost`, `/compact`, `/doctor`, `/review`, `/clear` all forwarded directly to claude stdin. 60 s timeout sends `\x03`. Socket close → `SIGHUP`. `startBridgeServer()` branches: `cfg.ptyMode ? openPersistentSession() : openTcpBridge()`.

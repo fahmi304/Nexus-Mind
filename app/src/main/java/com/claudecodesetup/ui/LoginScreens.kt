@@ -27,6 +27,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import coil.compose.SubcomposeAsyncImage
 import com.claudecodesetup.data.MalaysiaStatus
 import com.claudecodesetup.data.Provider
 import com.claudecodesetup.data.Providers
@@ -275,7 +278,17 @@ private fun ProviderCard(provider: Provider, onSelect: () -> Unit) {
                 .border(1.dp, accentColor.copy(alpha = 0.35f), RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Text(emoji, fontSize = 20.sp)
+            if (provider.iconUrl.isNotEmpty()) {
+                SubcomposeAsyncImage(
+                    model = provider.iconUrl,
+                    contentDescription = provider.name,
+                    modifier = Modifier.size(26.dp).clip(CircleShape),
+                    error = { Text(emoji, fontSize = 20.sp) },
+                    loading = { Text(emoji, fontSize = 20.sp) }
+                )
+            } else {
+                Text(emoji, fontSize = 20.sp)
+            }
         }
 
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -330,6 +343,7 @@ internal fun providerDisplayInfo(id: String): Triple<String, Color, String> = wh
     "meta_llama" -> Triple("🦙", Color(0xFF0467DF), "Open Source")
     "ollama"     -> Triple("💻", Color(0xFFEF4444), "Unlimited")
     "anthropic"  -> Triple("🧬", Color(0xFF8B5CF6), "Subscription")
+    "groq"       -> Triple("⚡", Color(0xFFF97316), "14,400/day")
     else         -> Triple("🤖", Color(0xFF6440FF), "AI Provider")
 }
 

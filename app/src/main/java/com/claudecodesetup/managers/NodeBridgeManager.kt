@@ -69,64 +69,57 @@ class NodeBridgeManager(private val context: Context) {
         writeDeviceContext()
         if (prefs != null) {
             writeProjectsForBridge(prefs)
-            writeMcpStdioConfig(prefs)
+            writeMcpConfig(prefs)
         }
         startNodeEngine()
     }
 
+    // Writes mcp_config.json combining both HTTP/SSE and stdio servers.
+    // bridge.js passes --mcp-config <path> to claude when this file exists.
     fun writeMcpConfig(prefs: AppPreferences) {
+        val mcpFile = File(context.filesDir, "mcp_config.json")
         try {
-            val serversJson = prefs.getMcpServersJson()
-            val arr = org.json.JSONArray(serversJson)
-            if (arr.length() == 0) return
             val mcpServers = org.json.JSONObject()
-            for (i in 0 until arr.length()) {
-                val server = arr.getJSONObject(i)
+
+            // HTTP / SSE servers
+            val httpArr = org.json.JSONArray(prefs.getMcpServersJson())
+            for (i in 0 until httpArr.length()) {
+                val server = httpArr.getJSONObject(i)
                 val name = server.optString("name")
-                val url = server.optString("url")
+                val url  = server.optString("url")
                 if (name.isNotEmpty() && url.isNotEmpty()) {
                     mcpServers.put(name, org.json.JSONObject().apply {
-                        put("url", url)
                         put("type", "sse")
+                        put("url", url)
                     })
                 }
             }
-            val config = org.json.JSONObject().apply {
-                put("mcpServers", mcpServers)
-            }
-            File(context.filesDir, ".claude.json").writeText(config.toString())
-        } catch (e: Exception) {
-            Log.e(TAG, "Could not write MCP config", e)
-        }
-    }
 
-    fun writeMcpStdioConfig(prefs: AppPreferences) {
-        try {
-            val serversJson = prefs.getMcpStdioServersJson()
-            val arr = org.json.JSONArray(serversJson)
-            if (arr.length() == 0) {
-                File(context.filesDir, "mcp_stdio.json").delete()
-                return
-            }
-            val out = org.json.JSONArray()
-            for (i in 0 until arr.length()) {
-                val server = arr.getJSONObject(i)
-                val name = server.optString("name")
+            // stdio servers
+            val stdioArr = org.json.JSONArray(prefs.getMcpStdioServersJson())
+            for (i in 0 until stdioArr.length()) {
+                val server  = stdioArr.getJSONObject(i)
+                val name    = server.optString("name")
                 val command = server.optString("command")
                 val argsStr = server.optString("args")
                 if (name.isNotEmpty() && command.isNotEmpty()) {
                     val argsArr = org.json.JSONArray()
                     argsStr.trim().split("\\s+".toRegex()).filter { it.isNotEmpty() }.forEach { argsArr.put(it) }
-                    out.put(org.json.JSONObject().apply {
-                        put("name", name)
+                    mcpServers.put(name, org.json.JSONObject().apply {
+                        put("type", "stdio")
                         put("command", command)
                         put("args", argsArr)
                     })
                 }
             }
-            File(context.filesDir, "mcp_stdio.json").writeText(out.toString())
+
+            if (mcpServers.length() == 0) {
+                mcpFile.delete()
+                return
+            }
+            mcpFile.writeText(org.json.JSONObject().apply { put("mcpServers", mcpServers) }.toString())
         } catch (e: Exception) {
-            Log.e(TAG, "Could not write stdio MCP config", e)
+            Log.e(TAG, "Could not write MCP config", e)
         }
     }
 
@@ -146,7 +139,7 @@ class NodeBridgeManager(private val context: Context) {
         )
         writeDeviceContext()
         writeProjectsForBridge(prefs)
-        writeMcpStdioConfig(prefs)
+        writeMcpConfig(prefs)
     }
 
     /** Write projects.json so bridge.js can auto-apply per-project system prompts. */

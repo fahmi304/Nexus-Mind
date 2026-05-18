@@ -131,6 +131,131 @@ object ProvidersRepository {
         }
 
     /**
+     * Unified model fetch — dispatches to the right implementation per provider.
+     * Falls back silently to the static model list on any failure.
+     */
+    suspend fun fetchModels(provider: Provider, apiKey: String): List<AiModel> = when (provider.id) {
+        "openrouter"  -> fetchOpenRouterFreeModels(apiKey)
+        "nvidia_nim"  -> fetchNvidiaFreeModels(apiKey)
+        "gemini"      -> fetchGeminiModels(apiKey)
+        "groq"        -> fetchOpenAiStyleModels("https://api.groq.com/openai/v1/models", apiKey, provider)
+        "deepseek"    -> fetchOpenAiStyleModels("https://api.deepseek.com/models", apiKey, provider)
+        "kimi"        -> fetchOpenAiStyleModels("https://api.moonshot.ai/v1/models", apiKey, provider)
+        "anthropic"   -> fetchAnthropicModels(apiKey)
+        "meta_llama"  -> fetchOpenAiStyleModels("https://api.llama.com/v1/models", apiKey, provider)
+        "ollama"      -> fetchOllamaModels(provider.baseUrl.ifEmpty { "http://localhost:11434" }, apiKey)
+        else          -> provider.models
+    }
+
+    /** Fetch models from Gemini's own /v1beta/models endpoint. */
+    suspend fun fetchGeminiModels(apiKey: String): List<AiModel> =
+        withContext(Dispatchers.IO) {
+            val req = Request.Builder()
+                .url("https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey")
+                .header("Accept", "application/json")
+                .build()
+            val body = http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
+                resp.body?.string() ?: throw Exception("Empty response")
+            }
+            val arr = JSONObject(body).getJSONArray("models")
+            val models = mutableListOf<AiModel>()
+            for (i in 0 until arr.length()) {
+                val m = arr.getJSONObject(i)
+                val methods = m.optJSONArray("supportedGenerationMethods")
+                val supportsChat = methods != null && (0 until methods.length()).any {
+                    methods.getString(it) == "generateContent"
+                }
+                if (!supportsChat) continue
+                val id = m.getString("name").removePrefix("models/")
+                val name = m.optString("displayName", "").ifEmpty { id }
+                models.add(AiModel(name, id, Providers.deriveCaps(id) + Cap.FREE))
+            }
+            models.sortedBy { it.modelId }
+        }
+
+    /** Fetch models from Anthropic's /v1/models endpoint. */
+    suspend fun fetchAnthropicModels(apiKey: String): List<AiModel> =
+        withContext(Dispatchers.IO) {
+            val req = Request.Builder()
+                .url("https://api.anthropic.com/v1/models")
+                .header("x-api-key", apiKey)
+                .header("anthropic-version", "2023-06-01")
+                .header("Accept", "application/json")
+                .build()
+            val body = http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
+                resp.body?.string() ?: throw Exception("Empty response")
+            }
+            val arr = JSONObject(body).getJSONArray("data")
+            (0 until arr.length()).map { i ->
+                val m = arr.getJSONObject(i)
+                val id = m.getString("id")
+                val name = m.optString("display_name", "").ifEmpty { id }
+                AiModel(name, id, Providers.deriveCaps(id))
+            }.sortedByDescending { it.modelId }
+        }
+
+    /** Generic OpenAI-compatible /v1/models fetch (Groq, DeepSeek, Kimi, Meta Llama). */
+    private suspend fun fetchOpenAiStyleModels(url: String, apiKey: String, provider: Provider): List<AiModel> =
+        withContext(Dispatchers.IO) {
+            val req = Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer $apiKey")
+                .header("Accept", "application/json")
+                .build()
+            val body = http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
+                resp.body?.string() ?: throw Exception("Empty response")
+            }
+            val data = JSONObject(body).getJSONArray("data")
+            (0 until data.length()).map { i ->
+                val m = data.getJSONObject(i)
+                val id = m.getString("id")
+                val rawName = m.optString("name", "").ifEmpty {
+                    id.substringAfterLast("/").split("-")
+                        .joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+                }
+                AiModel(rawName, id, Providers.deriveCaps(id))
+            }.sortedBy { it.modelId }
+        }
+
+    /** Fetch models from an Ollama-compatible server (tries /api/tags first, then /v1/models). */
+    suspend fun fetchOllamaModels(baseUrl: String, apiKey: String): List<AiModel> =
+        withContext(Dispatchers.IO) {
+            val normalized = baseUrl.trimEnd('/')
+            // Try Ollama native /api/tags
+            try {
+                val req = Request.Builder().url("$normalized/api/tags")
+                    .apply { if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey") }
+                    .build()
+                val body = http.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
+                    resp.body?.string() ?: throw Exception("Empty response")
+                }
+                val arr = JSONObject(body).getJSONArray("models")
+                return@withContext (0 until arr.length()).map { i ->
+                    val m = arr.getJSONObject(i)
+                    val id = m.getString("name")
+                    AiModel(id, id, setOf(Cap.FREE, Cap.TOOLS))
+                }.sortedBy { it.modelId }
+            } catch (_: Exception) {}
+            // Fallback: OpenAI-compat /v1/models
+            val req = Request.Builder().url("$normalized/v1/models")
+                .apply { if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey") }
+                .build()
+            val body = http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
+                resp.body?.string() ?: throw Exception("Empty response")
+            }
+            val data = JSONObject(body).getJSONArray("data")
+            (0 until data.length()).map { i ->
+                val id = data.getJSONObject(i).getString("id")
+                AiModel(id, id, setOf(Cap.FREE, Cap.TOOLS))
+            }.sortedBy { it.modelId }
+        }
+
+    /**
      * Fetch all models from NVIDIA NIM's OpenAI-compatible /v1/models endpoint.
      * All returned models are free-tier accessible (rate-limited).
      */

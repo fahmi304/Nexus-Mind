@@ -1950,7 +1950,8 @@ function lineDiff(oldText, newText) {
 // Each server entry in filesDir/mcp_stdio.json: { name, command, args[] }
 // Tools discovered via `tools/list` are injected into the agentic tool list.
 
-const MCP_STDIO_CONFIG = path.join(FILES_DIR, 'mcp_stdio.json');
+const MCP_STDIO_CONFIG  = path.join(FILES_DIR, 'mcp_stdio.json');
+const MCP_CONFIG_FILE   = path.join(FILES_DIR, 'mcp_config.json');
 const mcpStdioServers = new Map(); // name → { proc, tools, pendingCbs, msgId, buf }
 
 function mcpSend(srv, method, params) {
@@ -2245,10 +2246,9 @@ function runMessage(message, socket, history) {
         'process.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';' +
         'process.argv[2]="--output-format";' +
         'process.argv[3]="stream-json";' +
-        'process.argv[4]="--print";' +
-        'process.argv[5]="--verbose";' +
-        'process.argv[6]=' + JSON.stringify(fullMessage) + ';' +
-        'process.argv.length=7;' +
+        (fs.existsSync(MCP_CONFIG_FILE)
+            ? 'process.argv[4]="--mcp-config";process.argv[5]=' + JSON.stringify(MCP_CONFIG_FILE) + ';process.argv[6]="--print";process.argv[7]="--verbose";process.argv[8]=' + JSON.stringify(fullMessage) + ';process.argv.length=9;'
+            : 'process.argv[4]="--print";process.argv[5]="--verbose";process.argv[6]=' + JSON.stringify(fullMessage) + ';process.argv.length=7;') +
         'import(' + JSON.stringify(cliUrl) + ')' +
         '.then(function(){' +
         'try{require("fs").appendFileSync(' + exitLogPath + ',"[import-resolved]\\n");}catch(_){}})' +
@@ -4090,7 +4090,9 @@ function buildInteractiveEvalCode() {
         'process.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';' +
         'process.argv[2]="--output-format";' +
         'process.argv[3]="stream-json";' +
-        'process.argv.length=4;' +
+        (fs.existsSync(MCP_CONFIG_FILE)
+            ? 'process.argv[4]="--mcp-config";process.argv[5]=' + JSON.stringify(MCP_CONFIG_FILE) + ';process.argv.length=6;'
+            : 'process.argv.length=4;') +
         'import(' + JSON.stringify(cliUrl) + ')' +
         '.catch(function(e){process.stderr.write("import-err:"+String(e)+"\\n");process.exit(1);});'
     );

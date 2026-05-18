@@ -152,9 +152,7 @@ fun ModelPickerScreen(
     onConfirm: (AiModel) -> Unit,
     onBack: () -> Unit
 ) {
-    val isOpenRouter = provider.id == "openrouter"
-    val isNvidia = provider.id == "nvidia_nim"
-    val isLive = isOpenRouter || isNvidia
+    val isLive = provider.supportsLiveFetch
     var liveModels by remember { mutableStateOf<List<AiModel>?>(null) }
     var isRefreshing by remember { mutableStateOf(isLive) }
     var fetchError by remember { mutableStateOf(false) }
@@ -165,14 +163,11 @@ fun ModelPickerScreen(
             isRefreshing = true
             fetchError = false
             try {
-                val fetched = if (isOpenRouter)
-                    ProvidersRepository.fetchOpenRouterFreeModels(apiKey)
-                else
-                    ProvidersRepository.fetchNvidiaFreeModels(apiKey)
+                val fetched = ProvidersRepository.fetchModels(provider, apiKey)
                 liveModels = fetched
             } catch (_: Exception) {
                 fetchError = true
-                if (liveModels == null) liveModels = emptyList()
+                if (liveModels == null) liveModels = provider.models.ifEmpty { emptyList() }
             }
             isRefreshing = false
         }
@@ -180,7 +175,7 @@ fun ModelPickerScreen(
 
     if (isLive) LaunchedEffect(Unit) { fetchLive() }
 
-    // Live providers: live-only (no hardcoded fallback). Other providers: static list.
+    // Live providers: show live results (fallback to static on error). Others: static list.
     val modelList = if (isLive) (liveModels ?: emptyList()) else provider.models
     val displays = remember(modelList) { modelList.map { toDisplay(it) } }
 

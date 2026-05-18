@@ -125,6 +125,14 @@ class AppPreferences(context: Context) {
     fun getPtyRows(): Int = prefs.getInt("pty_rows", 50)
     fun setPtyRows(rows: Int) = prefs.edit().putInt("pty_rows", rows).apply()
 
+    // ─── Per-provider custom server URL (URL-configurable providers like Ollama) ─
+
+    /** Saved URL entered by the user for a URL-configurable provider. */
+    fun getCustomBaseUrlForProvider(providerId: String): String =
+        prefs.getString("custom_url_$providerId", "") ?: ""
+    fun setCustomBaseUrlForProvider(providerId: String, url: String) =
+        prefs.edit().putString("custom_url_$providerId", url).apply()
+
     // ─── Misc ────────────────────────────────────────────────────────────────
 
     fun getInstalledClaudeVersion(): String = prefs.getString(KEY_CLAUDE_VERSION, "") ?: ""

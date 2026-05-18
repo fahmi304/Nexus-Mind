@@ -247,13 +247,15 @@ private fun TabbedModelTestScreen(
         val models = (orLoad as? ModelLoadState.Loaded)?.models ?: return
         if (orTesting) return
         orTesting = true
-        orResults = models.map { ModelTestResult(it, TestStatus.PENDING) }
+        orResults = models.map { ModelTestResult(it, TestStatus.TESTING) }
         scope.launch {
-            models.forEachIndexed { i, model ->
-                orResults = orResults.toMutableList().also { it[i] = it[i].copy(status = TestStatus.TESTING) }
-                val (status, latency) = testModel("openrouter", Providers.OPENROUTER.baseUrl, orApiKey, model)
-                orResults = orResults.toMutableList().also { it[i] = it[i].copy(status = status, latencyMs = latency) }
-                delay(300L)
+            coroutineScope {
+                models.mapIndexed { i, model ->
+                    async {
+                        val (status, latency) = testModel("openrouter", Providers.OPENROUTER.baseUrl, orApiKey, model)
+                        orResults = orResults.toMutableList().also { it[i] = it[i].copy(status = status, latencyMs = latency) }
+                    }
+                }.awaitAll()
             }
             orTesting = false
         }
@@ -263,13 +265,15 @@ private fun TabbedModelTestScreen(
         val models = (nvLoad as? ModelLoadState.Loaded)?.models ?: return
         if (nvTesting) return
         nvTesting = true
-        nvResults = models.map { ModelTestResult(it, TestStatus.PENDING) }
+        nvResults = models.map { ModelTestResult(it, TestStatus.TESTING) }
         scope.launch {
-            models.forEachIndexed { i, model ->
-                nvResults = nvResults.toMutableList().also { it[i] = it[i].copy(status = TestStatus.TESTING) }
-                val (status, latency) = testModel("nvidia_nim", Providers.NVIDIA_NIM.baseUrl, nvApiKey, model)
-                nvResults = nvResults.toMutableList().also { it[i] = it[i].copy(status = status, latencyMs = latency) }
-                delay(300L)
+            coroutineScope {
+                models.mapIndexed { i, model ->
+                    async {
+                        val (status, latency) = testModel("nvidia_nim", Providers.NVIDIA_NIM.baseUrl, nvApiKey, model)
+                        nvResults = nvResults.toMutableList().also { it[i] = it[i].copy(status = status, latencyMs = latency) }
+                    }
+                }.awaitAll()
             }
             nvTesting = false
         }
@@ -443,13 +447,15 @@ private fun SingleProviderTestScreen(
         val models = (loadState as? ModelLoadState.Loaded)?.models ?: return
         if (isTesting) return
         isTesting = true
-        results = models.map { ModelTestResult(it, TestStatus.PENDING) }
+        results = models.map { ModelTestResult(it, TestStatus.TESTING) }
         scope.launch {
-            models.forEachIndexed { i, model ->
-                results = results.toMutableList().also { it[i] = it[i].copy(status = TestStatus.TESTING) }
-                val (status, latency) = testModel(providerId, providerUrl, apiKey, model)
-                results = results.toMutableList().also { it[i] = it[i].copy(status = status, latencyMs = latency) }
-                delay(300L)
+            coroutineScope {
+                models.mapIndexed { i, model ->
+                    async {
+                        val (status, latency) = testModel(providerId, providerUrl, apiKey, model)
+                        results = results.toMutableList().also { it[i] = it[i].copy(status = status, latencyMs = latency) }
+                    }
+                }.awaitAll()
             }
             isTesting = false
         }

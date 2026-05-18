@@ -7,8 +7,8 @@
     <color name="terminal_bg">#0a0618</color>
 
     <!-- Text -->
-    <color name="text_primary">#c8b8ff</color>
-    <color name="text_secondary">#7c6fa0</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#9CA3AF</color>
 
     <!-- Aurora purple primary accent -->
     <color name="accent_orange">#6440ff</color>

@@ -114,6 +114,14 @@
             android:screenOrientation="portrait"
             android:theme="@style/Theme.NexusMind" />
 
+        <!-- Claude.ai OAuth WebView login -->
+        <activity
+            android:name=".ui.ClaudeLoginActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.NexusMind" />
+
         <!-- Foreground service: keeps bridge sessions alive -->
         <service
             android:name=".services.ClaudeService"

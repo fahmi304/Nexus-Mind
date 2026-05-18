@@ -529,6 +529,32 @@ html, body {
 }
 .code-copy-btn:active { background: rgba(100,64,255,0.3); color:#c8b8ff; }
 
+/* ── AI bubble action footer ─────────────────────────────────────────────── */
+.bubble-act-footer {
+  display: none;
+  flex-direction: row;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255,255,255,0.07);
+}
+.bubble-act-btn {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  color: rgba(255,255,255,0.38);
+  font-size: 10px;
+  font-family: 'Space Mono', 'Courier New', monospace;
+  padding: 3px 9px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.bubble-act-btn:active { background: rgba(100,64,255,0.22); border-color: rgba(100,64,255,0.4); color: #c8b8ff; }
+
 /* ── Thinking timer ──────────────────────────────────────────────────────── */
 #thinking-timer {
   font-size: 9px;
@@ -1238,26 +1264,31 @@ function startAiBubble(){
   const bub=document.createElement('div');
   bub.className='bubble ai-bubble';
   bub.innerHTML='<span class="ai-loading"><span></span><span></span><span></span></span>';
-  // Action buttons — hidden until response finalized
-  const regenBtn=document.createElement('button');
-  regenBtn.textContent='↺';
-  regenBtn.title='Regenerate response';
-  regenBtn.style.cssText='position:absolute;top:6px;right:6px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:rgba(255,255,255,0.35);font-size:12px;padding:2px 6px;cursor:pointer;display:none;';
-  regenBtn.addEventListener('click',function(){
-    if(typeof Android!=='undefined') Android.regenerateLastResponse();
-  });
+  // Action footer — inside bubble, shown after response is finalized
+  const actFooter=document.createElement('div');
+  actFooter.className='bubble-act-footer';
   const copyBtn=document.createElement('button');
-  copyBtn.textContent='⎘';
+  copyBtn.className='bubble-act-btn';
+  copyBtn.textContent='⎘ Copy';
   copyBtn.title='Copy response';
-  copyBtn.style.cssText='position:absolute;top:6px;right:38px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:rgba(255,255,255,0.35);font-size:12px;padding:2px 6px;cursor:pointer;display:none;';
   copyBtn.addEventListener('click',function(){
     var text=bub._rawText||bub.textContent||'';
     if(typeof Android!=='undefined') Android.copyText(text);
+    copyBtn.textContent='✓ Copied';
+    setTimeout(function(){copyBtn.textContent='⎘ Copy';},1600);
   });
+  const regenBtn=document.createElement('button');
+  regenBtn.className='bubble-act-btn';
+  regenBtn.textContent='↺ Retry';
+  regenBtn.title='Regenerate response';
+  regenBtn.addEventListener('click',function(){
+    if(typeof Android!=='undefined') Android.regenerateLastResponse();
+  });
+  actFooter.appendChild(copyBtn);
+  actFooter.appendChild(regenBtn);
+  bub.appendChild(actFooter);
   row.appendChild(av);
   row.appendChild(bub);
-  row.appendChild(regenBtn);
-  row.appendChild(copyBtn);
   msgs.appendChild(row);
   currentAiBubble=bub;
   currentAiAnsi=makeAnsiState();
@@ -1299,11 +1330,9 @@ function finalizeAiBubble(){
     }
     // Store raw text so copy button can access it after rawAiText is cleared
     currentAiBubble._rawText=rawAiText;
-    // Show regenerate + copy buttons
-    const regenBtn=currentAiBubble.parentElement&&currentAiBubble.parentElement.querySelector('button[title="Regenerate response"]');
-    if(regenBtn) regenBtn.style.display='';
-    const copyBtn=currentAiBubble.parentElement&&currentAiBubble.parentElement.querySelector('button[title="Copy response"]');
-    if(copyBtn) copyBtn.style.display='';
+    // Reveal action footer at bottom of bubble
+    const actFooter=currentAiBubble.querySelector('.bubble-act-footer');
+    if(actFooter) actFooter.style.display='flex';
     // TTS: speak the response
     if(typeof Android!=='undefined'&&rawAiText.trim()){
       const ttsText=rawAiText.replace(/\x1b\[[0-9;]*m/g,'').replace(/```[\s\S]*?```/g,'[code block]').replace(/[*_#`]/g,'').trim().slice(0,500);

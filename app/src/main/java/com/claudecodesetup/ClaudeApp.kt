@@ -69,5 +69,10 @@ class ClaudeApp : Application() {
         const val CHANNEL_SETUP    = "claude_setup"
         const val CHANNEL_RESPONSE = "claude_response"
         const val CHANNEL_OVERLAY  = "claude_overlay"
+
+        // True once the intro animation has played this process lifetime.
+        // Resets to false when the OS kills the process (cold start → plays again).
+        // Stays true while the app is backgrounded (warm return → skips).
+        var introPlayed = false
     }
 }

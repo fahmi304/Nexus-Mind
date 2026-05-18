@@ -117,7 +117,7 @@
                 android:progressTint="@color/accent_orange"
                 android:progressBackgroundTint="@color/surface" />
 
-            <!-- Install log -->
+            <!-- Install log — hidden, kept for debug reads in SetupActivity -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -126,14 +126,16 @@
                 android:text="INSTALL LOG"
                 android:textColor="@color/text_secondary"
                 android:textSize="11sp"
-                android:letterSpacing="0.1" />
+                android:letterSpacing="0.1"
+                android:visibility="gone" />
 
             <ScrollView
                 android:id="@+id/scrollTaskLog"
                 android:layout_width="match_parent"
                 android:layout_height="200dp"
                 android:background="@drawable/bg_provider_card"
-                android:scrollbars="vertical">
+                android:scrollbars="vertical"
+                android:visibility="gone">
 
                 <TextView
                     android:id="@+id/tvTaskLog"

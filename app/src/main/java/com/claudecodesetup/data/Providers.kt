@@ -27,7 +27,13 @@ data class Provider(
     val baseUrl: String,
     val requiresProxy: Boolean,
     val requiresApiKey: Boolean = true,
-    val models: List<AiModel>
+    val models: List<AiModel>,
+    /** Clearbit / brand logo URL shown in provider and model cards. */
+    val iconUrl: String = "",
+    /** Show a server URL input field in the API-key screen (Ollama / private servers). */
+    val isUrlConfigurable: Boolean = false,
+    /** Supports live model list fetch (shows ↻ Refresh in model picker). */
+    val supportsLiveFetch: Boolean = false
 )
 
 enum class MalaysiaStatus { GREEN, YELLOW, RED }
@@ -37,6 +43,8 @@ object Providers {
     val NVIDIA_NIM = Provider(
         id = "nvidia_nim",
         name = "NVIDIA NIM",
+        iconUrl = "https://logo.clearbit.com/nvidia.com",
+        supportsLiveFetch = true,
         signupUrl = "https://build.nvidia.com/models",
         rateLimit = "40 req/min · Free forever",
         malaysiaStatus = MalaysiaStatus.RED,
@@ -58,6 +66,8 @@ object Providers {
     val OPENROUTER = Provider(
         id = "openrouter",
         name = "OpenRouter",
+        iconUrl = "https://logo.clearbit.com/openrouter.ai",
+        supportsLiveFetch = true,
         signupUrl = "https://openrouter.ai",
         rateLimit = "20 req/min · 50 req/day free",
         malaysiaStatus = MalaysiaStatus.GREEN,
@@ -93,6 +103,8 @@ object Providers {
     val GEMINI = Provider(
         id = "gemini",
         name = "Google Gemini",
+        iconUrl = "https://logo.clearbit.com/google.com",
+        supportsLiveFetch = true,
         signupUrl = "https://aistudio.google.com",
         rateLimit = "15 req/min · 1500 req/day free",
         malaysiaStatus = MalaysiaStatus.GREEN,
@@ -110,6 +122,8 @@ object Providers {
     val META_LLAMA = Provider(
         id = "meta_llama",
         name = "Meta Llama API",
+        iconUrl = "https://logo.clearbit.com/meta.com",
+        supportsLiveFetch = true,
         signupUrl = "https://llama.developer.meta.com",
         rateLimit = "Limited free preview",
         malaysiaStatus = MalaysiaStatus.YELLOW,
@@ -126,6 +140,8 @@ object Providers {
     val DEEPSEEK = Provider(
         id = "deepseek",
         name = "DeepSeek",
+        iconUrl = "https://logo.clearbit.com/deepseek.com",
+        supportsLiveFetch = true,
         signupUrl = "https://platform.deepseek.com/api_keys",
         rateLimit = "Very cheap · Free tier available",
         malaysiaStatus = MalaysiaStatus.GREEN,
@@ -141,6 +157,8 @@ object Providers {
     val KIMI = Provider(
         id = "kimi",
         name = "Kimi (Moonshot AI)",
+        iconUrl = "https://logo.clearbit.com/moonshot.ai",
+        supportsLiveFetch = true,
         signupUrl = "https://platform.moonshot.ai",
         rateLimit = "Paid credits required",
         malaysiaStatus = MalaysiaStatus.YELLOW,
@@ -157,12 +175,15 @@ object Providers {
 
     val OLLAMA = Provider(
         id = "ollama",
-        name = "Ollama (Local PC only)",
+        name = "Ollama / Private Server",
+        iconUrl = "https://logo.clearbit.com/ollama.com",
+        isUrlConfigurable = true,
+        supportsLiveFetch = true,
         signupUrl = "https://ollama.com/library",
         rateLimit = "Unlimited · 100% free",
         malaysiaStatus = MalaysiaStatus.GREEN,
         malaysiaNote = "No internet needed",
-        warningNote = "Requires PC with 8GB+ RAM running Ollama — not your phone",
+        warningNote = "Enter any OpenAI-compatible server URL — local PC, Oracle Cloud, or any private server",
         baseUrl = "http://localhost:11434",
         requiresProxy = true,
         requiresApiKey = false,
@@ -177,6 +198,8 @@ object Providers {
     val GROQ = Provider(
         id = "groq",
         name = "Groq",
+        iconUrl = "https://logo.clearbit.com/groq.com",
+        supportsLiveFetch = true,
         signupUrl = "https://console.groq.com/keys",
         rateLimit = "Free · 14,400 req/day · Ultra-fast",
         malaysiaStatus = MalaysiaStatus.GREEN,
@@ -198,6 +221,8 @@ object Providers {
     val ANTHROPIC = Provider(
         id = "anthropic",
         name = "Anthropic (Claude.ai)",
+        iconUrl = "https://logo.clearbit.com/anthropic.com",
+        supportsLiveFetch = true,
         signupUrl = "https://console.anthropic.com/settings/api-keys",
         rateLimit = "Subscription billing",
         malaysiaStatus = MalaysiaStatus.GREEN,

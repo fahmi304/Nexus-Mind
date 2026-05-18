@@ -33,6 +33,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import com.claudecodesetup.data.AppPreferences
 import com.claudecodesetup.data.Provider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -108,8 +110,17 @@ private fun buildRequest(provider: Provider, key: String): Request? {
 
 @Composable
 fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val prefs = remember { AppPreferences(context) }
     val scope = rememberCoroutineScope()
     var apiKey by remember { mutableStateOf("") }
+    var serverUrl by remember {
+        mutableStateOf(
+            if (provider.isUrlConfigurable)
+                prefs.getCustomBaseUrlForProvider(provider.id).ifEmpty { provider.baseUrl }
+            else ""
+        )
+    }
     var status by remember { mutableStateOf(KeyStatus.IDLE) }
     var errorMessage by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -181,6 +192,15 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
             status = KeyStatus.ERROR
             errorMessage = "Please enter your API key"
             return
+        }
+        if (provider.isUrlConfigurable && serverUrl.isBlank()) {
+            status = KeyStatus.ERROR
+            errorMessage = "Please enter the server URL"
+            return
+        }
+        if (provider.isUrlConfigurable) {
+            prefs.setCustomBaseUrlForProvider(provider.id, serverUrl.trim())
+            prefs.setBaseUrl(serverUrl.trim())
         }
         status = KeyStatus.LOADING
         scope.launch {
@@ -271,6 +291,64 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
                                 fontFamily = DmSansFamily, fontSize = 12.sp,
                                 color = Color(0xFF4B5563), textAlign = TextAlign.Center
                             )
+                        }
+
+                        if (provider.isUrlConfigurable) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    "Server URL", fontFamily = DmSansFamily,
+                                    fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF9CA3AF)
+                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0x0AFFFFFF), RoundedCornerShape(12.dp))
+                                        .border(1.dp,
+                                            if (status == KeyStatus.ERROR) Color(0xFFEF4444) else Color(0x1FFFFFFF),
+                                            RoundedCornerShape(12.dp))
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    BasicTextField(
+                                        value = serverUrl,
+                                        onValueChange = {
+                                            serverUrl = it
+                                            if (status == KeyStatus.ERROR) status = KeyStatus.IDLE
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        textStyle = TextStyle(
+                                            fontFamily = SpaceMonoFamily, fontSize = 12.sp,
+                                            color = Color.White
+                                        ),
+                                        singleLine = true,
+                                        decorationBox = { inner ->
+                                            Box(contentAlignment = Alignment.CenterStart) {
+                                                if (serverUrl.isEmpty()) {
+                                                    Text(
+                                                        "http://your-server:11434",
+                                                        fontFamily = SpaceMonoFamily, fontSize = 12.sp,
+                                                        color = Color(0x55FFFFFF)
+                                                    )
+                                                }
+                                                inner()
+                                            }
+                                        }
+                                    )
+                                }
+                                if (!provider.requiresApiKey) {
+                                    AnimatedVisibility(
+                                        visible = status == KeyStatus.ERROR,
+                                        enter = fadeIn(tween(200)),
+                                        exit = fadeOut(tween(200))
+                                    ) {
+                                        Text(
+                                            errorMessage, fontFamily = DmSansFamily,
+                                            fontSize = 11.sp, color = Color(0xFFEF4444)
+                                        )
+                                    }
+                                }
+                            }
                         }
 
                         if (provider.requiresApiKey) {
