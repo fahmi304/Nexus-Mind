@@ -1,9 +1,7 @@
 name: Auto-fix CI failures
 
 on:
-  workflow_run:
-    workflows: ["Build APK"]
-    types: [completed]
+  workflow_dispatch: # manual trigger only
 
 # Needed for checkout, reading logs, and opening a PR
 permissions:

@@ -5,6 +5,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.claudecodesetup.data.AppPreferences
+import com.claudecodesetup.ui.ComposeActivity
+import com.claudecodesetup.ui.HomeActivity
 import com.claudecodesetup.ui.SplashAnimationScreen
 
 class SplashActivity : ComponentActivity() {
@@ -25,9 +27,10 @@ class SplashActivity : ComponentActivity() {
         setContent {
             SplashAnimationScreen(shouldPlay = shouldPlay) {
                 val next: Class<*> = when {
-                    !prefs.isNodeSetupComplete() -> SetupActivity::class.java
-                    sharedText != null           -> TerminalActivity::class.java
-                    else                         -> HomeActivity::class.java
+                    !prefs.isNodeSetupComplete()   -> SetupActivity::class.java
+                    !prefs.isProviderConfigured()  -> ComposeActivity::class.java
+                    sharedText != null             -> TerminalActivity::class.java
+                    else                           -> HomeActivity::class.java
                 }
                 val nextIntent = Intent(this, next)
                 if (sharedText != null) nextIntent.putExtra("shared_text", sharedText)
