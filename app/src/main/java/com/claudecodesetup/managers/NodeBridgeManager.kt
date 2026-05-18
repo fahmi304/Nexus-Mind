@@ -97,7 +97,7 @@ class NodeBridgeManager(private val context: Context) {
                 val url  = server.optString("url")
                 if (name.isNotEmpty() && url.isNotEmpty()) {
                     mcpServers.put(name, org.json.JSONObject().apply {
-                        put("type", "sse")
+                        put("type", server.optString("transport", "http"))
                         put("url", url)
                     })
                 }

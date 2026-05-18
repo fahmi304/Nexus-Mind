@@ -75,7 +75,7 @@ fun McpScreen(
             }
 
             Text(
-                "MCP servers extend Claude with custom tools. HTTP/SSE for remote servers, stdio for local Node.js scripts.",
+                "MCP servers extend Claude with custom tools. HTTP for remote servers (e.g. Exa, Smithery), stdio for local scripts.",
                 fontFamily = DmSansFamily, fontSize = 12.sp,
                 color = Color(0xFF6B7280),
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
@@ -107,7 +107,7 @@ fun McpScreen(
                     if (servers.isNotEmpty()) {
                         item {
                             Text(
-                                "HTTP / SSE", fontFamily = SpaceMonoFamily, fontSize = 9.sp,
+                                "HTTP (REMOTE)", fontFamily = SpaceMonoFamily, fontSize = 9.sp,
                                 letterSpacing = 2.sp, color = Color(0xFF60A5FA),
                                 modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
                             )
@@ -172,7 +172,7 @@ fun McpScreen(
                                     .padding(vertical = 8.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("HTTP / SSE", fontFamily = DmSansFamily, fontSize = 12.sp,
+                                Text("HTTP (Remote)", fontFamily = DmSansFamily, fontSize = 12.sp,
                                     color = Color.White, fontWeight = FontWeight.SemiBold)
                             }
                             Box(
@@ -198,7 +198,7 @@ fun McpScreen(
                         if (!isStdio) {
                             OutlinedTextField(
                                 value = newUrl, onValueChange = { newUrl = it },
-                                label = { Text("URL (e.g. https://my-server.com/sse)") },
+                                label = { Text("URL (e.g. https://mcp.exa.ai/mcp?exaApiKey=…)") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
