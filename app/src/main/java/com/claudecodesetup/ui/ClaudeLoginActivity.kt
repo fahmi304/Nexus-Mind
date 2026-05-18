@@ -4,6 +4,8 @@ import android.app.Activity
 import android.net.Uri
 import android.os.Bundle
 import android.util.Base64
+import android.webkit.CookieManager
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -73,36 +75,60 @@ class ClaudeLoginActivity : ComponentActivity() {
                         AndroidView(
                             factory = { ctx ->
                                 WebView(ctx).apply {
-                                    settings.javaScriptEnabled = true
-                                    settings.domStorageEnabled = true
+                                    settings.javaScriptEnabled  = true
+                                    settings.domStorageEnabled  = true
+                                    settings.databaseEnabled    = true
+                                    // Remove the "wv" WebView marker so Google OAuth doesn't block us
+                                    settings.userAgentString =
+                                        "Mozilla/5.0 (Linux; Android 14; Pixel 8) " +
+                                        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                                        "Chrome/125.0.6422.165 Mobile Safari/537.36"
+                                    // Allow cross-domain cookies (required for Google sign-in)
+                                    CookieManager.getInstance().apply {
+                                        setAcceptCookie(true)
+                                        setAcceptThirdPartyCookies(this@apply, true)
+                                    }
+                                    // Handle any popup windows Google might open
+                                    webChromeClient = WebChromeClient()
+
+                                    fun handleCallbackUrl(uri: Uri): Boolean {
+                                        val url = uri.toString()
+                                        if (url.startsWith(REDIRECT_URI) ||
+                                            url.contains("oauth/code/success") ||
+                                            url.contains("oauth/code/callback")
+                                        ) {
+                                            val code = uri.getQueryParameter("code")
+                                            if (code != null && phase == "webview") {
+                                                phase = "exchanging"
+                                                scope.launch {
+                                                    try {
+                                                        val tokens = exchangeCode(code, verifier)
+                                                        writeCredentials(tokens)
+                                                        setResult(Activity.RESULT_OK)
+                                                        finish()
+                                                    } catch (e: Exception) {
+                                                        errorMsg = e.message ?: "Token exchange failed"
+                                                        phase = "error"
+                                                    }
+                                                }
+                                                return true
+                                            }
+                                        }
+                                        return false
+                                    }
+
                                     webViewClient = object : WebViewClient() {
                                         override fun shouldOverrideUrlLoading(
                                             view: WebView,
                                             request: WebResourceRequest
-                                        ): Boolean {
-                                            val url = request.url.toString()
-                                            if (url.startsWith(REDIRECT_URI) ||
-                                                url.contains("oauth/code/success") ||
-                                                url.contains("oauth/code/callback")
-                                            ) {
-                                                val code = request.url.getQueryParameter("code")
-                                                if (code != null) {
-                                                    phase = "exchanging"
-                                                    scope.launch {
-                                                        try {
-                                                            val tokens = exchangeCode(code, verifier)
-                                                            writeCredentials(tokens)
-                                                            setResult(Activity.RESULT_OK)
-                                                            finish()
-                                                        } catch (e: Exception) {
-                                                            errorMsg = e.message ?: "Token exchange failed"
-                                                            phase = "error"
-                                                        }
-                                                    }
-                                                    return true
-                                                }
-                                            }
-                                            return false
+                                        ): Boolean = handleCallbackUrl(request.url)
+
+                                        // onPageStarted catches redirects that shouldOverrideUrlLoading misses
+                                        override fun onPageStarted(
+                                            view: WebView, url: String, favicon: android.graphics.Bitmap?
+                                        ) {
+                                            super.onPageStarted(view, url, favicon)
+                                            handleCallbackUrl(Uri.parse(url))
                                         }
                                     }
                                     loadUrl(authUrl)
