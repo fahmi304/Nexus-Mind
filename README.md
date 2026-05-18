@@ -1,8 +1,8 @@
-# ClaudeCode Setup
+# Nexus Mind
 
 > Run Claude Code on Android — no terminal, no manual installs, no tech knowledge required.
 
-[![Build APK](https://github.com/rektzy9903/ClaudeCodeSetup/actions/workflows/build.yml/badge.svg)](https://github.com/rektzy9903/ClaudeCodeSetup/actions/workflows/build.yml)
+[![Build APK](https://github.com/fahmi304/Nexus-Mind/actions/workflows/build.yml/badge.svg)](https://github.com/fahmi304/Nexus-Mind/actions/workflows/build.yml)
 
 **[Bahasa Malaysia](#bahasa-malaysia-)**
 
@@ -10,7 +10,7 @@
 
 ## What is this?
 
-ClaudeCode Setup is an Android app that lets you use [Claude Code](https://claude.ai/code) — Anthropic's AI coding assistant — directly on your phone. Everything is automatic. You never touch a terminal.
+Nexus Mind is an Android app that lets you use [Claude Code](https://claude.ai/code) — Anthropic's AI coding assistant — directly on your phone. Everything is automatic. You never touch a terminal.
 
 ### User experience in 3 steps:
 1. Install the APK
@@ -36,7 +36,7 @@ ClaudeCode Setup is an Android app that lets you use [Claude Code](https://claud
 
 ### Step 1 — Download the APK
 
-Download `ClaudeCodeSetup.apk` from the [Releases page](../../releases).
+Download `NexusMind.apk` from the [Releases page](../../releases).
 
 ### Step 2 — Allow unknown sources
 
@@ -57,13 +57,13 @@ Android blocks apps from outside the Play Store by default. You need to allow it
 ### Step 3 — Install the APK
 
 1. Open your file manager
-2. Find the downloaded `ClaudeCodeSetup.apk`
+2. Find the downloaded `NexusMind.apk`
 3. Tap it
 4. Tap **Install**
 
 ### Step 4 — Open the app
 
-Tap **Open** after install, or find **ClaudeCode Setup** in your app drawer.
+Tap **Open** after install, or find **Nexus Mind** in your app drawer.
 
 ### Step 5 — Follow the setup wizard
 
@@ -127,7 +127,7 @@ Every push to `main` automatically builds a debug APK for free using GitHub Acti
 1. Fork or push this repo to GitHub
 2. Go to the **Actions** tab in your GitHub repo
 3. Click the latest **"Build APK"** workflow run
-4. Scroll down to **Artifacts** and download `ClaudeCodeSetup-debug-N`
+4. Scroll down to **Artifacts** and download `NexusMind-debug-N`
 5. Unzip the download — you'll find `app-debug.apk` inside
 6. Transfer it to your Android phone and install
 
@@ -170,8 +170,8 @@ GitHub Actions will build the signed APK and create a Release page with a downlo
 ### Option C — Local build (requires Android Studio)
 
 ```bash
-git clone https://github.com/rektzy9903/ClaudeCodeSetup
-cd ClaudeCodeSetup
+git clone https://github.com/fahmi304/Nexus-Mind
+cd Nexus-Mind
 echo "sdk.dir=$HOME/Android/Sdk" > local.properties
 ./gradlew assembleDebug
 # APK: app/build/outputs/apk/debug/app-debug.apk
@@ -231,9 +231,9 @@ MIT
 
 # Bahasa Malaysia 🇲🇾
 
-## Apa itu ClaudeCode Setup?
+## Apa itu Nexus Mind?
 
-ClaudeCode Setup ialah aplikasi Android yang membolehkan anda menggunakan Claude Code — pembantu pengkodan AI daripada Anthropic — terus di telefon anda. Semua dilakukan secara automatik. Anda tidak perlu buka terminal langsung.
+Nexus Mind ialah aplikasi Android yang membolehkan anda menggunakan Claude Code — pembantu pengkodan AI daripada Anthropic — terus di telefon anda. Semua dilakukan secara automatik. Anda tidak perlu buka terminal langsung.
 
 ### Pengalaman pengguna dalam 3 langkah:
 1. Pasang APK
@@ -257,7 +257,7 @@ ClaudeCode Setup ialah aplikasi Android yang membolehkan anda menggunakan Claude
 
 ### Langkah 1 — Muat turun APK
 
-Muat turun `ClaudeCodeSetup.apk` dari [halaman Releases](../../releases).
+Muat turun `NexusMind.apk` dari [halaman Releases](../../releases).
 
 ### Langkah 2 — Benarkan pemasangan dari sumber luar
 
@@ -278,13 +278,13 @@ Android menghalang aplikasi dari luar Play Store secara lalai. Anda perlu benark
 ### Langkah 3 — Pasang APK
 
 1. Buka pengurus fail anda
-2. Cari `ClaudeCodeSetup.apk` yang dimuat turun
+2. Cari `NexusMind.apk` yang dimuat turun
 3. Ketik fail tersebut
 4. Ketik **Pasang**
 
 ### Langkah 4 — Buka aplikasi
 
-Ketik **Buka** selepas pemasangan, atau cari **ClaudeCode Setup** dalam senarai aplikasi.
+Ketik **Buka** selepas pemasangan, atau cari **Nexus Mind** dalam senarai aplikasi.
 
 ### Langkah 5 — Ikut panduan persediaan
 

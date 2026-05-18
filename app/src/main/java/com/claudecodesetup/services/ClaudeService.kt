@@ -108,7 +108,7 @@ class ClaudeService : LifecycleService() {
         bridge = NodeBridgeManager(this)
         val pm = getSystemService(PowerManager::class.java)
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ClaudeCode:WakeLock")
-        startForeground(NOTIF_ID, buildNotification("Claude Code is ready"))
+        startForeground(NOTIF_ID, buildNotification("Nexus Mind is ready"))
         deviceControlServer.start()
     }
 
@@ -364,7 +364,7 @@ class ClaudeService : LifecycleService() {
         )
         return Notification.Builder(this, ClaudeApp.CHANNEL_RUNNING)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("Claude Code")
+            .setContentTitle("Nexus Mind")
             .setContentText(text)
             .setContentIntent(openIntent)
             .setOngoing(true)
@@ -398,7 +398,7 @@ class ClaudeService : LifecycleService() {
         )
         val notif = Notification.Builder(this, ClaudeApp.CHANNEL_RESPONSE)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("Claude Code")
+            .setContentTitle("Nexus Mind")
             .setContentText(bodyText)
             .setContentIntent(openIntent)
             .setAutoCancel(true)
@@ -409,9 +409,9 @@ class ClaudeService : LifecycleService() {
     private fun updateNotificationSessionCount() {
         val alive = sessions.values.count { it.alive }
         val text  = when {
-            alive == 0 -> "Claude Code stopped"
-            alive == 1 -> "Claude Code is running"
-            else       -> "Claude Code — $alive sessions running"
+            alive == 0 -> "Nexus Mind stopped"
+            alive == 1 -> "Nexus Mind is running"
+            else       -> "Nexus Mind — $alive sessions running"
         }
         updateNotification(text)
     }

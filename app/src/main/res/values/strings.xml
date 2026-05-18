@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Claude Code Proxy</string>
+    <string name="app_name">Nexus Mind</string>
     <string name="accessibility_service_description">Allows Claude to take silent screenshots and control your device when Device Control is enabled.</string>
 
     <!-- Setup -->
-    <string name="setup_title">Setting up Claude Code for you…</string>
+    <string name="setup_title">Setting up Nexus Mind for you…</string>
     <string name="setup_subtitle">This only happens once ☕\nUsually takes 2–3 minutes</string>
-    <string name="setup_success">✅ All done! Claude Code is ready! 🎉</string>
+    <string name="setup_success">✅ All done! Nexus Mind is ready! 🎉</string>
     <string name="setup_continue">Get started →</string>
     <string name="setup_retry">Try again</string>
     <string name="setup_show_details">Show details</string>
@@ -39,10 +39,10 @@
 
     <!-- Terminal -->
     <string name="terminal_starting">Starting terminal…</string>
-    <string name="terminal_restarting">Restarting Claude Code…</string>
-    <string name="terminal_session_ended">Claude Code session ended</string>
-    <string name="btn_restart_claude">Restart Claude Code</string>
-    <string name="notification_running">Claude Code is running</string>
+    <string name="terminal_restarting">Restarting Nexus Mind…</string>
+    <string name="terminal_session_ended">Nexus Mind session ended</string>
+    <string name="btn_restart_claude">Restart Nexus Mind</string>
+    <string name="notification_running">Nexus Mind is running</string>
     <string name="notification_stop">Stop</string>
 
     <!-- Settings -->
@@ -52,7 +52,7 @@
     <string name="settings_clear_data">Clear saved API key &amp; settings</string>
     <string name="settings_reset">Reset and reinstall everything</string>
     <string name="settings_report">Report a problem (GitHub Issues)</string>
-    <string name="settings_version_claude">Claude Code v2.1.128</string>
+    <string name="settings_version_claude">Nexus Mind v2.1.128</string>
 
     <!-- WiFi warning -->
     <string name="wifi_title">Large download ahead</string>

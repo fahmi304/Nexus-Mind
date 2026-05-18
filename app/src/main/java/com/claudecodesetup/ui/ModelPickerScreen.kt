@@ -518,7 +518,7 @@ fun ModelPickerScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        "Start Claude Code →", fontFamily = DmSansFamily, fontSize = 15.sp,
+                        "Start Nexus Mind →", fontFamily = DmSansFamily, fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold, color = Color.White
                     )
                 }

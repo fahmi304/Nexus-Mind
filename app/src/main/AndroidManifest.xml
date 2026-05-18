@@ -24,7 +24,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.ClaudeCodeSetup"
+        android:theme="@style/Theme.NexusMind"
         android:hardwareAccelerated="true"
         android:largeHeap="true"
         android:extractNativeLibs="true"
@@ -35,7 +35,7 @@
             android:name=".SplashActivity"
             android:exported="true"
             android:screenOrientation="portrait"
-            android:theme="@style/Theme.ClaudeCodeSetup.Splash">
+            android:theme="@style/Theme.NexusMind.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -53,7 +53,7 @@
             android:name=".SetupActivity"
             android:exported="false"
             android:screenOrientation="portrait"
-            android:theme="@style/Theme.ClaudeCodeSetup" />
+            android:theme="@style/Theme.NexusMind" />
 
         <!-- Main terminal -->
         <activity
@@ -61,7 +61,7 @@
             android:exported="false"
             android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.ClaudeCodeSetup.Terminal" />
+            android:theme="@style/Theme.NexusMind.Terminal" />
 
         <!-- Provider / login selection (Compose) -->
         <activity
@@ -69,35 +69,35 @@
             android:exported="false"
             android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.ClaudeCodeSetup" />
+            android:theme="@style/Theme.NexusMind" />
 
         <!-- Home screen (main menu) -->
         <activity
             android:name=".ui.HomeActivity"
             android:exported="false"
             android:screenOrientation="portrait"
-            android:theme="@style/Theme.ClaudeCodeSetup" />
+            android:theme="@style/Theme.NexusMind" />
 
         <!-- Model response tester -->
         <activity
             android:name=".ui.ModelTestActivity"
             android:exported="false"
             android:screenOrientation="portrait"
-            android:theme="@style/Theme.ClaudeCodeSetup" />
+            android:theme="@style/Theme.NexusMind" />
 
         <!-- Settings -->
         <activity
             android:name=".SettingsActivity"
             android:exported="false"
             android:screenOrientation="portrait"
-            android:theme="@style/Theme.ClaudeCodeSetup" />
+            android:theme="@style/Theme.NexusMind" />
 
         <!-- Project Manager -->
         <activity
             android:name=".ui.ProjectManagerActivity"
             android:exported="false"
             android:screenOrientation="portrait"
-            android:theme="@style/Theme.ClaudeCodeSetup" />
+            android:theme="@style/Theme.NexusMind" />
 
         <!-- MCP Server Manager -->
         <activity
@@ -105,14 +105,14 @@
             android:exported="false"
             android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.ClaudeCodeSetup" />
+            android:theme="@style/Theme.NexusMind" />
 
         <!-- Web Preview -->
         <activity
             android:name=".ui.PreviewActivity"
             android:exported="false"
             android:screenOrientation="portrait"
-            android:theme="@style/Theme.ClaudeCodeSetup" />
+            android:theme="@style/Theme.NexusMind" />
 
         <!-- Foreground service: keeps bridge sessions alive -->
         <service

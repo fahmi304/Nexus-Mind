@@ -31,10 +31,10 @@ class ClaudeApp : Application() {
 
         NotificationChannel(
             CHANNEL_RUNNING,
-            "Claude Code Running",
+            "Nexus Mind Running",
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "Shown while Claude Code is active"
+            description = "Shown while Nexus Mind is active"
             setShowBadge(false)
         }.also { manager.createNotificationChannel(it) }
 

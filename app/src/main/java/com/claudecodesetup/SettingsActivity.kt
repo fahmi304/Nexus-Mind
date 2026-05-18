@@ -69,7 +69,7 @@ class SettingsActivity : AppCompatActivity() {
 
         val installedVersion = prefs.getInstalledClaudeVersion()
             .ifEmpty { com.claudecodesetup.managers.DownloadManager.PINNED_CLAUDE_VERSION }
-        binding.tvClaudeVersion.text = "Claude Code v$installedVersion"
+        binding.tvClaudeVersion.text = "Nexus Mind v$installedVersion"
         binding.tvAppVersion.text    = "App v${BuildConfig.VERSION_NAME}"
 
         // Language
@@ -127,7 +127,7 @@ class SettingsActivity : AppCompatActivity() {
             AlertDialog.Builder(this)
                 .setTitle("Reset everything?")
                 .setMessage(
-                    "This will delete your entire Claude Code installation and start fresh. " +
+                    "This will delete your entire Nexus Mind installation and start fresh. " +
                     "This cannot be undone."
                 )
                 .setPositiveButton("Reset") { _, _ -> resetEverything() }

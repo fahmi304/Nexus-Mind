@@ -274,7 +274,7 @@ class TerminalActivity : AppCompatActivity() {
                     if (wasBusy) {
                         showStatusError("Connection lost — tap Retry or Restart")
                     }
-                    writeToTerminal("\r\n[33m[Claude Code session ended][0m\r\n")
+                    writeToTerminal("\r\n[33m[Nexus Mind session ended][0m\r\n")
                     binding.btnRestart.visibility = View.VISIBLE
                 }
                 updateNewSessionButton()
@@ -435,7 +435,7 @@ class TerminalActivity : AppCompatActivity() {
         if ((claudeService?.getAllSessions()?.size ?: 0) <= 1) {
             AlertDialog.Builder(this)
                 .setTitle("Close session?")
-                .setMessage("This is your last session. Closing it will stop Claude Code.")
+                .setMessage("This is your last session. Closing it will stop Nexus Mind.")
                 .setPositiveButton("Close") { _, _ ->
                     claudeService?.closeSession(sessionId)
                     tabButtons.remove(sessionId)?.let { binding.tabContainer.removeView(it) }
@@ -871,7 +871,7 @@ class TerminalActivity : AppCompatActivity() {
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_TEXT, text)
-                putExtra(Intent.EXTRA_SUBJECT, "Claude Code Conversation")
+                putExtra(Intent.EXTRA_SUBJECT, "Nexus Mind Conversation")
             }
             runOnUiThread {
                 startActivity(Intent.createChooser(intent, "Export Conversation"))

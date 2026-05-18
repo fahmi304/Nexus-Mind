@@ -8,7 +8,7 @@
         <item name="android:activityCloseExitAnimation">@anim/fade_out</item>
     </style>
 
-    <style name="Theme.ClaudeCodeSetup" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.NexusMind" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/accent_orange</item>
         <item name="colorPrimaryDark">@color/bg_dark</item>
         <item name="colorAccent">@color/accent_orange</item>
@@ -19,12 +19,12 @@
         <item name="android:windowAnimationStyle">@style/ActivityAnimation</item>
     </style>
 
-    <style name="Theme.ClaudeCodeSetup.Splash" parent="Theme.ClaudeCodeSetup">
+    <style name="Theme.NexusMind.Splash" parent="Theme.NexusMind">
         <item name="android:windowFullscreen">false</item>
         <item name="android:windowNoTitle">true</item>
     </style>
 
-    <style name="Theme.ClaudeCodeSetup.Terminal" parent="Theme.ClaudeCodeSetup">
+    <style name="Theme.NexusMind.Terminal" parent="Theme.NexusMind">
         <item name="android:windowBackground">@color/terminal_bg</item>
         <item name="android:statusBarColor">@color/toolbar_bg</item>
     </style>
