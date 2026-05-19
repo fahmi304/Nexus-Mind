@@ -79,9 +79,9 @@ jobs:
           key: llama-server-b5188-arm64
 
       - name: Build llama-server
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/25.1.8937393
-        run: ./scripts/build-llamaserver.sh
+        run: |
+          export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393
+          ./scripts/build-llamaserver.sh
 
       # ── 9. Build debug APK ───────────────────────────────────────────────────
       - name: Build debug APK
