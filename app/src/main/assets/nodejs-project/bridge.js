@@ -1016,6 +1016,21 @@ async function extractDeb(debPath, destDir, bb, env) {
 
 // ─── Patch cli.js for Android (no Unicode property escape support) ───────────
 
+// Called on startup when cli.js is already installed: re-patches if any known
+// unpatched \p{} literal is still present (happens when bridge.js is updated
+// with new patches but cli.js was installed with an older bridge version).
+function ensureCliJsPatched() {
+    try {
+        const src = fs.readFileSync(CLAUDE_CLI, 'utf8');
+        if (src.includes('/^\\p{Default_Ignorable_Code_Point}$/u') ||
+            src.includes('/\\p{L}/u') ||
+            src.includes('/[\\p{L}\\p{N}]/u')) {
+            log('cli.js has unpatched \\p{} patterns — re-applying Android patches...\n');
+            patchCliJsForAndroid(CLAUDE_CLI);
+        }
+    } catch (_) {}
+}
+
 function patchCliJsForAndroid(cliPath) {
     log('Patching cli.js for Android (removing \\p{} regex property escapes)...\n');
     let src;
@@ -3152,6 +3167,7 @@ try {
 if (isClaudeInstalled()) {
     log('Claude Code already installed — starting bridge server.\n');
     try { fs.writeFileSync(SETUP_DONE, 'true'); } catch (_) {}
+    ensureCliJsPatched();
     writeSubagentWrappers();
     startBridgeServer();
 } else {
