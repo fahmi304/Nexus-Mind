@@ -2431,6 +2431,9 @@ function buildInteractiveEvalCode(resumeId) {
     } else {
         argvCode = 'process.argv[4]="--dangerously-skip-permissions";process.argv.length=5;';
     }
+    // Note: --output-format stream-json is intentionally omitted here.
+    // In interactive (non-print) mode claude-code rejects that flag and exits 1.
+    // We use raw PTY relay instead — stdout bytes are forwarded directly to the socket.
     return (
         'process.on("exit",function(c){' +
         'try{require("fs").appendFileSync(' + exitLog + ',"[exit] "+c+"\\n");}catch(_){}}); ' +
@@ -2440,8 +2443,6 @@ function buildInteractiveEvalCode(resumeId) {
         regexpShim +
         intlShim +
         'process.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';' +
-        'process.argv[2]="--output-format";' +
-        'process.argv[3]="stream-json";' +
         argvCode +
         'import(' + JSON.stringify(cliUrl) + ')' +
         '.catch(function(e){process.stderr.write("import-err:"+String(e)+"\\n");process.exit(1);});'
@@ -2481,111 +2482,36 @@ function openPersistentSession() {
         if (!state.proc) return; // print mode — no persistent proc
         const proc = state.proc;
 
+        // Raw PTY relay: forward all stdout bytes directly to the socket.
+        // Claude runs in its native interactive TUI mode (no --output-format flag),
+        // so output is ANSI-formatted text, not NDJSON. The WebView ANSI emulator
+        // renders it. thinking-done fires on first output after a message is sent.
+        let outputIdleTimer = null;
         proc.stdout.on('data', chunk => {
-            state.stdoutBuf += chunk.toString();
-            const lines = state.stdoutBuf.split('\n');
-            state.stdoutBuf = lines.pop();
+            // First output after user message → clear thinking spinner
+            if (state.busy && !state.thinkingDone) {
+                state.thinkingDone = true;
+                try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
+            }
+            try { if (state.socket) state.socket.write(chunk); } catch(_) {}
 
-            for (const raw of lines) {
-                if (!raw.trim()) continue;
-                const ji = raw.indexOf('{');
-                if (ji < 0) continue;
-                let ev;
-                try { ev = JSON.parse(raw.slice(ji)); } catch(_) { continue; }
-
-                // system/init — proc ready; inject initial context once per proc lifetime
-                if (ev.type === 'system' && ev.subtype === 'init') {
-                    // Persist Claude's internal session_id so next proc spawn can --resume it
-                    if (ev.session_id) {
-                        try { fs.writeFileSync(path.join(FILES_DIR, 'session_' + sid + '_resume'), ev.session_id); } catch(_) {}
-                    }
-                    if (!state.initDone) {
-                        state.initDone = true;
-                        const cfg  = readConfig();
-                        const parts = [];
-                        const cp   = (cfg.customSystemPrompt || '').trim();
-                        if (cp) parts.push('[Instructions]\n' + cp);
-                        try {
-                            const dc = JSON.parse(fs.readFileSync(path.join(FILES_DIR, 'device_context.json'), 'utf8'));
-                            parts.push('[Context: ' + dc.time + ' | Battery: ' + dc.battery + ' | ' + dc.device + ']');
-                        } catch(_) {}
-                        if (cfg.projectPath) {
-                            try {
-                                const mp = path.join(cfg.projectPath, 'CLAUDE.md');
-                                const st = fs.statSync(mp);
-                                if (st.isFile() && st.size < 5000) {
-                                    parts.push('[Project instructions]\n' + fs.readFileSync(mp, 'utf8').slice(0, 2000));
-                                }
-                            } catch(_) {}
-                        }
-                        if (parts.length > 0) {
-                            state.busy = true;
-                            state.initSuppressResult = true;
-                            try { proc.stdin.write(parts.join('\n\n') + '\n\nAcknowledge these instructions in one sentence.\n'); } catch(_) {}
-                        } else {
-                            try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
-                            try { if (state.socket) state.socket.write('\x1b[2m[PTY] Session ready\x1b[0m\r\n'); } catch(_) {}
-                        }
-                    }
-                    continue;
-                }
-
-                if (state.busy && !state.thinkingDone && !state.initSuppressResult) {
-                    state.thinkingDone = true;
-                    try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
-                }
-
-                if (ev.type === 'assistant' && !state.initSuppressResult) {
-                    for (const block of (ev.message && ev.message.content) || []) {
-                        if (block.type === 'text' && block.text) {
-                            try { if (state.socket) state.socket.write(block.text); } catch(_) {}
-                        } else if (block.type === 'thinking' && block.thinking) {
-                            const enc = Buffer.from(block.thinking.slice(0, 3000)).toString('base64');
-                            try { if (state.socket) state.socket.write('\x1b]9;think-block:' + enc + '\x07'); } catch(_) {}
-                        } else if (block.type === 'tool_use') {
-                            const preview = block.input ? JSON.stringify(block.input).slice(0, 120) : '';
-                            try { if (state.socket) state.socket.write('\x1b[36m▶ ' + (block.name || 'tool') + '\x1b[0m ' + preview + '\r\n'); } catch(_) {}
-                        }
-                    }
-                }
-
-                if (ev.type === 'result') {
-                    if (state.currentTid) { clearTimeout(state.currentTid); state.currentTid = null; }
-
-                    if (state.initSuppressResult) {
-                        state.initSuppressResult = false;
-                        state.busy = false;
-                        state.thinkingDone = false;
-                        try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
-                        try { if (state.socket) state.socket.write('\x1b[2m[PTY] Session ready\x1b[0m\r\n'); } catch(_) {}
-                        continue;
-                    }
-
+            // Mark session not-busy after 800 ms of silence (turn likely complete)
+            if (outputIdleTimer) clearTimeout(outputIdleTimer);
+            outputIdleTimer = setTimeout(() => {
+                if (state.busy) {
                     state.busy = false;
                     state.thinkingDone = false;
-                    // Current context window size = last turn's input_tokens (not cumulative)
-                    if (ev.usage && ev.usage.input_tokens) state.sessionTokens = ev.usage.input_tokens;
-                    try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
-                    try { if (state.socket) state.socket.write('\x1b]9;tokens:' + state.sessionTokens + '\x07'); } catch(_) {}
+                    if (state.currentTid) { clearTimeout(state.currentTid); state.currentTid = null; }
                 }
-            }
+            }, 800);
         });
 
+        // proc.stderr is pty_helper's own stderr (PTY setup errors), not claude's stderr.
+        // Claude's stderr goes through the PTY master → proc.stdout above.
         proc.stderr.on('data', d => {
             const s = d.toString();
             if (/^\[(eval-ok|import-resolved|exit-event|unhandledRejection|regex-compat|intl-shim)\]/.test(s.trim())) return;
-            if (/429|rate.?limit/i.test(s)) {
-                lastRateLimitMs = Date.now();
-                try {
-                    if (state.socket) state.socket.write(
-                        '\x1b]9;thinking-done\x07\r\n' +
-                        '\x1b[33m⚠ Rate limited (HTTP 429) — proxy is retrying.\x1b[0m\r\n' +
-                        '\x1b[2mSwitch to a model with higher limits, or wait.\x1b[0m\r\n'
-                    );
-                } catch(_) {}
-            } else {
-                try { if (state.socket) state.socket.write('\x1b[33m' + s + '\x1b[0m'); } catch(_) {}
-            }
+            try { if (state.socket) state.socket.write('\x1b[31m[PTY err] ' + s + '\x1b[0m'); } catch(_) {}
         });
 
         proc.on('error', e => {
@@ -2989,16 +2915,10 @@ function openPersistentSession() {
         try { socket.write('\x1b]9;cwd:' + state.cwd + '\x07'); } catch(_) {}
         try { socket.write('\x1b]9;tokens:' + state.sessionTokens + '\x07'); } catch(_) {}
 
-        if (isNew || !state.proc) {
-            if (state.proc) {
-                // PTY mode: spinner stays until system/init fires
-                try { socket.write('\x1b]9;thinking-start\x07'); } catch(_) {}
-            } else {
-                // Print mode: session is ready immediately
-                try { socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
-                try { socket.write('\x1b[2m[session ready]\x1b[0m\r\n'); } catch(_) {}
-            }
-        } else {
+        // Always start with spinner cleared; PTY TUI shows its own loading state,
+        // and print mode is immediately ready.
+        try { socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
+        if (!isNew && state.proc) {
             try { socket.write('\x1b[2m[session ' + sid + ' reconnected]\x1b[0m\r\n'); } catch(_) {}
             if (state.busy) try { socket.write('\x1b]9;thinking-start\x07'); } catch(_) {}
         }
