@@ -452,8 +452,13 @@ async function executeTool(name, input, cwd, socket) {
 
     } else if (name.startsWith('mcp_')) {
         try {
-            const content = await callMcpStdioTool(name, input);
-            return { content: content || '(no output)', isError: false, newCwd: cwd };
+            // Try stdio first, then HTTP
+            const stdioResult = await callMcpStdioTool(name, input);
+            if (!stdioResult.startsWith('MCP tool not found:')) {
+                return { content: stdioResult || '(no output)', isError: false, newCwd: cwd };
+            }
+            const httpResult = await callMcpHttpTool(name, input);
+            return { content: httpResult || '(no output)', isError: false, newCwd: cwd };
         } catch(e) { return { content: 'MCP error: ' + e.message, isError: true, newCwd: cwd }; }
 
     } else {
@@ -731,7 +736,7 @@ async function runAgentic(socket, userMessage, history, shellCwd, pendingImage) 
     let currentCwd = shellCwd;
 
     try {
-        const allTools = [...AGENTIC_TOOLS, ...getMcpStdioTools()];
+        const allTools = [...AGENTIC_TOOLS, ...getMcpStdioTools(), ...getMcpHttpTools()];
         for (let turn = 0; turn < MAX_TURNS; turn++) {
             const resp = await callProxyStreaming(socket, messages, allTools, signalThinkingDone);
             if (!resp || !resp.content) throw new Error('Empty response from proxy');
@@ -2070,6 +2075,139 @@ async function loadMcpStdioServers() {
         log('[mcp-stdio] loadMcpStdioServers error: ' + e.message + '\n');
     }
 }
+
+// ── HTTP MCP client ────────────────────────────────────────────────────────────
+// Speaks MCP JSON-RPC 2.0 over Streamable HTTP (2025-03-26).
+// Each entry in filesDir/mcp_http.json: { name, url }
+
+const MCP_HTTP_CONFIG = path.join(FILES_DIR, 'mcp_http.json');
+const mcpHttpServers  = new Map(); // name → { url, sessionId, tools }
+
+function mcpHttpPost(url, body, sessionId) {
+    return new Promise((resolve, reject) => {
+        const bodyStr = JSON.stringify(body);
+        const parsed  = new URL(url);
+        const isHttps = parsed.protocol === 'https:';
+        const mod     = isHttps ? https : http;
+        const headers = {
+            'Content-Type':   'application/json',
+            'Accept':         'application/json, text/event-stream',
+            'Content-Length': Buffer.byteLength(bodyStr),
+        };
+        if (sessionId) headers['mcp-session-id'] = sessionId;
+        const req = mod.request({
+            hostname: parsed.hostname,
+            port:     parseInt(parsed.port) || (isHttps ? 443 : 80),
+            path:     parsed.pathname + (parsed.search || ''),
+            method:   'POST',
+            headers,
+        }, res => {
+            const sid = res.headers['mcp-session-id'] || null;
+            const ct  = (res.headers['content-type'] || '').toLowerCase();
+            let buf = '';
+            res.setEncoding('utf8');
+            res.on('data', c => buf += c);
+            res.on('end', () => {
+                if (res.statusCode === 202) { resolve({ _sid: sid }); return; }
+                if (res.statusCode < 200 || res.statusCode >= 300) {
+                    return reject(new Error('HTTP ' + res.statusCode + ': ' + buf.slice(0, 120)));
+                }
+                if (ct.includes('text/event-stream')) {
+                    const events = [];
+                    for (const line of buf.split('\n')) {
+                        const t = line.trim();
+                        if (!t.startsWith('data:')) continue;
+                        const raw = t.slice(5).trim();
+                        if (!raw || raw === '[DONE]') continue;
+                        try { events.push(JSON.parse(raw)); } catch(_) {}
+                    }
+                    const rpc = events.find(e => e.id !== undefined) || events[0] || {};
+                    rpc._sid = sid;
+                    resolve(rpc);
+                } else {
+                    try { const r = JSON.parse(buf); r._sid = sid; resolve(r); }
+                    catch(e) { reject(new Error('MCP HTTP bad JSON: ' + buf.slice(0, 60))); }
+                }
+            });
+            res.on('error', reject);
+        });
+        req.setTimeout(15000, () => req.destroy(new Error('MCP HTTP timeout')));
+        req.on('error', reject);
+        req.write(bodyStr);
+        req.end();
+    });
+}
+
+async function startMcpHttpServer(entry) {
+    if (mcpHttpServers.has(entry.name)) return;
+    const srv = { url: entry.url, sessionId: null, tools: [] };
+    try {
+        const initRes = await mcpHttpPost(entry.url, {
+            jsonrpc: '2.0', id: 1, method: 'initialize',
+            params: {
+                protocolVersion: '2025-03-26',
+                capabilities: { tools: {} },
+                clientInfo: { name: 'ClaudeCodeSetup', version: '1.0' },
+            },
+        }, null);
+        if (initRes.error) throw new Error(initRes.error.message || JSON.stringify(initRes.error));
+        if (initRes._sid) srv.sessionId = initRes._sid;
+        // fire-and-forget
+        mcpHttpPost(entry.url,
+            { jsonrpc: '2.0', method: 'notifications/initialized', params: {} },
+            srv.sessionId).catch(() => {});
+        const toolsRes = await mcpHttpPost(entry.url,
+            { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }, srv.sessionId);
+        if (toolsRes.error) throw new Error(toolsRes.error.message || JSON.stringify(toolsRes.error));
+        const tlist = (toolsRes.result || toolsRes).tools || [];
+        srv.tools = tlist.map(t => ({
+            name: 'mcp_' + entry.name + '_' + t.name,
+            description: (t.description || '') + ' [MCP:' + entry.name + ']',
+            input_schema: t.inputSchema || { type: 'object', properties: {} },
+            _mcpServer: entry.name,
+            _mcpTool: t.name,
+        }));
+        mcpHttpServers.set(entry.name, srv);
+        log('[mcp-http:' + entry.name + '] ready, ' + srv.tools.length + ' tools\n');
+    } catch(e) {
+        log('[mcp-http:' + entry.name + '] start failed: ' + e.message + '\n');
+    }
+}
+
+function getMcpHttpTools() {
+    const tools = [];
+    for (const srv of mcpHttpServers.values()) tools.push(...srv.tools);
+    return tools;
+}
+
+async function callMcpHttpTool(toolName, args) {
+    for (const [, srv] of mcpHttpServers.entries()) {
+        const found = srv.tools.find(t => t.name === toolName);
+        if (!found) continue;
+        const res = await mcpHttpPost(srv.url, {
+            jsonrpc: '2.0', id: Date.now(), method: 'tools/call',
+            params: { name: found._mcpTool, arguments: args },
+        }, srv.sessionId);
+        if (res.error) throw new Error(res.error.message || JSON.stringify(res.error));
+        const result = res.result || res;
+        return (result.content || []).map(c => c.text || JSON.stringify(c)).join('\n');
+    }
+    return 'MCP HTTP tool not found: ' + toolName;
+}
+
+async function loadMcpHttpServers() {
+    try {
+        if (!fs.existsSync(MCP_HTTP_CONFIG)) return;
+        const entries = JSON.parse(fs.readFileSync(MCP_HTTP_CONFIG, 'utf8'));
+        for (const entry of (Array.isArray(entries) ? entries : [])) {
+            if (entry.name && entry.url) {
+                await startMcpHttpServer(entry).catch(e => log('[mcp-http] ' + e.message + '\n'));
+            }
+        }
+    } catch(e) {
+        log('[mcp-http] loadMcpHttpServers error: ' + e.message + '\n');
+    }
+}
 /**
  * Run a quick launcher self-test. Spawns LAUNCHER with a trivial JS one-liner
  * and returns a promise that resolves to true (ok) or false (broken).
@@ -2957,8 +3095,9 @@ function startBridgeServer() {
     // otherwise its first API call gets ECONNREFUSED and it exits immediately.
     startProxyServer(() => {
         openPersistentSession();
-        // Load stdio MCP servers after the bridge is up (non-blocking)
+        // Load MCP servers after the bridge is up (non-blocking)
         loadMcpStdioServers().catch(e => log('[mcp-stdio] startup error: ' + e.message + '\n'));
+        loadMcpHttpServers().catch(e => log('[mcp-http] startup error: ' + e.message + '\n'));
     });
 }
 

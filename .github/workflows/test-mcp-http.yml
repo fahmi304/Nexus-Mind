@@ -1,0 +1,25 @@
+name: HTTP MCP Server Test
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  test-mcp-http:
+    name: Test HTTP MCP (Exa search)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Run HTTP MCP test
+        run: node .github/scripts/test-mcp-http.js

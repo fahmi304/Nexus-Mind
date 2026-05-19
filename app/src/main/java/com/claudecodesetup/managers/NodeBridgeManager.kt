@@ -81,14 +81,16 @@ class NodeBridgeManager(private val context: Context) {
         startNodeEngine()
     }
 
-    // Writes mcp_config.json combining both HTTP/SSE and stdio servers.
-    // bridge.js passes --mcp-config <path> to claude when this file exists.
+    // Writes mcp_config.json (for claude-code --mcp-config) and mcp_http.json
+    // (for bridge.js agentic HTTP MCP client), combining HTTP/SSE and stdio servers.
     fun writeMcpConfig(prefs: AppPreferences) {
-        val mcpFile = File(context.filesDir, "mcp_config.json")
+        val mcpFile     = File(context.filesDir, "mcp_config.json")
+        val mcpHttpFile = File(context.filesDir, "mcp_http.json")
         try {
-            val mcpServers = org.json.JSONObject()
+            val mcpServers  = org.json.JSONObject()
+            val httpEntries = org.json.JSONArray()
 
-            // HTTP / SSE servers
+            // HTTP / SSE servers — "sse" is the transport type claude-code 2.1.112 understands
             val httpArr = org.json.JSONArray(prefs.getMcpServersJson())
             for (i in 0 until httpArr.length()) {
                 val server = httpArr.getJSONObject(i)
@@ -96,7 +98,12 @@ class NodeBridgeManager(private val context: Context) {
                 val url  = server.optString("url")
                 if (name.isNotEmpty() && url.isNotEmpty()) {
                     mcpServers.put(name, org.json.JSONObject().apply {
-                        put("type", server.optString("transport", "http"))
+                        put("type", server.optString("transport", "sse"))
+                        put("url", url)
+                    })
+                    // Also add to mcp_http.json for bridge.js agentic client
+                    httpEntries.put(org.json.JSONObject().apply {
+                        put("name", name)
                         put("url", url)
                     })
                 }
@@ -122,9 +129,12 @@ class NodeBridgeManager(private val context: Context) {
 
             if (mcpServers.length() == 0) {
                 mcpFile.delete()
+                mcpHttpFile.delete()
                 return
             }
             mcpFile.writeText(org.json.JSONObject().apply { put("mcpServers", mcpServers) }.toString())
+            if (httpEntries.length() > 0) mcpHttpFile.writeText(httpEntries.toString())
+            else mcpHttpFile.delete()
         } catch (e: Exception) {
             Log.e(TAG, "Could not write MCP config", e)
         }

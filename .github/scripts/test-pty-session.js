@@ -154,6 +154,10 @@ function patchCliJsForAndroid(cliPath) {
     return n;
 }
 
+// ─── Token tracking (shared across proxy calls) ───────────────────────────────
+
+let lastUsage = { input_tokens: 0, output_tokens: 0 };
+
 // ─── Proxy (mirrors bridge.js — same as test-full-session.js) ─────────────────
 
 function anthToOai(a, model) {
@@ -204,6 +208,10 @@ function forwardToProvider(oaiReq, res) {
                         res.writeHead(500, {'Content-Type':'application/json'});
                         return res.end(JSON.stringify({type:'error',error:{type:'api_error',message:parsed.error.message||JSON.stringify(parsed.error)}}));
                     }
+                    if (parsed.usage) {
+                        lastUsage.input_tokens  += parsed.usage.prompt_tokens     || 0;
+                        lastUsage.output_tokens += parsed.usage.completion_tokens || 0;
+                    }
                     res.writeHead(200, {'Content-Type':'application/json'});
                     res.end(JSON.stringify(oaiToAnth(parsed, MODEL_ID)));
                 } catch(e) { try { res.writeHead(500); res.end('{}'); } catch(_) {} }
@@ -225,6 +233,7 @@ function forwardToProvider(oaiReq, res) {
                 if (raw === '[DONE]') continue;
                 let evt; try { evt = JSON.parse(raw); } catch(_) { continue; }
                 if (evt.error) continue;
+                if (evt.usage && evt.usage.prompt_tokens) lastUsage.input_tokens += evt.usage.prompt_tokens;
                 if (!headersSent) {
                     headersSent = true;
                     ev('message_start', {type:'message_start',message:{id:msgId,type:'message',role:'assistant',content:[],model:MODEL_ID,stop_reason:null,usage:{input_tokens:0,output_tokens:0}}});
@@ -239,6 +248,7 @@ function forwardToProvider(oaiReq, res) {
                     ev('content_block_stop',{type:'content_block_stop',index:0});
                     ev('message_delta',{type:'message_delta',delta:{stop_reason:fin==='length'?'max_tokens':'end_turn',stop_sequence:null},usage:{output_tokens:outTokens}});
                     ev('message_stop',{type:'message_stop'});
+                    lastUsage.output_tokens += outTokens;
                 }
             }
         });
@@ -508,7 +518,7 @@ async function runPtySession(cliJs, homeDir) {
                     readyTimer = setTimeout(() => {
                         messageSent = true;
                         console.log('  [claude ready] sending test message...');
-                        ptyProc.write('hello claude, reply with exactly: TEST_OK\r');
+                        ptyProc.write('hello\r');
                     }, 800);
                 }
             } else if (messageSent) {
@@ -623,7 +633,6 @@ async function runPtySession(cliJs, homeDir) {
         if (clean.length < 20) {
             fail('response received', 'only ' + clean.length + ' chars after stripping ANSI');
         } else {
-            // Check it doesn't look like an API error
             const isError = /error:|must be provided|invalid|authentication failed/i.test(clean.slice(0, 200));
             if (isError) {
                 fail('response is not an error', clean.slice(0, 200));
@@ -633,6 +642,17 @@ async function runPtySession(cliJs, homeDir) {
                 console.log('  preview: "' + preview + '..."');
             }
         }
+    }
+
+    // ── Test: token count from proxy ──────────────────────────────────────────
+    console.log('\n  Token usage reported by proxy:');
+    console.log('    input_tokens  : ' + lastUsage.input_tokens);
+    console.log('    output_tokens : ' + lastUsage.output_tokens);
+    if (lastUsage.output_tokens > 0) {
+        ok('token count: output_tokens=' + lastUsage.output_tokens +
+           ', input_tokens=' + lastUsage.input_tokens);
+    } else {
+        fail('token count', 'output_tokens=0 — proxy may not have forwarded a real response');
     }
 
     console.log('\n── Summary ──');
@@ -659,6 +679,7 @@ async function runPtySession(cliJs, homeDir) {
             lines.push('**Login screen:** ' + (result.loginSeen ? '❌ appeared' : '✅ not seen'));
             lines.push('**JSON ready event:** ❌ not received');
         }
+        lines.push('**Token usage:** input=' + lastUsage.input_tokens + ' output=' + lastUsage.output_tokens);
         fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
     }
 
