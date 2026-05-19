@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -226,11 +227,12 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
         }
         status = KeyStatus.LOADING
         scope.launch {
-            val error = validateKey(provider, apiKey, serverUrl.trim())
+            val trimmedKey = apiKey.trim()
+            val error = validateKey(provider, trimmedKey, serverUrl.trim())
             if (error == null) {
                 status = KeyStatus.SUCCESS
                 delay(700)
-                onSuccess(apiKey)
+                onSuccess(trimmedKey)
             } else {
                 status = KeyStatus.ERROR
                 errorMessage = error
@@ -399,7 +401,7 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
                                         ),
                                         visualTransformation = if (passwordVisible)
                                             VisualTransformation.None else PasswordVisualTransformation(),
-                                        keyboardOptions = KeyboardOptions.Default,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrect = false),
                                         singleLine = true,
                                         decorationBox = { inner ->
                                             Box(contentAlignment = Alignment.CenterStart) {
