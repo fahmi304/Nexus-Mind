@@ -2601,12 +2601,14 @@ function openPersistentSession() {
         if (cfg.mode !== 'subscription') {
             try { fs.unlinkSync(path.join(FILES_DIR, '.claude', '.credentials.json')); } catch (_) {}
         }
-        // Re-patch settings.json before every spawn. claude-code can write back to
-        // settings.json during a session (e.g. when it records a rejected API key),
-        // so the one-time module-load patch is not enough — it must be re-applied
-        // each time to guarantee sk-ant-proxy000 is in approved and not in rejected.
+        // Re-patch settings.json before every spawn. claude-code rewrites settings
+        // during a session (recording rejected keys, clearing theme, etc.), so the
+        // module-load patch alone is not enough. Also ensure the directory exists —
+        // writeFileSync silently fails if .claude/ doesn't exist yet.
         try {
-            const sp = path.join(FILES_DIR, '.claude', 'settings.json');
+            const claudeDir = path.join(FILES_DIR, '.claude');
+            try { fs.mkdirSync(claudeDir, { recursive: true }); } catch (_) {}
+            const sp = path.join(claudeDir, 'settings.json');
             let s = {};
             try { s = JSON.parse(fs.readFileSync(sp, 'utf8')); } catch (_) {}
             if (!s.customApiKeyResponses) s.customApiKeyResponses = { approved: [], rejected: [] };
@@ -2616,9 +2618,9 @@ function openPersistentSession() {
                 s.customApiKeyResponses.approved.push('sk-ant-proxy000');
             s.customApiKeyResponses.rejected =
                 s.customApiKeyResponses.rejected.filter(k => k !== 'sk-ant-proxy000');
-            // theme must be truthy or claude-code runs the full onboarding
-            // regardless of hasCompletedOnboarding (both checks are OR'd in cli.js)
-            if (!s.theme) s.theme = 'dark';
+            // cli.js triggers onboarding if !theme OR !hasCompletedOnboarding (OR, not AND).
+            // Always force both so neither condition is true.
+            s.theme                  = 'dark';
             s.hasCompletedOnboarding = true;
             s.hasShownWelcome        = true;
             s.skipWelcome            = true;

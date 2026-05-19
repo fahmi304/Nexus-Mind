@@ -464,10 +464,12 @@ async function runPtySession(cliJs, homeDir) {
         LINES: '50',
         COLUMNS: '220',
         PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
-        ANTHROPIC_API_KEY:   'sk-ant-proxy000',
-        ANTHROPIC_BASE_URL:  'http://' + HOST + ':' + PROXY_PORT,
-        ANTHROPIC_MODEL:     'claude-3-5-sonnet-20241022',
-        DISABLE_AUTOUPDATER: '1',
+        ANTHROPIC_API_KEY:      'sk-ant-proxy000',
+        ANTHROPIC_BASE_URL:     'http://' + HOST + ':' + PROXY_PORT,
+        ANTHROPIC_MODEL:        'claude-3-5-sonnet-20241022',
+        DISABLE_AUTOUPDATER:    '1',
+        // Bypass "do you trust this folder?" — pE_() in cli.js returns true
+        CLAUDE_CODE_SANDBOXED:  '1',
         TMPDIR: homeDir, TEMP: homeDir, TMP: homeDir,
     };
 
