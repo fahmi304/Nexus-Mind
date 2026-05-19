@@ -27,6 +27,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import com.claudecodesetup.data.AppPreferences
 import com.claudecodesetup.managers.LlamaServerManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -120,11 +127,12 @@ private val amber  = Color(0xFFF59E0B)
 @Composable
 fun LocalModelsScreen(
     onModelSelected: (modelId: String) -> Unit,
-    onRemoteServer: () -> Unit,
+    onRemoteServer: (url: String) -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
     val llamaMgr = remember { LlamaServerManager.get(context) }
+    val prefs = remember { AppPreferences(context) }
     val scope = rememberCoroutineScope()
 
     var entered by remember { mutableStateOf(false) }
@@ -146,6 +154,7 @@ fun LocalModelsScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
 
     var tab by remember { mutableStateOf(0) }
+    var remoteUrl by remember { mutableStateOf(prefs.getCustomBaseUrlForProvider("ollama").ifBlank { "" }) }
 
     val downloadClient = remember {
         OkHttpClient.Builder()
@@ -288,22 +297,100 @@ fun LocalModelsScreen(
             Spacer(Modifier.height(12.dp))
 
             if (tab == 1) {
-                Box(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                    contentAlignment = Alignment.Center
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0x0AFFFFFF), RoundedCornerShape(14.dp))
+                            .border(1.dp, Color(0x15FFFFFF), RoundedCornerShape(14.dp))
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text("🌐", fontSize = 40.sp)
                         Text(
-                            "Connect to a remote Ollama server\nor any OpenAI-compatible API.",
-                            fontFamily = DmSansFamily, fontSize = 14.sp,
-                            color = Color(0xFF9CA3AF), textAlign = TextAlign.Center,
-                            lineHeight = 20.sp
+                            "REMOTE SERVER",
+                            fontFamily = SpaceMonoFamily, fontSize = 8.sp,
+                            letterSpacing = 2.sp, color = blue.copy(alpha = 0.7f)
                         )
-                        LocalActionButton("Enter Server URL →", blue, onRemoteServer)
+                        Text(
+                            "Enter the URL of your Ollama server or any OpenAI-compatible API (e.g. Oracle Cloud, VPS, home server).",
+                            fontFamily = DmSansFamily, fontSize = 12.sp,
+                            color = Color(0xFF9CA3AF), lineHeight = 18.sp
+                        )
+                        OutlinedTextField(
+                            value = remoteUrl,
+                            onValueChange = { remoteUrl = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = {
+                                Text(
+                                    "http://your-server:11434",
+                                    fontFamily = DmSansFamily, fontSize = 13.sp,
+                                    color = Color(0xFF4B5563)
+                                )
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Uri,
+                                imeAction = ImeAction.Done
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    val url = remoteUrl.trim()
+                                    if (url.isNotEmpty()) onRemoteServer(url)
+                                }
+                            ),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = blue.copy(alpha = 0.6f),
+                                unfocusedBorderColor = Color(0x30FFFFFF),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                cursorColor = blue
+                            ),
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                fontFamily = DmSansFamily, fontSize = 13.sp
+                            )
+                        )
+                        LocalActionButton(
+                            label = "Connect →",
+                            color = blue,
+                            onClick = {
+                                val url = remoteUrl.trim()
+                                if (url.isNotEmpty()) onRemoteServer(url)
+                            }
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0x0AFFFFFF), RoundedCornerShape(14.dp))
+                            .border(1.dp, Color(0x15FFFFFF), RoundedCornerShape(14.dp))
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            "EXAMPLES",
+                            fontFamily = SpaceMonoFamily, fontSize = 8.sp,
+                            letterSpacing = 2.sp, color = Color(0xFF4B5563)
+                        )
+                        listOf(
+                            "Oracle Cloud / VPS" to "http://<your-ip>:11434",
+                            "Home network" to "http://192.168.x.x:11434",
+                            "LM Studio" to "http://<ip>:1234/v1",
+                            "Any OpenAI-compat API" to "https://api.example.com/v1"
+                        ).forEach { (label, example) ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(label, fontFamily = DmSansFamily, fontSize = 11.sp, color = Color(0xFF6B7280))
+                                Text(example, fontFamily = SpaceMonoFamily, fontSize = 10.sp, color = Color(0xFF4B5563))
+                            }
+                        }
                     }
                 }
             } else {
@@ -316,86 +403,73 @@ fun LocalModelsScreen(
                         LlamaStatusCard(binaryAvailable, serverRunning, activeModelId)
                     }
 
-                    if (!binaryAvailable) {
+                    if (downloadError != null) {
                         item {
                             Text(
-                                "Local AI is not included in this build. It requires a special build with the llama.cpp server binary compiled for Android ARM64.",
+                                "Download failed: $downloadError",
                                 fontFamily = DmSansFamily, fontSize = 12.sp,
-                                color = Color(0xFF9CA3AF),
+                                color = Color(0xFFEF4444),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Color(0x0AFFFFFF), RoundedCornerShape(10.dp))
-                                    .padding(12.dp)
+                                    .background(Color(0x15EF4444), RoundedCornerShape(8.dp))
+                                    .padding(10.dp)
                             )
                         }
-                    } else {
-                        if (downloadError != null) {
-                            item {
-                                Text(
-                                    "Download failed: $downloadError",
-                                    fontFamily = DmSansFamily, fontSize = 12.sp,
-                                    color = Color(0xFFEF4444),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color(0x15EF4444), RoundedCornerShape(8.dp))
-                                        .padding(10.dp)
-                                )
-                            }
-                        }
-                        if (loadError != null) {
-                            item {
-                                Text(
-                                    "Load failed: $loadError",
-                                    fontFamily = DmSansFamily, fontSize = 12.sp,
-                                    color = Color(0xFFEF4444),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color(0x15EF4444), RoundedCornerShape(8.dp))
-                                        .padding(10.dp)
-                                )
-                            }
-                        }
-
+                    }
+                    if (loadError != null) {
                         item {
                             Text(
-                                "Available Models",
-                                fontFamily = SpaceMonoFamily, fontSize = 9.sp,
-                                letterSpacing = 2.sp, color = Color(0xFF4B5563)
+                                "Load failed: $loadError",
+                                fontFamily = DmSansFamily, fontSize = 12.sp,
+                                color = Color(0xFFEF4444),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0x15EF4444), RoundedCornerShape(8.dp))
+                                    .padding(10.dp)
                             )
                         }
+                    }
 
-                        items(CATALOG) { model ->
-                            val isDownloading = downloadingId == model.id
-                            val isInstalled = model.id in installedIds
-                            val isLoading = loadingId == model.id
-                            val isActive = activeModelId == model.id && serverRunning
+                    item {
+                        Text(
+                            "Available Models",
+                            fontFamily = SpaceMonoFamily, fontSize = 9.sp,
+                            letterSpacing = 2.sp, color = Color(0xFF4B5563)
+                        )
+                    }
 
-                            LocalModelCard(
-                                model = model,
-                                isInstalled = isInstalled,
-                                isDownloading = isDownloading,
-                                downloadProgress = if (isDownloading) downloadProgress else 0f,
-                                isLoading = isLoading,
-                                isActive = isActive,
-                                onDownload = { if (downloadingId == null) downloadModel(model) },
-                                onLoad = { if (loadingId == null) loadModel(model) },
-                                onUnload = {
+                    items(CATALOG) { model ->
+                        val isDownloading = downloadingId == model.id
+                        val isInstalled = model.id in installedIds
+                        val isLoading = loadingId == model.id
+                        val isActive = activeModelId == model.id && serverRunning
+
+                        LocalModelCard(
+                            model = model,
+                            binaryAvailable = binaryAvailable,
+                            isInstalled = isInstalled,
+                            isDownloading = isDownloading,
+                            downloadProgress = if (isDownloading) downloadProgress else 0f,
+                            isLoading = isLoading,
+                            isActive = isActive,
+                            onDownload = { if (downloadingId == null) downloadModel(model) },
+                            onLoad = { if (loadingId == null) loadModel(model) },
+                            onUnload = {
+                                llamaMgr.stopServer()
+                                serverRunning = false
+                                activeModelId = null
+                            },
+                            onUse = { onModelSelected(model.id) },
+                            onDelete = {
+                                if (isActive) {
                                     llamaMgr.stopServer()
                                     serverRunning = false
                                     activeModelId = null
-                                },
-                                onUse = { onModelSelected(model.id) },
-                                onDelete = {
-                                    if (isActive) {
-                                        llamaMgr.stopServer()
-                                        serverRunning = false
-                                        activeModelId = null
-                                    }
-                                    llamaMgr.deleteModel(model.id)
-                                    refreshStatus()
                                 }
-                            )
-                        }
+                                llamaMgr.deleteModel(model.id)
+                                refreshStatus()
+                            }
+                        )
                     }
 
                     item { Spacer(Modifier.height(16.dp)) }
@@ -459,6 +533,7 @@ private fun LlamaStatusCard(binaryAvailable: Boolean, serverRunning: Boolean, ac
 @Composable
 private fun LocalModelCard(
     model: LocalModel,
+    binaryAvailable: Boolean,
     isInstalled: Boolean,
     isDownloading: Boolean,
     downloadProgress: Float,
@@ -566,7 +641,24 @@ private fun LocalModelCard(
             }
             isInstalled -> {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LocalSmallButton("Load", amber, Modifier.weight(1f), onLoad)
+                    if (binaryAvailable) {
+                        LocalSmallButton("Load", amber, Modifier.weight(1f), onLoad)
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(Color(0x0AFFFFFF), RoundedCornerShape(8.dp))
+                                .border(1.dp, Color(0x20FFFFFF), RoundedCornerShape(8.dp))
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Load (needs release build)",
+                                fontFamily = DmSansFamily, fontSize = 11.sp,
+                                color = Color(0xFF4B5563), textAlign = TextAlign.Center
+                            )
+                        }
+                    }
                     LocalSmallButton("Delete", Color(0xFFEF4444), Modifier.weight(1f), onDelete)
                 }
             }

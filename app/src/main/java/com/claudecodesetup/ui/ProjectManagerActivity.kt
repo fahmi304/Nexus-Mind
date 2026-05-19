@@ -4,12 +4,14 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import com.claudecodesetup.TerminalActivity
 import com.claudecodesetup.data.AppPreferences
 import com.claudecodesetup.managers.NodeBridgeManager
+import java.io.File
 
 class ProjectManagerActivity : ComponentActivity() {
 
@@ -36,11 +38,21 @@ class ProjectManagerActivity : ComponentActivity() {
                     folderPicker.launch(null)
                 },
                 onOpenProject = { project ->
-                    prefs.setProjectPath(project.path)
-                    if (project.systemPrompt.isNotEmpty())
-                        prefs.setCustomSystemPrompt(project.systemPrompt)
-                    NodeBridgeManager(this).refreshConfig(prefs)
-                    startActivity(Intent(this, TerminalActivity::class.java))
+                    if (!File(project.path).exists()) {
+                        Toast.makeText(this, "Folder not found: ${project.path}", Toast.LENGTH_LONG).show()
+                    } else {
+                        prefs.setProjectPath(project.path)
+                        if (project.systemPrompt.isNotEmpty())
+                            prefs.setCustomSystemPrompt(project.systemPrompt)
+                        NodeBridgeManager(this).refreshConfig(prefs)
+                        // Bring existing TerminalActivity to front (or create one) and deliver
+                        // the project path via onNewIntent to open a new session tab.
+                        val intent = Intent(this, TerminalActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                            putExtra(TerminalActivity.EXTRA_PROJECT_PATH, project.path)
+                        }
+                        startActivity(intent)
+                    }
                 },
                 onBack = { finish() }
             )

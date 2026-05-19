@@ -17,6 +17,8 @@ import com.claudecodesetup.ClaudeApp
 import com.claudecodesetup.R
 import com.claudecodesetup.TerminalActivity
 import com.claudecodesetup.data.AppPreferences
+import com.claudecodesetup.data.Cap
+import com.claudecodesetup.data.Providers
 import kotlinx.coroutines.*
 import java.io.*
 import java.net.Socket
@@ -310,6 +312,8 @@ class FloatingOverlayService : Service() {
         var downX = 0f; var downY = 0f; var moved = false
         val longHandler = Handler(Looper.getMainLooper())
         var longRunnable: Runnable? = null
+        // Throttle window updates to ~60 fps max (16 ms) to avoid jank on low-end devices
+        var lastRepositionMs = 0L
 
         mainBtn.setOnTouchListener { _, ev ->
             when (ev.action) {
@@ -332,7 +336,11 @@ class FloatingOverlayService : Service() {
                         btnX = (ev.rawX - btnPx / 2).toInt().coerceIn(0, screenW - btnPx)
                         btnY = (ev.rawY - btnPx / 2).toInt()
                             .coerceIn(dpToPx(24), screenH - btnPx - dpToPx(24))
-                        repositionViews()
+                        val now = System.currentTimeMillis()
+                        if (now - lastRepositionMs >= 16) {
+                            lastRepositionMs = now
+                            repositionViews()
+                        }
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -469,7 +477,17 @@ class FloatingOverlayService : Service() {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
+    private fun currentModelSupportsVision(): Boolean {
+        val modelId    = prefs.getModelId()
+        val providerId = prefs.getProviderId()
+        val provider   = Providers.byId(providerId) ?: return true // unknown provider → assume ok
+        return provider.models.any { it.modelId == modelId && Cap.VISION in it.caps }
+    }
+
     private fun requestScreenshot(voiceQuery: String?) {
+        if (!currentModelSupportsVision()) {
+            toast("⚠ Current model doesn't support vision — screenshot won't be analysed")
+        }
         pendingScreenshotQuery = voiceQuery
         val svc = DeviceControlService.instance
         if (svc != null && DeviceControlService.isAvailable()) {
@@ -486,10 +504,21 @@ class FloatingOverlayService : Service() {
                 }
             }
         } else {
-            // Fallback: MediaProjection (shows casting dialog on first use)
-            toast("Enable Accessibility Service for silent screenshots")
-            startActivity(Intent(this, MediaProjectionActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            // Accessibility Service not enabled — guide the user to turn it on.
+            // Opening Settings directly is the only path; there's no other way to
+            // take a screenshot without either AccessibilityService or screen casting.
+            toast("Enable Accessibility Service: Settings → Accessibility → Nexus Mind")
+            try {
+                startActivity(
+                    Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (_: Exception) {
+                startActivity(
+                    Intent(android.provider.Settings.ACTION_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
         }
     }
 
@@ -576,14 +605,18 @@ class FloatingOverlayService : Service() {
     private suspend fun readLoop(s: Socket) = withContext(Dispatchers.IO) {
         val buf  = ByteArray(4096)
         val resp = StringBuilder()
+        // CSI sequences: ESC [ … letter  (colours, cursor moves, etc.)
+        val reCsi = Regex("\\[[0-9;]*[a-zA-Z]")
+        // OSC sequences: ESC ] … BEL  (our custom 9;thinking-start etc.)
+        val reOsc = Regex("\\][^]*")
         try {
             val inp = s.inputStream
             var n: Int
             while (inp.read(buf).also { n = it } != -1) {
                 if (ttsEnabled && ttsReady) {
                     val clean = String(buf, 0, n, Charsets.UTF_8)
-                        .replace(Regex("\\[[0-9;]*[a-zA-Z]"), "")
-                        .replace(Regex("][^]*"), "")
+                        .replace(reCsi, "")
+                        .replace(reOsc, "")
                     resp.append(clean)
                 }
             }
@@ -593,6 +626,7 @@ class FloatingOverlayService : Service() {
             val spoken = resp.toString().trim()
                 .replace(Regex("▶[^\n]*\n?"), "")
                 .replace(Regex("[`*#>]"), "")
+                .replace(Regex("[^a-zA-Z]*[a-zA-Z]"), "") // catch any remaining escapes
                 .take(500)
             withContext(Dispatchers.Main) {
                 tts.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "overlay_resp")

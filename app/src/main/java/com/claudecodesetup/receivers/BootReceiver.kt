@@ -5,11 +5,13 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import com.claudecodesetup.ClaudeApp
 import com.claudecodesetup.R
 import com.claudecodesetup.TerminalActivity
 import com.claudecodesetup.data.AppPreferences
+import com.claudecodesetup.services.FloatingOverlayService
 
 class BootReceiver : BroadcastReceiver() {
 
@@ -18,6 +20,13 @@ class BootReceiver : BroadcastReceiver() {
 
         val prefs = AppPreferences(context)
         if (!prefs.isNodeSetupComplete() || !prefs.isProviderConfigured()) return
+
+        // Restart the floating overlay if it was enabled before reboot
+        if (prefs.getOverlayEnabled() && Settings.canDrawOverlays(context)) {
+            context.startForegroundService(
+                Intent(context, FloatingOverlayService::class.java)
+            )
+        }
 
         val openIntent = PendingIntent.getActivity(
             context, 0,
