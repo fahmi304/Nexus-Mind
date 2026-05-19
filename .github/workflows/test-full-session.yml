@@ -2,10 +2,6 @@ name: Full Session Simulation
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/scripts/test-full-session.js'
-      - 'app/src/main/assets/nodejs-project/bridge.js'
 
 jobs:
   full-session:

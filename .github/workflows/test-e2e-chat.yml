@@ -2,10 +2,6 @@ name: E2E Chat Simulation
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/scripts/test-e2e-chat.js'
-      - 'app/src/main/assets/nodejs-project/bridge.js'
 
 jobs:
   e2e-chat:
