@@ -7,7 +7,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,7 +21,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -98,9 +96,9 @@ fun HomeScreen(
         Box(
             modifier = Modifier
                 .offset((-60).dp, orb1Y.dp)
-                .size(340.dp)
+                .size(320.dp)
                 .background(
-                    Brush.radialGradient(listOf(Color(0x4A7C3AED), Color.Transparent)),
+                    Brush.radialGradient(listOf(Color(0x357C3AED), Color.Transparent)),
                     CircleShape
                 )
         )
@@ -109,9 +107,9 @@ fun HomeScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .offset(orb2X.dp, 0.dp)
-                .size(280.dp)
+                .size(260.dp)
                 .background(
-                    Brush.radialGradient(listOf(Color(0x301E40AF), Color.Transparent)),
+                    Brush.radialGradient(listOf(Color(0x221E40AF), Color.Transparent)),
                     CircleShape
                 )
         )
@@ -120,28 +118,12 @@ fun HomeScreen(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .offset(80.dp, orb3Y.dp)
-                .size(200.dp)
+                .size(180.dp)
                 .background(
-                    Brush.radialGradient(listOf(Color(0x220E7490), Color.Transparent)),
+                    Brush.radialGradient(listOf(Color(0x160E7490), Color.Transparent)),
                     CircleShape
                 )
         )
-
-        // Grid dot overlay
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val step = 38.dp.toPx()
-            val cols = (size.width / step).toInt() + 2
-            val rows = (size.height / step).toInt() + 2
-            repeat(cols) { c ->
-                repeat(rows) { r ->
-                    drawCircle(
-                        color = Color(0x0CFFFFFF),
-                        radius = 1.2.dp.toPx(),
-                        center = Offset(c * step, r * step)
-                    )
-                }
-            }
-        }
 
         // ── Content ────────────────────────────────────────────────────────────
         Column(
@@ -151,7 +133,7 @@ fun HomeScreen(
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(72.dp))
+            Spacer(Modifier.height(64.dp))
 
             // App icon — loaded as Bitmap to support adaptive icons (API 26+)
             val context = LocalContext.current
@@ -168,31 +150,32 @@ fun HomeScreen(
             }
             Box(
                 modifier = Modifier
-                    .size(80.dp)
-                    .background(Color(0x1AFFFFFF), RoundedCornerShape(20.dp))
-                    .border(1.dp, Color(0x25FFFFFF), RoundedCornerShape(20.dp)),
+                    .size(76.dp)
+                    .glowShadow(Color(0x267C3AED), 20.dp, 20.dp)
+                    .background(Color(0x14FFFFFF), RoundedCornerShape(20.dp))
+                    .border(1.dp, Color(0x20FFFFFF), RoundedCornerShape(20.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 if (appIconBitmap != null) {
                     Image(
                         bitmap = appIconBitmap.asImageBitmap(),
                         contentDescription = "App icon",
-                        modifier = Modifier.size(56.dp)
+                        modifier = Modifier.size(54.dp)
                     )
                 }
             }
 
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(16.dp))
 
             Text(
                 text = appName,
-                fontSize = 26.sp,
+                fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
                 fontFamily = DmSansFamily,
             )
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
 
             // Pulsing status row
             Row(
@@ -201,37 +184,37 @@ fun HomeScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
+                        .size(7.dp)
                         .background(
                             Color(0xFF22C55E).copy(alpha = pulseAlpha),
                             CircleShape
                         )
                 )
-                Spacer(Modifier.width(7.dp))
+                Spacer(Modifier.width(6.dp))
                 Text(
                     "All systems online",
-                    fontSize = 13.sp,
-                    color = Color(0xFF86EFAC),
+                    fontSize = 12.sp,
+                    color = Color(0xFF86EFAC).copy(alpha = 0.8f),
                     fontFamily = DmSansFamily,
                     fontWeight = FontWeight.Medium,
                 )
             }
 
-            Spacer(Modifier.height(52.dp))
+            Spacer(Modifier.height(44.dp))
 
             // Menu label
             Row(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     "MENU",
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF64748B),
-                    fontFamily = DmSansFamily,
-                    letterSpacing = 2.5.sp,
+                    color = Color(0xFF475569),
+                    fontFamily = SpaceMonoFamily,
+                    letterSpacing = 3.sp,
                 )
             }
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(12.dp))
 
             // Card 1 — Chat Box
             AnimatedVisibility(
@@ -311,12 +294,12 @@ private fun MenuCard(
     var pressed by remember { mutableStateOf(false) }
 
     val bgColor by animateColorAsState(
-        targetValue = if (pressed) accentColor.copy(alpha = 0.18f) else Color(0x0FFFFFFF),
+        targetValue = if (pressed) accentColor.copy(alpha = 0.14f) else Color(0x0CFFFFFF),
         animationSpec = tween(150),
         label = "bg"
     )
     val borderColor by animateColorAsState(
-        targetValue = if (pressed) accentColor.copy(alpha = 0.6f) else Color(0x1AFFFFFF),
+        targetValue = if (pressed) accentColor.copy(alpha = 0.5f) else Color(0x14FFFFFF),
         animationSpec = tween(150),
         label = "border"
     )
@@ -324,9 +307,9 @@ private fun MenuCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(18.dp))
             .background(bgColor)
-            .border(1.dp, borderColor, RoundedCornerShape(16.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(18.dp))
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
@@ -337,7 +320,7 @@ private fun MenuCard(
                     onTap = { onClick() }
                 )
             }
-            .padding(18.dp)
+            .padding(16.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -346,46 +329,46 @@ private fun MenuCard(
             // Icon pill
             Box(
                 modifier = Modifier
-                    .size(50.dp)
-                    .background(accentColor.copy(alpha = 0.16f), RoundedCornerShape(14.dp))
-                    .border(1.dp, accentColor.copy(alpha = 0.28f), RoundedCornerShape(14.dp)),
+                    .size(46.dp)
+                    .background(accentColor.copy(alpha = 0.13f), RoundedCornerShape(13.dp))
+                    .border(1.dp, accentColor.copy(alpha = 0.22f), RoundedCornerShape(13.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Image(
                     painter = painterResource(iconRes),
                     contentDescription = title,
                     colorFilter = ColorFilter.tint(accentColor),
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
 
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(14.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     title,
-                    fontSize = 16.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White,
                     fontFamily = DmSansFamily,
                 )
-                Spacer(Modifier.height(3.dp))
+                Spacer(Modifier.height(2.dp))
                 Text(
                     subtitle,
                     fontSize = 12.sp,
-                    color = Color(0xFF94A3B8),
+                    color = Color(0xFF64748B),
                     fontFamily = DmSansFamily,
                     lineHeight = 17.sp,
                 )
             }
 
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(8.dp))
 
             Image(
                 painter = painterResource(R.drawable.ic_chevron_right),
                 contentDescription = null,
-                colorFilter = ColorFilter.tint(Color(0xFF475569)),
-                modifier = Modifier.size(18.dp)
+                colorFilter = ColorFilter.tint(Color(0xFF374151)),
+                modifier = Modifier.size(16.dp)
             )
         }
     }

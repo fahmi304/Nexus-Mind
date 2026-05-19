@@ -55,6 +55,7 @@ class TerminalActivity : AppCompatActivity() {
     companion object {
         private const val REQUEST_IMAGE = 1002
         const val EXTRA_SCHEDULED_PROMPT = "scheduled_prompt"
+        const val EXTRA_PROJECT_PATH = "project_path"
     }
 
     // ─── TTS ──────────────────────────────────────────────────────────────────
@@ -128,6 +129,17 @@ class TerminalActivity : AppCompatActivity() {
         }
     }
 
+    // Called when ProjectManagerActivity opens a project while this activity is already in the stack.
+    // FLAG_ACTIVITY_CLEAR_TOP brings us to front and delivers the new project path here.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val projectPath = intent.getStringExtra(EXTRA_PROJECT_PATH) ?: return
+        if (projectPath.isNotEmpty() && serviceBound) {
+            claudeService?.createSession(prefs.getLoginMode(), projectPath)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         claudeService?.isActivityVisible = true
@@ -137,6 +149,19 @@ class TerminalActivity : AppCompatActivity() {
             intent.removeExtra(EXTRA_SCHEDULED_PROMPT)
             claudeService?.sendInput(prompt + "\n")
         }
+        // Refresh model name + avatar in case user changed provider in Settings
+        val model = prefs.getModelId().let { m ->
+            when {
+                m.isEmpty() -> "claude"
+                m.contains('/') -> m.substringAfterLast('/').removeSuffix(":free")
+                else -> m
+            }
+        }
+        binding.tvModelName.text = model
+        val providerId = prefs.getProviderId()
+        binding.webViewTerminal.evaluateJavascript(
+            "window.termSetMeta('','${model.replace("'","\\'")}','${providerId.replace("'","\\'")}');", null
+        )
         // Refresh project pill in case user changed project while away
         val projectPath = prefs.getProjectPath()
         if (projectPath.isNotEmpty()) {
@@ -196,6 +221,10 @@ class TerminalActivity : AppCompatActivity() {
                     }
                 }
                 binding.tvModelName.text = model
+                val providerId = prefs.getProviderId()
+                view.evaluateJavascript(
+                    "window.termSetMeta('','${model.replace("'","\\'")}','${providerId.replace("'","\\'")}');", null
+                )
 
                 // Pre-fill input with shared text (from ACTION_SEND intent)
                 pendingSharedText?.let { text ->

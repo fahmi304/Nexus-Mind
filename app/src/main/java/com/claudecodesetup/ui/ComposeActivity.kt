@@ -3,6 +3,7 @@ package com.claudecodesetup.ui
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -30,6 +31,7 @@ import com.claudecodesetup.data.Providers
 class ComposeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         val prefs = AppPreferences(this)
         val startAt = intent.getStringExtra("start_at") ?: "subscription"
         setContent {
@@ -113,7 +115,15 @@ private fun AppRoot(
                 val model = AiModel(modelId, modelId, emptySet(), "")
                 onComplete(Providers.LOCAL_LLAMA, "", model)
             },
-            onRemoteServer = { screen = "key" },
+            onRemoteServer = { url ->
+                // User entered a remote server URL inline — save it and go straight to model picker
+                val normalized = if (!url.contains("/v1")) url.trimEnd('/') + "/v1" else url
+                prefs.setCustomBaseUrlForProvider("ollama", normalized)
+                prefs.setBaseUrl(normalized)
+                selectedProvider = Providers.OLLAMA
+                storedKey = ""
+                screen = "picker"
+            },
             onBack = { screen = "providers" }
         )
         "key" -> ApiKeyScreen(

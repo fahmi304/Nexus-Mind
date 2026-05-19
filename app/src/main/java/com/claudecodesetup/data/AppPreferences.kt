@@ -70,9 +70,6 @@ class AppPreferences(context: Context) {
     fun getCustomSystemPrompt(): String = prefs.getString(KEY_CUSTOM_SYSTEM_PROMPT, "") ?: ""
     fun setCustomSystemPrompt(prompt: String) = prefs.edit().putString(KEY_CUSTOM_SYSTEM_PROMPT, prompt).apply()
 
-    fun getSkipMalaysiaPrompt(): Boolean = prefs.getBoolean(KEY_SKIP_MALAYSIA, false)
-    fun setSkipMalaysiaPrompt(skip: Boolean) = prefs.edit().putBoolean(KEY_SKIP_MALAYSIA, skip).apply()
-
     // ─── Projects ────────────────────────────────────────────────────────────
 
     fun getProjectsJson(): String = prefs.getString(KEY_PROJECTS, "[]") ?: "[]"
@@ -111,9 +108,6 @@ class AppPreferences(context: Context) {
     fun getOverlayEnabled(): Boolean = prefs.getBoolean(KEY_OVERLAY_ENABLED, false)
     fun setOverlayEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_OVERLAY_ENABLED, enabled).apply()
 
-    fun getPtyMode(): Boolean = prefs.getBoolean("pty_mode", false)
-    fun setPtyMode(enabled: Boolean) = prefs.edit().putBoolean("pty_mode", enabled).apply()
-
     // ─── Live provider updates ────────────────────────────────────────────────
 
     fun getProviderRemoteUrl(): String = prefs.getString(KEY_PROVIDER_REMOTE_URL, "") ?: ""
@@ -139,9 +133,6 @@ class AppPreferences(context: Context) {
     fun setInstalledClaudeVersion(v: String) =
         prefs.edit().putString(KEY_CLAUDE_VERSION, v).apply()
 
-    fun getLanguage(): String = prefs.getString(KEY_LANGUAGE, "en") ?: "en"
-    fun setLanguage(lang: String) = prefs.edit().putString(KEY_LANGUAGE, lang).apply()
-
     // ─── Scheduled prompts ───────────────────────────────────────────────────
 
     fun getScheduledPromptsJson(): String = prefs.getString(KEY_SCHEDULED_PROMPTS, "[]") ?: "[]"
@@ -152,14 +143,18 @@ class AppPreferences(context: Context) {
     fun clearAll() = prefs.edit().clear().apply()
 
     fun clearProviderOnly() {
-        prefs.edit()
+        val editor = prefs.edit()
             .remove(KEY_PROVIDER_SET)
             .remove(KEY_LOGIN_MODE)
             .remove(KEY_PROVIDER_ID)
             .remove(KEY_API_KEY)
             .remove(KEY_MODEL_ID)
             .remove(KEY_BASE_URL)
-            .apply()
+        Providers.ALL.forEach { provider ->
+            editor.remove("api_key_${provider.id}")
+            editor.remove("custom_url_${provider.id}")
+        }
+        editor.apply()
     }
 
     companion object {
@@ -171,11 +166,9 @@ class AppPreferences(context: Context) {
         private const val KEY_MODEL_ID            = "model_id"
         private const val KEY_BASE_URL            = "base_url"
         private const val KEY_SESSION_ACTIVE      = "session_active"
-        private const val KEY_LANGUAGE            = "language"
         private const val KEY_CLAUDE_VERSION      = "claude_version"
         private const val KEY_PROJECT_PATH        = "project_path"
         private const val KEY_CUSTOM_SYSTEM_PROMPT = "custom_system_prompt"
-        private const val KEY_SKIP_MALAYSIA        = "skip_malaysia_prompt"
         private const val KEY_PROJECTS             = "projects_json"
         private const val KEY_MCP_SERVERS          = "mcp_servers_json"
         private const val KEY_MCP_STDIO_SERVERS    = "mcp_stdio_servers_json"

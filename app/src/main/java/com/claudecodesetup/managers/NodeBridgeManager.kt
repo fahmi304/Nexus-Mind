@@ -9,6 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.Socket
+import java.util.UUID
 
 /**
  * Manages the embedded Node.js bridge.
@@ -27,10 +28,11 @@ class NodeBridgeManager(private val context: Context) {
         const val BRIDGE_HOST = "127.0.0.1"
         private const val TAG = "NodeBridgeManager"
 
-        private const val CONFIG_FILE   = "bridge_config.json"
-        const val SETUP_LOG_FILE        = "setup.log"
-        const val SETUP_DONE_FILE       = "setup_done"
-        const val SETUP_FAILED_FILE     = "setup_failed"
+        private const val CONFIG_FILE      = "bridge_config.json"
+        private const val LOCAL_TOKEN_FILE = "local_token"
+        const val SETUP_LOG_FILE           = "setup.log"
+        const val SETUP_DONE_FILE          = "setup_done"
+        const val SETUP_FAILED_FILE        = "setup_failed"
 
         /** Preview/dated model IDs that have been retired → their stable replacements. */
         private val RETIRED_MODEL_MAP = mapOf(
@@ -75,10 +77,7 @@ class NodeBridgeManager(private val context: Context) {
                     projectPath: String = "", customSystemPrompt: String = "", prefs: AppPreferences? = null) {
         writeConfig(mode, apiKey, modelId, baseUrl, providerId, projectPath, customSystemPrompt, prefs)
         writeDeviceContext()
-        if (prefs != null) {
-            writeProjectsForBridge(prefs)
-            writeMcpConfig(prefs)
-        }
+        if (prefs != null) writeMcpConfig(prefs)
         startNodeEngine()
     }
 
@@ -146,18 +145,7 @@ class NodeBridgeManager(private val context: Context) {
             prefs              = prefs
         )
         writeDeviceContext()
-        writeProjectsForBridge(prefs)
         writeMcpConfig(prefs)
-    }
-
-    /** Write projects.json so bridge.js can auto-apply per-project system prompts. */
-    fun writeProjectsForBridge(prefs: AppPreferences) {
-        try {
-            val json = prefs.getProjectsJson().ifBlank { "[]" }
-            java.io.File(context.filesDir, "projects.json").writeText(json)
-        } catch (e: Exception) {
-            Log.e(TAG, "Could not write projects.json", e)
-        }
     }
 
     fun writeDeviceContext() {
@@ -211,19 +199,39 @@ class NodeBridgeManager(private val context: Context) {
         }
     }
 
+    private fun getOrCreateLocalToken(): String {
+        val tokenFile = File(context.filesDir, LOCAL_TOKEN_FILE)
+        if (tokenFile.exists()) {
+            val existing = tokenFile.readText().trim()
+            if (existing.isNotEmpty()) return existing
+        }
+        val token = UUID.randomUUID().toString()
+        tokenFile.writeText(token)
+        tokenFile.setReadable(false, false)
+        tokenFile.setReadable(true, true)
+        tokenFile.setWritable(false, false)
+        tokenFile.setWritable(true, true)
+        return token
+    }
+
     private fun writeConfig(mode: String, apiKey: String, modelId: String, baseUrl: String,
                             providerId: String = "", projectPath: String = "",
                             customSystemPrompt: String = "", prefs: AppPreferences? = null) {
         val isSubscription = mode == AppPreferences.MODE_SUBSCRIPTION
         val authToken = if (!isSubscription) "freecc" else ""
         val effectiveBaseUrl = if (!isSubscription) "http://127.0.0.1:8082" else baseUrl
-        val providerUrl = if (!isSubscription) baseUrl else ""
+        // Ollama's OpenAI-compat endpoint is at /v1/chat/completions; users often omit the /v1.
+        val normalizedBase = if (providerId == "ollama" && !baseUrl.contains("/v1")) {
+            baseUrl.trimEnd('/') + "/v1"
+        } else baseUrl
+        val providerUrl = if (!isSubscription) normalizedBase else ""
         val provider = Providers.byId(providerId)
         val models = provider?.models ?: emptyList()
         val modelList = JSONArray().apply { models.forEach { put(it.modelId) } }
         // Remap retired model IDs to their stable successors so stored prefs don't break on update.
         val effectiveModelId = RETIRED_MODEL_MAP.getOrDefault(modelId, modelId)
         if (effectiveModelId != modelId && prefs != null) prefs.setModelId(effectiveModelId)
+        val localToken = getOrCreateLocalToken()
         val json = JSONObject().apply {
             put("mode",               mode)
             put("apiKey",             apiKey)
@@ -234,12 +242,17 @@ class NodeBridgeManager(private val context: Context) {
             put("modelList",          modelList)
             put("projectPath",        projectPath)
             put("customSystemPrompt", customSystemPrompt)
-            put("ptyMode",            prefs?.getPtyMode() ?: false)
             put("ptyCols",            prefs?.getPtyCols() ?: 220)
             put("ptyRows",            prefs?.getPtyRows() ?: 50)
+            put("localToken",         localToken)
         }
         try {
-            File(context.filesDir, CONFIG_FILE).writeText(json.toString())
+            val configFile = File(context.filesDir, CONFIG_FILE)
+            configFile.writeText(json.toString())
+            configFile.setReadable(false, false)
+            configFile.setReadable(true, true)
+            configFile.setWritable(false, false)
+            configFile.setWritable(true, true)
         } catch (e: Exception) {
             Log.e(TAG, "Could not write bridge config", e)
         }

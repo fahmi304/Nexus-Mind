@@ -4,6 +4,7 @@ import android.app.Activity
 import android.net.Uri
 import android.os.Bundle
 import android.util.Base64
+import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -55,6 +56,7 @@ class ClaudeLoginActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
 
         val (verifier, challenge) = generatePkce()
         val state    = generateState()
@@ -96,7 +98,13 @@ class ClaudeLoginActivity : ComponentActivity() {
                                             url.contains("oauth/code/callback")
                                         ) {
                                             val code = uri.getQueryParameter("code")
+                                            val returnedState = uri.getQueryParameter("state")
                                             if (code != null && phase == "webview") {
+                                                if (returnedState != state) {
+                                                    errorMsg = "Login failed: state mismatch (possible CSRF attack)"
+                                                    phase = "error"
+                                                    return true
+                                                }
                                                 phase = "exchanging"
                                                 scope.launch {
                                                     try {
@@ -247,7 +255,12 @@ class ClaudeLoginActivity : ComponentActivity() {
                 put("rateLimitTier",     tokens.opt("rate_limit_tier"))
             })
         }
-        File(claudeDir, ".credentials.json").writeText(credentials.toString())
+        val credFile = File(claudeDir, ".credentials.json")
+        credFile.writeText(credentials.toString())
+        credFile.setReadable(false, false)
+        credFile.setReadable(true, true)
+        credFile.setWritable(false, false)
+        credFile.setWritable(true, true)
     }
 
     private fun generatePkce(): Pair<String, String> {

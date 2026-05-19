@@ -26,9 +26,10 @@ class SplashActivity : ComponentActivity() {
         setContent {
             SplashAnimationScreen(shouldPlay = shouldPlay) {
                 val next: Class<*> = when {
-                    !prefs.isNodeSetupComplete() -> SetupActivity::class.java
-                    sharedText != null           -> TerminalActivity::class.java
-                    else                         -> HomeActivity::class.java
+                    !prefs.isNodeSetupComplete()                          -> SetupActivity::class.java
+                    sharedText != null && prefs.isProviderConfigured()   -> TerminalActivity::class.java
+                    !prefs.isProviderConfigured()                        -> HomeActivity::class.java
+                    else                                                  -> HomeActivity::class.java
                 }
                 val nextIntent = Intent(this, next)
                 if (sharedText != null) nextIntent.putExtra("shared_text", sharedText)

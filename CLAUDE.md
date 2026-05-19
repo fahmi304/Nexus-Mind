@@ -312,8 +312,31 @@ Written by `NodeBridgeManager.writeConfig()` before each `startBridge()`. Re-wri
 ### Security hardening (Session 16 audit)
 - [ ] **Local proxy token** — Port 8082 accepts any local connection. Generate a random UUID in `NodeBridgeManager`, write to `bridge_config.json`, inject as `X-Local-Token` header in `ClaudeService`, reject missing/wrong token in `bridge.js`. Prevents other apps on device from piggybacking the API key.
 - [ ] **`FLAG_SECURE`** on `ApiKeyScreen` / `ComposeActivity` — prevents API key appearing in Android recents screenshot. One line: `window.setFlags(FLAG_SECURE, FLAG_SECURE)` in the activity.
-- [ ] **`allowBackup="false"`** in `AndroidManifest.xml` — stops adb/cloud backup from exporting encrypted prefs.
+- [ ] **`allowBackup="false"`** in `AndroidManifest.xml` — stops adb/cloud backup from exporting encrypted prefs. ✅ Already set.
 - [ ] **Scrub logs** — grep for `Log.*key`, `Log.*apiKey`, `Log.*baseUrl` and remove any that echo sensitive values.
+
+### Bugs found (Session 19 full audit)
+
+#### Must fix
+- [ ] **`SplashActivity` shared-text routing** — routes to `TerminalActivity` without checking `isProviderConfigured()`. If provider not set, terminal opens and shows a connection error with no guidance. Fix: add `&& prefs.isProviderConfigured()` to the `sharedText != null` branch.
+- [ ] **`ClaudeService` notification ANSI regex broken** — `Regex("][^]*")` is invalid in Kotlin/Java (`[^]` = empty negation class). OSC sequences leak into notification body text. Fix: use `Regex("\\[[0-9;]*[a-zA-Z]")` + `Regex("\\][^]*")`.
+- [ ] **`ApiKeyScreen` missing Groq validation** — `buildRequest()` has no `"groq"` case; key validation silently returns `null` (= success) for Groq. Fix: add `"groq" -> builder.url("https://api.groq.com/openai/v1/models").header("Authorization", "Bearer $key").build()`.
+- [ ] **`ClaudeLoginActivity` OAuth state not verified** — `state` is generated and sent in the auth URL but the callback never verifies the returned state. Missing CSRF protection. Fix: capture returned state from `uri.getQueryParameter("state")` and compare to the generated value before exchanging the code.
+
+#### Security
+- [ ] **`bridge_config.json` and `.credentials.json` file permissions** — both written with default permissions (world-readable on rooted devices). Fix: call `setReadable(false, false); setReadable(true, true)` after writing each file (owner-only).
+- [ ] **Port 8083 (bridge TCP) also needs auth token** — same problem as port 8082. Both ports should validate the local UUID token.
+
+#### Thread safety
+- [ ] **`ClaudeService.sessions` is not thread-safe** — `LinkedHashMap` accessed from both main thread (Binder calls) and IO coroutine threads. Replace with `ConcurrentHashMap<Int, ClaudeSession>`.
+
+#### Improvements / optimizations
+- [ ] **`SetupActivity` thread-per-poll** — spawns a new `Thread { }` every 2 s to call `isBridgeReachable()`. Use a coroutine + `delay(2000)` on `Dispatchers.IO` instead.
+- [ ] **`ComposeActivity` back from picker when `startAt="picker"`** — pressing Back on the model picker goes to the provider list screen instead of just finishing. When `startAt == "picker"` (from Settings → Change model), back should call `finish()`.
+- [ ] **MCP stdio `args` parsing ignores quoted arguments** — `argsStr.split("\\s+".toRegex())` splits on all whitespace, so arguments containing spaces break silently. Use a proper shell-tokenizer or `ProcessBuilder`-style parsing.
+- [ ] **`ScheduledPrompt` day-of-week filtering missing** — the class comment describes per-day scheduling but the data class has no `days` field and WorkManager fires every day. Add an optional `days: List<Int>` field and filter in `ScheduledPromptWorker`.
+- [ ] **`bridge.js` `readConfig()` on every message** — `fs.readFileSync` + `JSON.parse` on every spawn. Cache with `fs.watchFile()` and only re-parse on change.
+- [ ] **`callProxyStreaming` hardcoded model** — line 598 sets `model: 'claude-3-5-sonnet-20241022'`. The proxy overrides it from `cfg.modelId` anyway but it's a confusing dead value. Replace with `cfg.modelId || 'claude-3-5-sonnet-20241022'`.
 
 ### Screenshot / vision feature removal
 **Decision pending scope:** The app has a full screenshot pipeline (MediaProjection, overlay quick prompts, `pending_image.b64` in bridge.js) but **no vision-capable models** are used. This is dead weight.

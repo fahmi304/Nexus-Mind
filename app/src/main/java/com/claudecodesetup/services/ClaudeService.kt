@@ -25,7 +25,7 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.io.OutputStream
 import java.net.Socket
-import java.util.LinkedHashMap
+import java.util.concurrent.ConcurrentHashMap
 
 class ClaudeService : LifecycleService() {
 
@@ -36,7 +36,7 @@ class ClaudeService : LifecycleService() {
     private lateinit var bridge: NodeBridgeManager
     private lateinit var wakeLock: PowerManager.WakeLock
 
-    private val sessions = LinkedHashMap<Int, ClaudeSession>()
+    private val sessions = ConcurrentHashMap<Int, ClaudeSession>()
     private var nextSessionId = 0
     var activeSessionId: Int = -1
         private set
@@ -273,6 +273,17 @@ class ClaudeService : LifecycleService() {
         prefs.setSessionActive(true)
         acquireWakeLock()
         updateNotificationSessionCount()
+
+        // Send session ID and local auth token as the first line so bridge.js
+        // can reattach to the correct persistent claude process on reconnect
+        // and reject unauthorized connections from other apps on the device.
+        val localToken = try {
+            java.io.File(filesDir, "local_token").readText().trim()
+        } catch (_: Exception) { "" }
+        try {
+            sock.outputStream.write("SESSION:${session.id}:$localToken\n".toByteArray(Charsets.UTF_8))
+            sock.outputStream.flush()
+        } catch (_: Exception) {}
 
         // If a starting directory was requested, send a cd command immediately
         if (initialCwd.isNotEmpty()) {

@@ -204,32 +204,28 @@
 
             </LinearLayout>
 
-            <!-- Language -->
-            <TextView
-                style="@style/SectionHeader"
-                android:text="Language" />
-
-            <Spinner
-                android:id="@+id/spinnerLanguage"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:entries="@array/language_options"
-                android:background="@drawable/bg_spinner"
-                android:layout_marginBottom="24dp" />
-
             <!-- MCP Servers -->
             <TextView
                 style="@style/SectionHeader"
                 android:text="MCP Servers" />
 
-            <Button
-                android:id="@+id/btnMcpServers"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="24dp"
-                android:text="Manage MCP Servers"
-                android:textColor="@color/text_primary" />
+                android:orientation="vertical"
+                android:background="@drawable/bg_provider_card"
+                android:padding="16dp"
+                android:layout_marginBottom="24dp">
+
+                <Button
+                    android:id="@+id/btnMcpServers"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Manage MCP Servers"
+                    android:textColor="@color/text_primary" />
+
+            </LinearLayout>
 
             <!-- Floating Overlay -->
             <TextView
@@ -239,95 +235,66 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="8dp">
+                android:orientation="vertical"
+                android:background="@drawable/bg_provider_card"
+                android:padding="16dp"
+                android:layout_marginBottom="24dp">
 
                 <LinearLayout
-                    android:layout_width="0dp"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
 
-                    <TextView
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Enable floating button"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Floating assistant over all apps — screenshot, voice, clipboard"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp"
+                            android:layout_marginTop="2dp" />
+
+                    </LinearLayout>
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/switchOverlay"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Enable floating button"
-                        android:textColor="@color/text_primary"
-                        android:textSize="15sp" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Floating assistant over all apps — screenshot, voice, clipboard"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        android:layout_marginTop="2dp" />
+                        android:layout_marginStart="12dp" />
 
                 </LinearLayout>
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switchOverlay"
-                    android:layout_width="wrap_content"
+                <Button
+                    android:id="@+id/btnOverlayPermission"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp" />
+                    android:layout_marginTop="8dp"
+                    android:text="Grant 'Display over other apps' permission"
+                    android:textColor="@color/accent_blue"
+                    android:visibility="gone" />
 
-            </LinearLayout>
-
-            <Button
-                android:id="@+id/btnOverlayPermission"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Grant 'Display over other apps' permission"
-                android:textColor="@color/accent_blue"
-                android:visibility="gone" />
-
-            <Button
-                android:id="@+id/btnEditOverlayPrompts"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="24dp"
-                android:text="Edit overlay quick prompts"
-                android:textColor="@color/accent_blue" />
-
-            <!-- PTY terminal mode -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="12dp">
-
-                <LinearLayout
-                    android:layout_width="0dp"
+                <Button
+                    android:id="@+id/btnEditOverlayPrompts"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="PTY Terminal Mode"
-                        android:textColor="@color/text_primary"
-                        android:textSize="15sp" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Real PTY for each spawn — correct terminal size, Ctrl+C via SIGINT"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        android:layout_marginTop="2dp" />
-
-                </LinearLayout>
-
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switchPtyMode"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp" />
+                    android:layout_marginTop="8dp"
+                    android:text="Edit overlay quick prompts"
+                    android:textColor="@color/accent_blue" />
 
             </LinearLayout>
 
@@ -409,22 +376,31 @@
                 style="@style/SectionHeader"
                 android:text="Data" />
 
-            <Button
-                android:id="@+id/btnClearData"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:text="Clear saved API key &amp; settings"
-                android:textColor="@color/text_primary" />
+                android:orientation="vertical"
+                android:background="@drawable/bg_provider_card"
+                android:padding="16dp"
+                android:layout_marginBottom="24dp">
 
-            <Button
-                android:id="@+id/btnReset"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="24dp"
-                android:text="Reset and reinstall everything"
-                android:backgroundTint="@color/error_red" />
+                <Button
+                    android:id="@+id/btnClearData"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    android:text="Clear saved API key &amp; settings"
+                    android:textColor="@color/text_primary" />
+
+                <Button
+                    android:id="@+id/btnReset"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Reset and reinstall everything"
+                    android:backgroundTint="@color/error_red" />
+
+            </LinearLayout>
 
             <!-- Support -->
             <TextView

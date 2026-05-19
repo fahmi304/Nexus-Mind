@@ -42,10 +42,10 @@ html, body {
   animation: drift 10s ease-in-out infinite alternate-reverse;
 }
 .blob-3 {
-  width: 340px; height: 220px;
-  bottom: 120px; left: 50%;
-  background: radial-gradient(circle, rgba(255,100,200,0.14) 0%, transparent 70%);
-  filter: blur(22px);
+  width: 300px; height: 200px;
+  bottom: 140px; left: 50%;
+  background: radial-gradient(circle, rgba(100,60,255,0.08) 0%, transparent 70%);
+  filter: blur(28px);
   animation: drift3 12s ease-in-out infinite alternate;
 }
 @keyframes drift {
@@ -107,42 +107,53 @@ html, body {
   font-size: 15px;
   line-height: 1;
 }
+/* Provider-specific avatar colours */
+.ai-avatar[data-p="anthropic"]  { background: linear-gradient(135deg,#d97706,#f59e0b); }
+.ai-avatar[data-p="gemini"]     { background: linear-gradient(135deg,#4285f4,#34a853); }
+.ai-avatar[data-p="openrouter"] { background: linear-gradient(135deg,#7c3aed,#9333ea); }
+.ai-avatar[data-p="deepseek"]   { background: linear-gradient(135deg,#0ea5e9,#06b6d4); }
+.ai-avatar[data-p="kimi"]       { background: linear-gradient(135deg,#2563eb,#1d4ed8); }
+.ai-avatar[data-p="nvidia_nim"] { background: linear-gradient(135deg,#16a34a,#22c55e); }
+.ai-avatar[data-p="meta_llama"] { background: linear-gradient(135deg,#0068ff,#0ea5e9); }
+.ai-avatar[data-p="ollama"]     { background: linear-gradient(135deg,#475569,#334155); }
+.ai-avatar[data-p="groq"]       { background: linear-gradient(135deg,#d97706,#b45309); }
+.ai-avatar[data-p="local_llama"]{ background: linear-gradient(135deg,#7c3aed,#6d28d9); }
 
 /* ── Bubbles ─────────────────────────────────────────────────────────────── */
 .bubble {
   /* min-width:0 lets the flex item shrink below content size so word-wrap works */
   min-width: 0;
   max-width: calc(100% - 44px); /* 28px avatar + 8px gap + 8px safety */
-  padding: 10px 14px;
+  padding: 10px 13px;
   font-size: 13px;
-  line-height: 1.65;
+  line-height: 1.7;
   overflow-wrap: anywhere;
   word-break: break-word;
   font-family: 'Space Mono', 'Courier New', monospace;
 }
 .user-bubble {
-  background: linear-gradient(135deg, rgba(100,64,255,0.3) 0%, rgba(100,64,255,0.15) 100%);
-  border: 1px solid rgba(100,64,255,0.42);
+  background: linear-gradient(135deg, rgba(100,64,255,0.25) 0%, rgba(100,64,255,0.12) 100%);
+  border: 1px solid rgba(100,64,255,0.35);
   border-radius: 16px 4px 16px 16px;
-  color: #ffffff;
+  color: #f1f5f9;
   white-space: pre-wrap;
 }
 .ai-bubble {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(0,200,255,0.2);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.09);
   border-radius: 4px 16px 16px 16px;
-  color: #ffffff;
+  color: #e2e8f0;
   white-space: pre-wrap;
   min-width: 60px;
 }
 .sys-bubble {
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.07);
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.06);
   border-radius: 20px;
-  color: rgba(200,184,255,0.38);
-  font-size: 11px;
-  letter-spacing: 0.4px;
-  padding: 4px 14px;
+  color: rgba(148,163,184,0.5);
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  padding: 3px 12px;
   font-family: 'Space Mono', 'Courier New', monospace;
   white-space: pre-wrap;
   max-width: calc(100% - 24px);
@@ -153,15 +164,15 @@ html, body {
 /* ── Markdown rendering ──────────────────────────────────────────────────── */
 .ai-bubble { white-space: normal; }
 .md-code {
-  background: rgba(0,0,0,0.4);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin: 6px 0;
+  background: rgba(0,0,0,0.35);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  padding: 11px 13px;
+  margin: 7px 0;
   overflow-x: auto;
   font-family: 'Space Mono','Courier New',monospace;
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.65;
   white-space: pre;
   color: #e2e8f0;
 }
@@ -208,10 +219,10 @@ html, body {
   margin-bottom: 14px;
 }
 .thinking-content {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(0,200,255,0.2);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.09);
   border-radius: 4px 16px 16px 16px;
-  padding: 12px 16px;
+  padding: 10px 14px;
   min-width: 120px;
 }
 .wave-bars {
@@ -297,24 +308,24 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  background: rgba(10,6,24,0.93);
-  border-top: 1px solid rgba(150,120,255,0.15);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  padding: 8px 10px;
+  background: rgba(8,4,20,0.95);
+  border-top: 1px solid rgba(255,255,255,0.07);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   z-index: 90;
   transition: bottom 0.15s ease;
 }
 #input-wrap {
   flex: 1;
-  min-height: 42px;
-  background: rgba(18,12,38,0.85);
-  border: 1px solid rgba(150,120,255,0.25);
-  border-radius: 12px;
-  padding: 10px 14px;
+  min-height: 40px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  padding: 9px 14px;
   font-family: 'Space Mono', 'Courier New', monospace;
   font-size: 13px;
-  color: #ffffff;
+  color: #f1f5f9;
   display: block;
   cursor: text;
   word-break: break-all;
@@ -359,12 +370,12 @@ html, body {
 }
 #send-btn {
   width: 40px; height: 40px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #6440ff 0%, #00c8ff 100%);
-  box-shadow: 0 0 18px rgba(100,64,255,0.45);
+  border-radius: 13px;
+  background: linear-gradient(135deg, #5b35e8 0%, #009bd6 100%);
+  box-shadow: 0 2px 12px rgba(100,64,255,0.35);
   border: none;
   color: #fff;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   cursor: pointer;
   display: flex;
@@ -372,19 +383,19 @@ html, body {
   justify-content: center;
   flex-shrink: 0;
   -webkit-tap-highlight-color: rgba(100,64,255,0.3);
-  transition: opacity 0.12s;
+  transition: opacity 0.12s, transform 0.1s;
   line-height: 1;
 }
-#send-btn:active { opacity: 0.65; }
+#send-btn:active { opacity: 0.7; transform: scale(0.94); }
 
 /* ── Keyboard toolbar ────────────────────────────────────────────────────── */
 #toolbar {
   position: fixed;
   left: 0; right: 0;
   bottom: 0;
-  height: 44px;
-  background: rgba(10,6,24,0.96);
-  border-top: 1px solid rgba(100,64,255,0.14);
+  height: 42px;
+  background: rgba(8,4,20,0.97);
+  border-top: 1px solid rgba(255,255,255,0.07);
   display: none;
   flex-direction: row;
   align-items: center;
@@ -396,12 +407,12 @@ html, body {
 }
 #toolbar::-webkit-scrollbar { display: none; }
 .tb-btn {
-  background: rgba(255,255,255,0.05);
-  color: #a090c8;
-  border: 1px solid rgba(150,120,255,0.14);
+  background: rgba(255,255,255,0.04);
+  color: #94a3b8;
+  border: 1px solid rgba(255,255,255,0.08);
   border-radius: 8px;
-  padding: 4px 12px;
-  font-size: 12px;
+  padding: 4px 11px;
+  font-size: 11px;
   font-family: 'Space Mono', 'Courier New', monospace;
   cursor: pointer;
   white-space: nowrap;
@@ -410,13 +421,13 @@ html, body {
   -webkit-user-select: none;
   transition: background 0.1s;
 }
-.tb-btn:active { background: rgba(100,64,255,0.22); border-color: rgba(100,64,255,0.45); color: #c8b8ff; }
+.tb-btn:active { background: rgba(100,64,255,0.2); border-color: rgba(100,64,255,0.4); color: #c4b5fd; }
 .tb-accent {
-  background: rgba(100,64,255,0.14);
-  color: #c8b8ff;
-  border-color: rgba(100,64,255,0.3);
+  background: rgba(100,64,255,0.12);
+  color: #a78bfa;
+  border-color: rgba(100,64,255,0.25);
 }
-.tb-accent:active { background: rgba(100,64,255,0.32); }
+.tb-accent:active { background: rgba(100,64,255,0.28); }
 
 /* ── Extended thinking collapsible ──────────────────────────────────────── */
 .thinking-details {
@@ -535,25 +546,26 @@ html, body {
   flex-direction: row;
   justify-content: flex-end;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   margin-top: 8px;
   padding-top: 6px;
-  border-top: 1px solid rgba(255,255,255,0.07);
+  border-top: 1px solid rgba(255,255,255,0.06);
 }
 .bubble-act-btn {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
   border-radius: 6px;
-  color: rgba(255,255,255,0.38);
+  color: rgba(148,163,184,0.7);
   font-size: 10px;
   font-family: 'Space Mono', 'Courier New', monospace;
-  padding: 3px 9px;
+  padding: 3px 8px;
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
+  transition: background 0.1s;
 }
-.bubble-act-btn:active { background: rgba(100,64,255,0.22); border-color: rgba(100,64,255,0.4); color: #c8b8ff; }
+.bubble-act-btn:active { background: rgba(100,64,255,0.2); border-color: rgba(100,64,255,0.35); color: #a78bfa; }
 
 /* ── Thinking timer ──────────────────────────────────────────────────────── */
 #thinking-timer {
@@ -645,6 +657,21 @@ html, body {
 // ── Constants ─────────────────────────────────────────────────────────────────
 const INPUT_BAR_H = 58;   // px
 const TOOLBAR_H   = 44;   // px
+
+// ── Provider avatar config ────────────────────────────────────────────────────
+const PROVIDER_AVATAR = {
+  anthropic:  '◆',
+  gemini:     '✦',
+  openrouter: '⬡',
+  deepseek:   '⚡',
+  kimi:       '◎',
+  nvidia_nim: '⬡',
+  meta_llama: '▲',
+  ollama:     '◎',
+  groq:       '⚡',
+  local_llama:'◎',
+};
+var currentProvider = 'default';
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const msgs       = document.getElementById('msgs');
@@ -1260,7 +1287,7 @@ function startAiBubble(){
   row.style.position='relative';
   const av=document.createElement('div');
   av.className='avatar ai-avatar';
-  av.textContent='◎';
+  applyProviderAvatar(av, currentProvider);
   const bub=document.createElement('div');
   bub.className='bubble ai-bubble';
   bub.innerHTML='<span class="ai-loading"><span></span><span></span><span></span></span>';
@@ -1409,9 +1436,16 @@ window.termCopySelection=function(){
   if(sel&&sel.toString()&&typeof Android!=='undefined') Android.copyText(sel.toString());
 };
 
-window.termSetMeta=function(name,model){
-  /* app name and model are now shown in the native Android header bar */
+window.termSetMeta=function(name,model,providerId){
+  currentProvider = providerId || 'default';
+  var thinkAv = thinkBub && thinkBub.querySelector('.ai-avatar');
+  if (thinkAv) applyProviderAvatar(thinkAv, currentProvider);
 };
+
+function applyProviderAvatar(el, provider) {
+  el.dataset.p = provider;
+  el.textContent = PROVIDER_AVATAR[provider] || '◎';
+}
 
 // Pre-fill the input buffer (used by shared text and voice input)
 window.termSetInput=function(text){

@@ -205,18 +205,18 @@ private fun ProviderCard(provider: Provider, onSelect: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .background(Color(0x0FFFFFFF), RoundedCornerShape(14.dp))
-            .border(1.dp, Color(0x17FFFFFF), RoundedCornerShape(14.dp))
+            .background(Color(0x0CFFFFFF), RoundedCornerShape(16.dp))
+            .border(1.dp, Color(0x12FFFFFF), RoundedCornerShape(16.dp))
             .clickable(interactionSource = interaction, indication = null, onClick = onSelect)
-            .padding(14.dp),
+            .padding(13.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(44.dp)
-                .background(accentColor.copy(alpha = 0.14f), RoundedCornerShape(12.dp))
-                .border(1.dp, accentColor.copy(alpha = 0.35f), RoundedCornerShape(12.dp)),
+                .size(42.dp)
+                .background(accentColor.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+                .border(1.dp, accentColor.copy(alpha = 0.28f), RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center
         ) {
             if (provider.iconUrl.isNotEmpty()) {
@@ -243,13 +243,13 @@ private fun ProviderCard(provider: Provider, onSelect: () -> Unit) {
                 )
                 Box(
                     modifier = Modifier
-                        .background(accentColor.copy(alpha = 0.18f), RoundedCornerShape(20.dp))
-                        .border(1.dp, accentColor.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
-                        .padding(horizontal = 7.dp, vertical = 2.dp)
+                        .background(accentColor.copy(alpha = 0.13f), RoundedCornerShape(20.dp))
+                        .border(1.dp, accentColor.copy(alpha = 0.28f), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
                         badge, fontFamily = DmSansFamily, fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold, color = accentColor
+                        fontWeight = FontWeight.SemiBold, color = accentColor.copy(alpha = 0.9f)
                     )
                 }
             }

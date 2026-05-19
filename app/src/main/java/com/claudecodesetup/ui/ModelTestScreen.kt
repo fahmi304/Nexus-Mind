@@ -89,8 +89,8 @@ private fun testOpenAiCompat(baseUrl: String, apiKey: String, model: AiModel): T
     // OpenRouter attribution
     if (baseUrl.contains("openrouter")) {
         reqBuilder
-            .header("HTTP-Referer", "https://github.com/rektzy9903/ClaudeCodeSetup")
-            .header("X-Title", "ClaudeCodeSetup")
+            .header("HTTP-Referer", "https://github.com/fahmi304/Nexus-Mind")
+            .header("X-Title", "Nexus Mind")
     }
 
     val resp = httpClient.newCall(reqBuilder.build()).execute()

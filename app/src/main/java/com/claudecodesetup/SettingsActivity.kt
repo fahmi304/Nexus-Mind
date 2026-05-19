@@ -38,13 +38,17 @@ class SettingsActivity : AppCompatActivity() {
         populateFields()
         setupActions()
         setupOverlaySwitch()
-        setupPtySwitch()
     }
 
     override fun onResume() {
         super.onResume()
-        // Refresh switch state in case user just returned from the permission screen
         syncOverlaySwitchState()
+        val mcpCount = try {
+            org.json.JSONArray(prefs.getMcpServersJson()).length() +
+            org.json.JSONArray(prefs.getMcpStdioServersJson()).length()
+        } catch (_: Exception) { 0 }
+        binding.btnMcpServers.text =
+            if (mcpCount > 0) "Manage MCP Servers ($mcpCount)" else "Manage MCP Servers"
     }
 
     private fun populateFields() {
@@ -72,18 +76,6 @@ class SettingsActivity : AppCompatActivity() {
         binding.tvClaudeVersion.text = "Nexus Mind v$installedVersion"
         binding.tvAppVersion.text    = "App v${BuildConfig.VERSION_NAME}"
 
-        // Language
-        val langCodes = arrayOf("en", "ms")
-        val currentLang = prefs.getLanguage()
-        binding.spinnerLanguage.setSelection(langCodes.indexOf(currentLang).coerceAtLeast(0))
-        binding.spinnerLanguage.onItemSelectedListener =
-            object : android.widget.AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(
-                    parent: android.widget.AdapterView<*>?, view: android.view.View?,
-                    position: Int, id: Long
-                ) { prefs.setLanguage(langCodes[position]) }
-                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
-            }
     }
 
     override fun onPause() {
@@ -179,7 +171,10 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun showScheduledPromptsDialog() {
         val prompts = ScheduledPromptsManager.getAll(prefs).toMutableList()
-        val labels = (prompts.map { "${it.timeLabel} — ${it.prompt.take(40)}" } + listOf("+ Add new")).toTypedArray()
+        val labels = (prompts.map { p ->
+            val base = "${p.timeLabel} — ${p.prompt.take(40)}"
+            if (p.enabled) base else "$base (disabled)"
+        } + listOf("+ Add new")).toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("Scheduled prompts")
             .setItems(labels) { _, which ->
@@ -336,16 +331,6 @@ class SettingsActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun setupPtySwitch() {
-        binding.switchPtyMode.isChecked = prefs.getPtyMode()
-        binding.switchPtyMode.setOnCheckedChangeListener { _, isChecked ->
-            prefs.setPtyMode(isChecked)
-            bridgeManager.refreshConfig(prefs)
-            val msg = if (isChecked) "PTY mode enabled — takes effect on next message" else "PTY mode disabled"
-            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-        }
-    }
-
     private fun setupOverlaySwitch() {
         syncOverlaySwitchState()
 
@@ -446,9 +431,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun resetEverything() {
         prefs.clearAll()
-        Thread {
-            try { filesDir.deleteRecursively() } catch (_: Exception) {}
-        }.start()
+        try { filesDir.deleteRecursively() } catch (_: Exception) {}
         startActivity(Intent(this, SetupActivity::class.java))
         finishAffinity()
     }

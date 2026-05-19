@@ -122,6 +122,10 @@ private fun buildRequest(provider: Provider, key: String): Request? {
             .url("https://api.moonshot.ai/v1/models")
             .header("Authorization", "Bearer $key")
             .build()
+        "groq" -> builder
+            .url("https://api.groq.com/openai/v1/models")
+            .header("Authorization", "Bearer $key")
+            .build()
         else -> null
     }
 }
