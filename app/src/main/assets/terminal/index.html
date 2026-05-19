@@ -428,6 +428,11 @@ html, body {
   border-color: rgba(100,64,255,0.25);
 }
 .tb-accent:active { background: rgba(100,64,255,0.28); }
+.tb-ctrl-active {
+  background: rgba(59,130,246,0.25) !important;
+  border-color: rgba(59,130,246,0.6) !important;
+  color: #93c5fd !important;
+}
 
 /* ── Extended thinking collapsible ──────────────────────────────────────── */
 .thinking-details {
@@ -633,7 +638,7 @@ html, body {
   <button class="tb-btn tb-accent" id="btn-yes">Yes</button>
   <button class="tb-btn tb-accent" id="btn-no">No</button>
   <button class="tb-btn tb-accent" id="btn-shell">$ </button>
-  <button class="tb-btn" id="btn-ctrl-c">Ctrl+C</button>
+  <button class="tb-btn" id="btn-ctrl">Ctrl</button>
   <button class="tb-btn" id="btn-tab">Tab</button>
   <button class="tb-btn" id="btn-up">↑</button>
   <button class="tb-btn" id="btn-down">↓</button>
@@ -1606,6 +1611,15 @@ ghost.addEventListener('input',function(){
   updateInputDisp();
 });
 ghost.addEventListener('keydown',function(e){
+  // Ctrl modifier active — intercept next letter and fire Ctrl+letter combo
+  if(ctrlMode && e.key.length===1){
+    e.preventDefault();
+    ctrlMode=false;
+    ctrlBtn.classList.remove('tb-ctrl-active');
+    const code=e.key.toLowerCase().charCodeAt(0)-96; // a=1…z=26
+    if(code>=1&&code<=26) tbRaw(String.fromCharCode(code));
+    return;
+  }
   if(e.key==='Enter'){e.preventDefault();sendRawInput();}
   else if(e.key==='ArrowUp'){e.preventDefault();if(inputBuffer.length===0){tbRaw('\x1b[A');}else{historyUp();}}
   else if(e.key==='ArrowDown'){e.preventDefault();if(historyIdx===-1){tbRaw('\x1b[B');}else{historyDown();}}
@@ -1635,7 +1649,14 @@ document.getElementById('btn-shell').addEventListener('click',function(){
   if(!inputBuffer.startsWith('$ ')){inputBuffer='$ '+inputBuffer;}
   ghost.value=inputBuffer;updateInputDisp();ghost.focus();
 });
-document.getElementById('btn-ctrl-c').addEventListener('click',function(){tbRaw('\x03');});
+// Sticky Ctrl modifier — turns blue when active; next letter key fires Ctrl+letter
+var ctrlMode = false;
+var ctrlBtn  = document.getElementById('btn-ctrl');
+ctrlBtn.addEventListener('click', function(){
+  ctrlMode = !ctrlMode;
+  ctrlBtn.classList.toggle('tb-ctrl-active', ctrlMode);
+  ghost.focus();
+});
 document.getElementById('btn-tab').addEventListener('click',function(){tbRaw('\t');});
 // ↑/↓ navigate input history; send ANSI only when input is empty (i.e. PTY-style)
 document.getElementById('btn-up').addEventListener('click',function(){

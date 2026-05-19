@@ -2937,12 +2937,14 @@ try { fs.mkdirSync(path.join(FILES_DIR, '.claude', 'commands'), { recursive: tru
 // and the proxy dummy key is always in the approved list.
 const claudeSettingsPath = path.join(FILES_DIR, '.claude', 'settings.json');
 try {
+    fs.mkdirSync(path.join(FILES_DIR, '.claude'), { recursive: true });
     let s = {};
     try { s = JSON.parse(fs.readFileSync(claudeSettingsPath, 'utf8')); } catch (_) {}
-    s.theme                  = s.theme || 'dark';
+    s.theme                  = 'dark'; // always force — conditional keeps broken values
     s.hasCompletedOnboarding = true;
     s.hasShownWelcome        = true;
     s.skipWelcome            = true;
+    s.autoUpdaterStatus      = 'disabled';
     s.preferredNotifChannel  = s.preferredNotifChannel || 'none';
     // Approve the proxy dummy key so Vw() returns it for API requests without
     // prompting the user to confirm the key (VE(key) = key.slice(-20)).
