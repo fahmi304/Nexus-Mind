@@ -2452,6 +2452,13 @@ function openPersistentSession() {
     // ── Proc factory ─────────────────────────────────────────────────────────
     function spawnProc(cwd) {
         const cfg  = readConfig();
+        // Proxy mode: remove any OAuth credentials file left from a previous
+        // subscription login. If it exists alongside ANTHROPIC_API_KEY=sk-ant-proxy000,
+        // claude-code triggers an auth-conflict check → shows the login screen TUI
+        // instead of starting normally. Subscription mode needs the file kept.
+        if (cfg.mode !== 'subscription') {
+            try { fs.unlinkSync(path.join(FILES_DIR, '.claude', '.credentials.json')); } catch (_) {}
+        }
         const env  = buildEnv();
         const cols = String(cfg.ptyCols || 220);
         const rows = String(cfg.ptyRows || 50);
@@ -2531,10 +2538,18 @@ function openPersistentSession() {
         });
 
         proc.on('close', code => {
+            clearTimeout(bannerTimeout);
             if (state.currentTid) { clearTimeout(state.currentTid); state.currentTid = null; }
             if (state.idleTimer)  { clearTimeout(state.idleTimer);  state.idleTimer  = null; }
             state.busy = false;
             activeSessions.delete(sid);
+            // If the process died before the banner was done, flush the buffered output
+            // so the user can read the actual error (import-err, auth failure, etc.)
+            // instead of just seeing the exit code.
+            if (!bannerDone && bannerBuf && state.socket) {
+                try { state.socket.write(bannerBuf); } catch(_) {}
+                bannerBuf = '';
+            }
             const rateLimited = (Date.now() - lastRateLimitMs) < 30000;
             const hint = rateLimited
                 ? '\x1b[33m⚠ Session ended due to rate limiting.\x1b[0m\r\n' +
@@ -2946,11 +2961,18 @@ try {
     s.skipWelcome            = true;
     s.autoUpdaterStatus      = 'disabled';
     s.preferredNotifChannel  = s.preferredNotifChannel || 'none';
-    // Approve the proxy dummy key so Vw() returns it for API requests without
-    // prompting the user to confirm the key (VE(key) = key.slice(-20)).
+    // Approve the proxy dummy key so claude-code accepts it silently in interactive
+    // mode without showing the login selector (VE(key) = key.slice(-20)).
+    // Also purge it from rejected — if it ended up there from a previous failed
+    // auth attempt or the user dismissed the confirmation dialog, it stays rejected
+    // forever unless we explicitly remove it, and rejected takes priority over approved.
     if (!s.customApiKeyResponses) s.customApiKeyResponses = { approved: [], rejected: [] };
+    if (!Array.isArray(s.customApiKeyResponses.approved)) s.customApiKeyResponses.approved = [];
+    if (!Array.isArray(s.customApiKeyResponses.rejected)) s.customApiKeyResponses.rejected = [];
     if (!s.customApiKeyResponses.approved.includes('sk-ant-proxy000'))
         s.customApiKeyResponses.approved.push('sk-ant-proxy000');
+    s.customApiKeyResponses.rejected =
+        s.customApiKeyResponses.rejected.filter(k => k !== 'sk-ant-proxy000');
     fs.writeFileSync(claudeSettingsPath, JSON.stringify(s, null, 2));
 } catch (_) {}
 
