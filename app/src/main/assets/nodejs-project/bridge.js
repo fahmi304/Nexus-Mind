@@ -218,7 +218,7 @@ const intlShim =
 let lastRateLimitMs = 0;
 
 // Broadcasts 429 countdown OSC to all active PTY sessions.
-// Assigned once by openPersistentSession at startup.
+// Assigned once by openPrintSession at startup.
 let on429CountdownNotify = null;
 
 // ─── Persistent session store ──────────────────────────────────────────────────
@@ -2604,199 +2604,198 @@ function buildInteractiveEvalCode() {
 }
 
 
-// ─── PTY persistent session ───────────────────────────────────────────────────
-// One long-lived claude process per session ID. Sessions survive socket
-// disconnects for PTY_IDLE_MS; reconnecting reattaches to the same proc so
-// conversation history is preserved across tab switches and brief disconnects.
-function openPersistentSession() {
+// ─── Print-mode session server ────────────────────────────────────────────────
+// Each user message spawns one `claude --print --output-format stream-json`
+// process. The process reads the message from argv, calls the API (via our
+// proxy for non-Anthropic providers), streams NDJSON events, then exits cleanly.
+// --continue resumes the most-recent claude session so history is preserved.
+// --dangerously-skip-permissions auto-approves all tool use — no TUI prompts.
+function openPrintSession() {
 
-    // Broadcast 429 countdown OSC to all currently attached sockets.
     on429CountdownNotify = function(delaySecs) {
         for (const s of activeSessions.values()) {
             if (s.socket) try { s.socket.write('\x1b]9;rate-limit:' + delaySecs + '\x07'); } catch(_) {}
         }
     };
 
-    // ── Proc factory ─────────────────────────────────────────────────────────
-    function spawnProc(cwd) {
-        const cfg  = readConfig();
-        // Proxy mode: remove any OAuth credentials file left from a previous
-        // subscription login. If it exists alongside ANTHROPIC_API_KEY=sk-ant-proxy000,
-        // claude-code triggers an auth-conflict check → shows the login screen TUI
-        // instead of starting normally. Subscription mode needs the file kept.
+    // ── Patch settings.json ───────────────────────────────────────────────────
+    function patchSettings(cfg) {
         if (cfg.mode !== 'subscription') {
-            try { fs.unlinkSync(path.join(FILES_DIR, '.claude', '.credentials.json')); } catch (_) {}
+            try { fs.unlinkSync(path.join(FILES_DIR, '.claude', '.credentials.json')); } catch(_) {}
         }
-        // Re-patch settings.json before every spawn. claude-code rewrites settings
-        // during a session (recording rejected keys, clearing theme, etc.), so the
-        // module-load patch alone is not enough. Also ensure the directory exists —
-        // writeFileSync silently fails if .claude/ doesn't exist yet.
         try {
             const claudeDir = path.join(FILES_DIR, '.claude');
-            try { fs.mkdirSync(claudeDir, { recursive: true }); } catch (_) {}
+            try { fs.mkdirSync(claudeDir, { recursive: true }); } catch(_) {}
             const sp = path.join(claudeDir, 'settings.json');
             let s = {};
-            try { s = JSON.parse(fs.readFileSync(sp, 'utf8')); } catch (_) {}
+            try { s = JSON.parse(fs.readFileSync(sp, 'utf8')); } catch(_) {}
             if (!s.customApiKeyResponses) s.customApiKeyResponses = { approved: [], rejected: [] };
             if (!Array.isArray(s.customApiKeyResponses.approved)) s.customApiKeyResponses.approved = [];
-            if (!Array.isArray(s.customApiKeyResponses.rejected)) s.customApiKeyResponses.rejected = [];
             if (!s.customApiKeyResponses.approved.includes('sk-ant-proxy000'))
                 s.customApiKeyResponses.approved.push('sk-ant-proxy000');
             s.customApiKeyResponses.rejected =
                 s.customApiKeyResponses.rejected.filter(k => k !== 'sk-ant-proxy000');
-            // cli.js triggers onboarding if !theme OR !hasCompletedOnboarding (OR, not AND).
-            // Always force both so neither condition is true.
-            s.theme                  = 'dark';
-            s.hasCompletedOnboarding = true;
-            s.hasShownWelcome        = true;
-            s.skipWelcome            = true;
+            s.theme = 'dark'; s.hasCompletedOnboarding = true;
+            s.hasShownWelcome = true; s.skipWelcome = true;
             fs.writeFileSync(sp, JSON.stringify(s, null, 2));
-        } catch (_) {}
-        const env  = buildEnv();
-        const cols = String(cfg.ptyCols || 220);
-        const rows = String(cfg.ptyRows || 50);
-        const code = buildInteractiveEvalCode();
-        return fs.existsSync(PTY_HELPER)
-            ? spawn(PTY_HELPER, [cols, rows, LAUNCHER, '-e', code], { env, cwd })
-            : spawn(LAUNCHER, ['-e', code], { env, cwd });
+        } catch(_) {}
     }
 
-    // ── Wire proc stdout/stderr/close events ─────────────────────────────────
-    function wireProcEvents(sid, state) {
-        if (!state.proc) return; // print mode — no persistent proc
-        const proc = state.proc;
+    // ── Spawn one claude --print process for a single user message ────────────
+    function runMessage(msg, state) {
+        const cfg = readConfig();
+        patchSettings(cfg);
+        const env = buildEnv();
+        const cliUrl  = 'file://' + CLAUDE_CLI;
+        const exitLog = JSON.stringify(path.join(FILES_DIR, 'session_exit.log'));
 
-        // Raw PTY relay: forward all stdout bytes directly to the socket.
-        // Claude runs in its native interactive TUI mode (no --output-format flag),
-        // so output is ANSI-formatted text, not NDJSON. The WebView ANSI emulator
-        // renders it. thinking-done fires on first output after a message is sent.
-        let outputIdleTimer = null;
-        // Suppress the startup banner (ASCII art + "Welcome to Claude Code").
-        // The banner appears as raw terminal output before claude is ready for input.
-        // We drop all output until either: (a) a JSON event line arrives (indicates
-        // banner is done and claude is ready), or (b) 4 s timeout as a safety net.
-        let bannerDone = false;
-        let bannerBuf  = '';
-        const bannerTimeout = setTimeout(() => { bannerDone = true; bannerBuf = ''; }, 4000);
+        // argv for print mode: --print --output-format stream-json
+        //   --dangerously-skip-permissions  → all tools auto-approved, no TUI prompts
+        //   --continue                      → resume last session (preserves history)
+        const args = ['--print', '--output-format', 'stream-json', '--dangerously-skip-permissions'];
+        if (state.hasHistory) args.push('--continue');
+        args.push(msg);
+
+        const argvCode = args.map((a, i) =>
+            'process.argv[' + (i + 2) + ']=' + JSON.stringify(a) + ';'
+        ).join('') + 'process.argv.length=' + (args.length + 2) + ';';
+
+        const evalCode =
+            'process.on("exit",function(c){' +
+            'try{require("fs").appendFileSync(' + exitLog + ',"[print-exit] "+c+"\\n");}catch(_){}});' +
+            'process.on("unhandledRejection",function(r){' +
+            'try{require("fs").appendFileSync(' + exitLog + ',' +
+            '"[unhandledRejection] "+String(r&&(r.stack||r.message)||r).slice(0,400)+"\\n");}catch(_){}});' +
+            regexpShim + intlShim +
+            'process.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';' +
+            argvCode +
+            'import(' + JSON.stringify(cliUrl) + ')' +
+            '.catch(function(e){process.stderr.write("import-err:"+String(e)+"\\n");process.exit(1);});';
+
+        const proc = spawn(LAUNCHER, ['-e', evalCode], { env, cwd: state.cwd });
+        state.currentProc = proc;
+        state.busy = true;
+        state.thinkingDone = false;
+
+        try { if (state.socket) state.socket.write('\x1b]9;thinking-start\x07'); } catch(_) {}
+
+        let lineBuf = '';
+        let firstContent = false; // has any text been sent to the AI bubble yet?
+
         proc.stdout.on('data', chunk => {
-            if (!bannerDone) {
-                bannerBuf += chunk.toString();
-                // A line starting with '{' is a JSON event — banner is over
-                const lines = bannerBuf.split('\n');
-                let jsonIdx = -1;
-                for (let i = 0; i < lines.length; i++) {
-                    if (lines[i].trimStart().startsWith('{')) { jsonIdx = i; break; }
+            lineBuf += chunk.toString();
+            const lines = lineBuf.split('\n');
+            lineBuf = lines.pop(); // hold incomplete line
+
+            for (const line of lines) {
+                const t = line.trim();
+                if (!t.startsWith('{')) continue;
+                let evt;
+                try { evt = JSON.parse(t); } catch(_) { continue; }
+
+                // system/init — session is live, mark history available for next message
+                if (evt.type === 'system' && evt.subtype === 'init') {
+                    state.hasHistory = true;
                 }
-                if (jsonIdx !== -1) {
-                    clearTimeout(bannerTimeout);
-                    bannerDone = true;
-                    // Forward everything from the first JSON line onward
-                    const remaining = lines.slice(jsonIdx).join('\n');
-                    bannerBuf = '';
-                    if (remaining && state.socket) {
-                        try { state.socket.write(remaining); } catch(_) {}
+
+                // assistant message — extract text blocks and tool_use blocks
+                if (evt.type === 'assistant' && evt.message && Array.isArray(evt.message.content)) {
+                    for (const block of evt.message.content) {
+                        if (block.type === 'text' && block.text) {
+                            if (!firstContent) {
+                                firstContent = true;
+                                // First real text → THINKING→RESPONDING: opens AI bubble
+                                try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
+                            }
+                            try { if (state.socket) state.socket.write(block.text); } catch(_) {}
+                        }
+                        if (block.type === 'tool_use') {
+                            // Show a tool indicator. Written before the first text means it
+                            // appears in the thinking phase (sys bubble); after first text it
+                            // appears inline in the AI bubble — both look fine.
+                            const preview = JSON.stringify(block.input || {}).slice(0, 120);
+                            const toolLine = '\n\x1b[2m⚙ ' + block.name + ' ' + preview + '\x1b[0m\n';
+                            if (!firstContent) {
+                                // Still in thinking phase — write a dim sys-area line
+                                try { if (state.socket) state.socket.write(toolLine); } catch(_) {}
+                            } else {
+                                try { if (state.socket) state.socket.write(toolLine); } catch(_) {}
+                            }
+                        }
                     }
                 }
-                return;
-            }
 
-            // First output after user message → clear thinking spinner
-            if (state.busy && !state.thinkingDone) {
-                state.thinkingDone = true;
-                try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
-            }
-            try { if (state.socket) state.socket.write(chunk); } catch(_) {}
-
-            // Mark session not-busy after 800 ms of silence (turn likely complete).
-            // Also send the second thinking-done so the terminal finalizes the AI bubble.
-            if (outputIdleTimer) clearTimeout(outputIdleTimer);
-            outputIdleTimer = setTimeout(() => {
-                if (state.busy) {
-                    state.busy = false;
-                    state.thinkingDone = false;
-                    if (state.currentTid) { clearTimeout(state.currentTid); state.currentTid = null; }
-                    // Second thinking-done: signals the terminal that the AI turn is complete
-                    // and the response bubble should be finalized.
-                    try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
+                // result event — final summary, update token display
+                if (evt.type === 'result') {
+                    state.hasHistory = true;
+                    // num_turns is a rough proxy for context usage
+                    const turns = evt.num_turns || 0;
+                    if (turns > 0) {
+                        state.sessionTokens = turns * 150;
+                        try { if (state.socket) state.socket.write('\x1b]9;tokens:' + state.sessionTokens + '\x07'); } catch(_) {}
+                    }
+                    if (evt.is_error) {
+                        const errMsg = '\n\x1b[31m[claude error] ' + (evt.result || 'unknown') + '\x1b[0m\n';
+                        try { if (state.socket) state.socket.write(errMsg); } catch(_) {}
+                    }
                 }
-            }, 800);
+            }
         });
 
-        // proc.stderr is pty_helper's own stderr (PTY setup errors), not claude's stderr.
-        // Claude's stderr goes through the PTY master → proc.stdout above.
         proc.stderr.on('data', d => {
             const s = d.toString();
             if (/^\[(eval-ok|import-resolved|exit-event|unhandledRejection|regex-compat|intl-shim)\]/.test(s.trim())) return;
-            try { if (state.socket) state.socket.write('\x1b[31m[PTY err] ' + s + '\x1b[0m'); } catch(_) {}
+            log('[print] ' + s);
         });
 
         proc.on('error', e => {
-            try { if (state.socket) state.socket.write('\x1b[31m[PTY] Process error: ' + e.message + '\x1b[0m\r\n'); } catch(_) {}
+            state.currentProc = null;
+            state.busy = false;
+            try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07\x1b[31m[error] ' + e.message + '\x1b[0m\r\n'); } catch(_) {}
         });
 
-        proc.on('close', code => {
-            clearTimeout(bannerTimeout);
-            if (state.currentTid) { clearTimeout(state.currentTid); state.currentTid = null; }
-            if (state.idleTimer)  { clearTimeout(state.idleTimer);  state.idleTimer  = null; }
+        // 120-second hard timeout
+        const finishTid = setTimeout(() => {
+            try { proc.kill('SIGTERM'); } catch(_) {}
+            state.currentProc = null;
             state.busy = false;
-            activeSessions.delete(sid);
-            // If the process died before the banner was done, flush the buffered output
-            // so the user can read the actual error (import-err, auth failure, etc.)
-            // instead of just seeing the exit code.
-            if (!bannerDone && bannerBuf && state.socket) {
-                try { state.socket.write(bannerBuf); } catch(_) {}
-                bannerBuf = '';
-            }
-            const rateLimited = (Date.now() - lastRateLimitMs) < 30000;
-            const hint = rateLimited
-                ? '\x1b[33m⚠ Session ended due to rate limiting.\x1b[0m\r\n' +
-                  '\x1b[2mWait 30–60 s then tap Restart, or switch to a different model.\x1b[0m\r\n'
-                : '\x1b[33m[PTY] Session ended (exit ' + (code || 0) + ') — tap Restart to reconnect.\x1b[0m\r\n';
-            // Always clear the thinking spinner before writing the error so the UI doesn't get stuck
+            try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07\r\n\x1b[31m✗ Timed out (120 s)\x1b[0m\r\n'); } catch(_) {}
+        }, 120000);
+
+        proc.on('close', code => {
+            clearTimeout(finishTid);
+            state.currentProc = null;
+            state.busy = false;
+            state.thinkingDone = false;
+            // Always send second thinking-done — closes/finalizes the AI bubble
             try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
-            try { if (state.socket) { state.socket.write('\r\n' + hint); state.socket.end(); } } catch(_) {}
+            if (code !== 0 && !firstContent) {
+                const rateLimited = (Date.now() - lastRateLimitMs) < 30000;
+                const hint = rateLimited
+                    ? '\x1b[33m⚠ Rate limited — wait 30–60 s then retry, or switch model.\x1b[0m\r\n'
+                    : '\x1b[31m[claude exited ' + code + ']\x1b[0m\r\n';
+                try { if (state.socket) state.socket.write(hint); } catch(_) {}
+            }
         });
     }
 
-    // ── Input handler (runs for every data chunk from the Kotlin socket) ──────
+    // ── Input handler ─────────────────────────────────────────────────────────
     function handleInput(d, state) {
-        const proc = state.proc;
-
         // If a !pty subprocess is active, relay bytes directly to it
         if (state.ptyProc) {
             try { state.ptyProc.stdin.write(d); } catch(_) {}
             return;
         }
 
-        // In-band resize: ESC 0xFE cols_hi cols_lo rows_hi rows_lo → ESC 0xFF for pty_helper
-        if (d.length >= 6 && d[0] === 0x1b && d[1] === 0xfe) {
-            if (proc) try { proc.stdin.write(Buffer.from([0x1b, 0xff, d[2], d[3], d[4], d[5]])); } catch(_) {}
-            return;
-        }
-
+        // Ctrl+C: kill the in-flight claude process
         const raw = d.toString();
-
-        // Ctrl+C: send interrupt to claude's stdin
         if (raw.includes('\x03')) {
-            if (state.busy && proc && proc.stdin.writable) {
-                try { proc.stdin.write('\x03'); } catch(_) {}
+            if (state.busy && state.currentProc) {
+                try { state.currentProc.kill('SIGTERM'); } catch(_) {}
                 try { if (state.socket) state.socket.write('\r\n\x1b[33m^C — interrupted\x1b[0m\r\n'); } catch(_) {}
-                if (state.currentTid) { clearTimeout(state.currentTid); state.currentTid = null; }
             }
             state.inputBuf = '';
             return;
-        }
-
-        // Escape sequences (arrow keys, F-keys, etc.) and single control chars
-        // like Tab (\t=0x09) — forward raw to PTY immediately, bypassing the
-        // line buffer so interactive TUI menus and tab-completion work.
-        if (proc && proc.stdin.writable) {
-            const isEscSeq = d.length <= 6 && d[0] === 0x1b;
-            const isSingleCtrl = d.length === 1 && d[0] < 0x20 && d[0] !== 0x03 && d[0] !== 0x0a && d[0] !== 0x0d;
-            if (isEscSeq || isSingleCtrl) {
-                try { proc.stdin.write(d); } catch(_) {}
-                return;
-            }
         }
 
         state.inputBuf += raw;
@@ -2804,14 +2803,7 @@ function openPersistentSession() {
         while ((nl = state.inputBuf.search(/[\r\n]/)) !== -1) {
             const line = state.inputBuf.slice(0, nl).replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '').trim();
             state.inputBuf = state.inputBuf.slice(nl + 1);
-            // Empty Enter: forward \r\n directly so interactive TUI prompts (theme
-            // picker, y/n confirmations) receive the keypress and advance.
-            if (!line) {
-                if (!state.busy && proc && proc.stdin.writable) {
-                    try { proc.stdin.write('\r\n'); } catch(_) {}
-                }
-                continue;
-            }
+            if (!line) continue;
 
             if (state.busy) {
                 try { if (state.socket) state.socket.write('\x1b[33m[busy — please wait]\x1b[0m\r\n'); } catch(_) {}
@@ -2821,30 +2813,26 @@ function openPersistentSession() {
             // ── bridge-local !commands ────────────────────────────────────────
             if (line === '!help') {
                 try { if (state.socket) state.socket.write(
-                    '\x1b[1m[PTY — persistent session]\x1b[0m\r\n' +
-                    '  \x1b[33m!clear\x1b[0m           Clear conversation history\r\n' +
+                    '\x1b[1m[print mode — per-message spawn]\x1b[0m\r\n' +
+                    '  \x1b[33m!clear\x1b[0m           Start a new conversation\r\n' +
                     '  \x1b[33m!context [path]\x1b[0m  Load file/dir as context\r\n' +
                     '  \x1b[33m!attach <file>\x1b[0m   Attach file to next message\r\n' +
                     '  \x1b[33m!pty <cmd>\x1b[0m       Run interactive program (bash, python3…)\r\n' +
                     '  \x1b[33m!agentic\x1b[0m         Toggle agentic mode\r\n' +
                     '  \x1b[33m!log\x1b[0m             Show bridge log\r\n' +
-                    '  /cost  /compact  /doctor  /clear — forwarded to claude\r\n' +
                     '  \x1b[2m$ <cmd>  — run shell command\x1b[0m\r\n\r\n'
                 ); } catch(_) {}
                 continue;
             }
 
             if (line === '!clear') {
+                state.hasHistory    = false; // next message starts a fresh session
                 state.contextBlock  = '';
                 state.pendingAttach = null;
                 state.sessionTokens = 0;
-                state.history       = [];
-                state.busy          = false;
-                state.thinkingDone  = false;
                 try { if (state.socket) state.socket.write('\x1b]9;tokens:0\x07'); } catch(_) {}
                 try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
-                try { if (state.socket) state.socket.write('\x1b[2m[history cleared]\x1b[0m\r\n'); } catch(_) {}
-                if (proc && proc.stdin.writable) try { proc.stdin.write('/clear\n'); } catch(_) {}
+                try { if (state.socket) state.socket.write('\x1b[2m[history cleared — next message starts a new session]\x1b[0m\r\n'); } catch(_) {}
                 continue;
             }
 
@@ -2888,7 +2876,7 @@ function openPersistentSession() {
                 continue;
             }
 
-            // !pty <cmd> — temporarily hand the socket to an interactive subprocess
+            // !pty <cmd> — hand the socket to an interactive PTY subprocess
             if (line.startsWith('!pty ') || line === '!pty') {
                 const ptyCmd = line.slice(5).trim();
                 if (!ptyCmd) {
@@ -2896,11 +2884,11 @@ function openPersistentSession() {
                     continue;
                 }
                 if (!fs.existsSync(PTY_HELPER)) {
-                    try { if (state.socket) state.socket.write('\x1b[31m✗ libpty-helper.so not found — rebuild app.\x1b[0m\r\n'); } catch(_) {}
+                    try { if (state.socket) state.socket.write('\x1b[31m✗ libpty-helper.so not found.\x1b[0m\r\n'); } catch(_) {}
                     continue;
                 }
-                const ptyCfg  = readConfig();
-                const ptyEnv  = Object.assign({}, buildEnv(), { TERM: 'xterm-256color' });
+                const ptyCfg = readConfig();
+                const ptyEnv = Object.assign({}, buildEnv(), { TERM: 'xterm-256color' });
                 let ptyProc;
                 try {
                     ptyProc = spawn(PTY_HELPER,
@@ -2914,14 +2902,17 @@ function openPersistentSession() {
                 try { if (state.socket) state.socket.write('\x1b[33m[PTY] ' + ptyCmd + ' — Ctrl+D or exit to return\x1b[0m\r\n\r\n'); } catch(_) {}
                 ptyProc.stdout.on('data', d2 => { try { if (state.socket) state.socket.write(d2); } catch(_) {} });
                 ptyProc.stderr.on('data', d2 => { try { if (state.socket) state.socket.write(d2); } catch(_) {} });
-                const endPty = code2 => {
+                ptyProc.on('close', code2 => {
                     state.ptyProc = null;
                     try { if (state.socket) state.socket.write('\r\n\x1b[33m[PTY] ' + ptyCmd + ' ended (exit ' + (code2 || 0) + ')\x1b[0m\r\n\r\n'); } catch(_) {}
-                };
-                ptyProc.on('close', endPty);
-                ptyProc.on('error', e => { state.ptyProc = null; try { if (state.socket) state.socket.write('\x1b[31m[PTY] Error: ' + e.message + '\x1b[0m\r\n'); } catch(_) {} });
-                // Kill ptyProc if socket closes while it's running (orphan prevention)
-                if (state.socket) state.socket.once('close', () => { try { if (state.ptyProc === ptyProc) { ptyProc.kill(); state.ptyProc = null; } } catch(_) {} });
+                });
+                ptyProc.on('error', e => {
+                    state.ptyProc = null;
+                    try { if (state.socket) state.socket.write('\x1b[31m[PTY] Error: ' + e.message + '\x1b[0m\r\n'); } catch(_) {}
+                });
+                if (state.socket) state.socket.once('close', () => {
+                    try { if (state.ptyProc === ptyProc) { ptyProc.kill(); state.ptyProc = null; } } catch(_) {}
+                });
                 continue;
             }
 
@@ -2940,8 +2931,8 @@ function openPersistentSession() {
                     state.busy = true;
                     try { if (state.socket) state.socket.write('\x1b]9;thinking-start\x07'); } catch(_) {}
                     const sh = spawn('/system/bin/sh', ['-c', cmd], { env: buildEnv(), cwd: state.cwd });
-                    sh.stdout.on('data', d => { try { if (state.socket) state.socket.write(d); } catch(_) {} });
-                    sh.stderr.on('data', d => { try { if (state.socket) state.socket.write(d); } catch(_) {} });
+                    sh.stdout.on('data', d2 => { try { if (state.socket) state.socket.write(d2); } catch(_) {} });
+                    sh.stderr.on('data', d2 => { try { if (state.socket) state.socket.write(d2); } catch(_) {} });
                     const shTid = setTimeout(() => {
                         try { sh.kill('SIGTERM'); } catch(_) {}
                         try { if (state.socket) state.socket.write('\x1b[31m[$ cmd timed out after 30 s]\x1b[0m\r\n'); } catch(_) {}
@@ -2951,61 +2942,37 @@ function openPersistentSession() {
                         clearTimeout(shTid);
                         try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
                         state.busy = false;
-                        state.thinkingDone = false;
                     });
                 }
                 continue;
             }
 
-            // ── Forward everything else to claude ─────────────────────────────
+            // ── Forward everything else to claude as a new print-mode message ──
             let msg = line;
             if (state.contextBlock)  { msg = state.contextBlock  + '\n\n' + msg; state.contextBlock  = ''; }
             if (state.pendingAttach) { msg = state.pendingAttach + '\n\n' + msg; state.pendingAttach = null; }
-
-            if (proc && proc.stdin.writable) {
-                // PTY persistent mode: write directly to claude's stdin
-                state.busy = true;
-                state.thinkingDone = false;
-                try { if (state.socket) state.socket.write('\x1b]9;thinking-start\x07'); } catch(_) {}
-                try { proc.stdin.write(msg + '\n'); } catch(_) {}
-                state.currentTid = setTimeout(() => {
-                    try { proc.stdin.write('\x03'); } catch(_) {}
-                    try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07\r\n\x1b[31m✗ Timed out (60 s). Response interrupted.\x1b[0m\r\n'); } catch(_) {}
-                    state.currentTid = null;
-                }, 60000);
-            }
+            runMessage(msg, state);
         }
     }
 
-    // ── Attach/reattach a socket to a session ─────────────────────────────────
+    // ── Attach a socket to a session (create if new) ──────────────────────────
     function attachSession(sid, socket, leftover) {
         let state = activeSessions.get(sid);
-        const cfg0 = readConfig();
-        const isNew = !state || !state.proc || state.proc.exitCode !== null;
 
-        if (isNew) {
+        if (!state) {
             const cfg = readConfig();
-            const cwd = cfg.projectPath || FILES_DIR;
-            let proc = null;
-            try { proc = spawnProc(cwd); }
-            catch(e) {
-                try { socket.write('\x1b[31m[PTY] Failed to start claude: ' + e.message + '\x1b[0m\r\n'); socket.end(); } catch(_) {}
-                return;
-            }
             state = {
-                proc, socket: null,
+                socket: null,
                 busy: false, thinkingDone: false,
-                currentTid: null,
+                currentProc: null,
                 inputBuf: '', contextBlock: '', pendingAttach: null,
                 sessionTokens: 0,
-                ptyProc: null, idleTimer: null,
-                history: [],
-                cwd, sid
+                hasHistory: false,   // becomes true after first successful response
+                ptyProc: null,
+                cwd: cfg.projectPath || FILES_DIR,
+                sid
             };
             activeSessions.set(sid, state);
-            wireProcEvents(sid, state);
-        } else {
-            if (state.idleTimer) { clearTimeout(state.idleTimer); state.idleTimer = null; }
         }
 
         state.socket = socket;
@@ -3014,14 +2981,8 @@ function openPersistentSession() {
         try { socket.write('\x1b]9;agentic:' + (agOn ? 'on' : 'off') + '\x07'); } catch(_) {}
         try { socket.write('\x1b]9;cwd:' + state.cwd + '\x07'); } catch(_) {}
         try { socket.write('\x1b]9;tokens:' + state.sessionTokens + '\x07'); } catch(_) {}
-
-        // Always start with spinner cleared; PTY TUI shows its own loading state,
-        // and print mode is immediately ready.
         try { socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
-        if (!isNew && state.proc) {
-            try { socket.write('\x1b[2m[session ' + sid + ' reconnected]\x1b[0m\r\n'); } catch(_) {}
-            if (state.busy) try { socket.write('\x1b]9;thinking-start\x07'); } catch(_) {}
-        }
+        if (state.busy) try { socket.write('\x1b]9;thinking-start\x07'); } catch(_) {}
 
         socket.on('data', d => handleInput(d, state));
 
@@ -3033,20 +2994,15 @@ function openPersistentSession() {
             if (state.socket === socket) {
                 state.socket = null;
                 if (state.ptyProc) { try { state.ptyProc.kill(); } catch(_) {} state.ptyProc = null; }
-                if (state.proc) {
-                    state.idleTimer = setTimeout(() => {
-                        try { state.proc.kill('SIGHUP'); } catch(_) {}
-                        activeSessions.delete(sid);
-                    }, PTY_IDLE_MS);
-                } else {
-                    activeSessions.delete(sid);
-                }
+                // In print mode there is no persistent proc to keep alive between messages;
+                // the session state (hasHistory, cwd, etc.) is kept in activeSessions so
+                // reconnecting (tab switch, brief disconnect) picks up the same context.
             }
         });
         socket.on('error', () => { try { socket.destroy(); } catch(_) {} });
     }
 
-    // ── TCP server: read SESSION:<id> header, then attach ─────────────────────
+    // ── TCP server ────────────────────────────────────────────────────────────
     const server = net.createServer(rawSocket => {
         if (!isClaudeInstalled()) {
             try { rawSocket.write('\r\n\x1b[31mClaude Code not installed — run Setup from the app.\x1b[0m\r\n'); rawSocket.end(); } catch(_) {}
@@ -3079,12 +3035,12 @@ function openPersistentSession() {
     });
 
     server.on('error', err => {
-        process.stderr.write('PTY bridge error: ' + err.message + '\n');
-        setTimeout(openPersistentSession, 3000);
+        process.stderr.write('Print bridge error: ' + err.message + '\n');
+        setTimeout(openPrintSession, 3000);
     });
 
     server.listen(PORT, HOST, () => {
-        log('PTY Bridge ready on ' + HOST + ':' + PORT + '\n');
+        log('Print Bridge ready on ' + HOST + ':' + PORT + '\n');
     });
 }
 
@@ -3133,7 +3089,7 @@ function startBridgeServer() {
     // Start proxy first — port 8082 must be listening before Claude Code spawns,
     // otherwise its first API call gets ECONNREFUSED and it exits immediately.
     startProxyServer(() => {
-        openPersistentSession();
+        openPrintSession();
         // Load MCP servers after the bridge is up (non-blocking)
         loadMcpStdioServers().catch(e => log('[mcp-stdio] startup error: ' + e.message + '\n'));
         loadMcpHttpServers().catch(e => log('[mcp-http] startup error: ' + e.message + '\n'));
