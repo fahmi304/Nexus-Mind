@@ -1579,9 +1579,9 @@ window.termWrite=function(raw){
     if(!hasTuiChrome) scheduleAiRender();
   } else {
     processAnsiBytes(sysAnsi,raw);
-    // OSC sequences (e.g. thinking-start) change chatState during processAnsiBytes;
-    // only create a sys bubble if we're still IDLE and have visible text.
-    if(chatState!=='IDLE') return;
+    // During RESPONDING the AI bubble owns all output. During THINKING or IDLE
+    // render a sys bubble so !log / !help / $ cmd output is visible even while busy.
+    if(chatState==='RESPONDING') return;
     const hasText=sysAnsi.lines.some(function(l){return l&&l.length>0;});
     if(hasText){getSysBubble();scheduleSysRender();}
   }
