@@ -2904,9 +2904,16 @@ function openPrintSession() {
                     const errLines = stderrBuf.split('\n')
                         .filter(l => l.trim() && !/^\[(eval-ok|import-resolved|exit-event|unhandledRejection|regex-compat|intl-shim)\]/.test(l.trim()))
                         .slice(-8).join('\r\n');
-                    let hint = '\x1b[31m[claude exited ' + code + ']\x1b[0m\r\n';
-                    if (errLines) hint += '\x1b[2m' + errLines + '\x1b[0m\r\n';
-                    hint += '\x1b[2mType !log for bridge log\x1b[0m\r\n';
+                    let hint;
+                    if (code === 143) {
+                        hint = '\x1b[31m✗ Request timed out (120 s)\x1b[0m\r\n' +
+                               '\x1b[2mIf you see 401/auth errors above, check your API key in Settings.\x1b[0m\r\n' +
+                               '\x1b[2mPress Ctrl+C next time to cancel early.\x1b[0m\r\n';
+                    } else {
+                        hint = '\x1b[31m[claude exited ' + code + ']\x1b[0m\r\n';
+                        if (errLines) hint += '\x1b[2m' + errLines + '\x1b[0m\r\n';
+                        hint += '\x1b[2mType !log for bridge log\x1b[0m\r\n';
+                    }
                     try { if (state.socket) state.socket.write(hint); } catch(_) {}
                 }
             }
@@ -3066,6 +3073,37 @@ function openPrintSession() {
                 continue;
             }
 
+            // ── Shell commands: $ cmd — run even while claude is busy ────────────
+            if (line.startsWith('$ ')) {
+                const cmd = line.slice(2).trim();
+                if (cmd.startsWith('cd ')) {
+                    const newDir = cmd.slice(3).trim();
+                    try {
+                        process.chdir(newDir);
+                        state.cwd = newDir;
+                        saveSessionState(state.sid, state);
+                        try { if (state.socket) state.socket.write('\x1b[2m[cwd: ' + newDir + ']\x1b[0m\r\n'); } catch(_) {}
+                        try { if (state.socket) state.socket.write('\x1b]9;cwd:' + newDir + '\x07'); } catch(_) {}
+                    } catch(e) { try { if (state.socket) state.socket.write('\x1b[31m[cd: ' + e.message + ']\x1b[0m\r\n'); } catch(_) {} }
+                } else {
+                    const wasBusy = state.busy;
+                    if (!wasBusy) state.busy = true;
+                    const sh = spawn('/system/bin/sh', ['-c', cmd], { env: buildEnv(), cwd: state.cwd });
+                    sh.stdout.on('data', d2 => { try { if (state.socket) state.socket.write(d2); } catch(_) {} });
+                    sh.stderr.on('data', d2 => { try { if (state.socket) state.socket.write(d2); } catch(_) {} });
+                    const shTid = setTimeout(() => {
+                        try { sh.kill('SIGTERM'); } catch(_) {}
+                        try { if (state.socket) state.socket.write('\x1b[31m[$ cmd timed out after 30 s]\x1b[0m\r\n'); } catch(_) {}
+                        if (!wasBusy) state.busy = false;
+                    }, 30000);
+                    sh.on('close', () => {
+                        clearTimeout(shTid);
+                        if (!wasBusy) state.busy = false;
+                    });
+                }
+                continue;
+            }
+
             // ── busy gate — all commands below wait for current request to finish ──
             if (state.busy) {
                 try { if (state.socket) state.socket.write('\x1b[33m[busy — please wait]\x1b[0m\r\n'); } catch(_) {}
@@ -3193,36 +3231,6 @@ function openPrintSession() {
                 if (state.socket) state.socket.once('close', () => {
                     try { if (state.ptyProc === ptyProc) { ptyProc.kill(); state.ptyProc = null; } } catch(_) {}
                 });
-                continue;
-            }
-
-            // ── Shell commands: $ cmd ─────────────────────────────────────────
-            if (line.startsWith('$ ')) {
-                const cmd = line.slice(2).trim();
-                if (cmd.startsWith('cd ')) {
-                    const newDir = cmd.slice(3).trim();
-                    try {
-                        process.chdir(newDir);
-                        state.cwd = newDir;
-                        saveSessionState(state.sid, state);
-                        try { if (state.socket) state.socket.write('\x1b[2m[cwd: ' + newDir + ']\x1b[0m\r\n'); } catch(_) {}
-                        try { if (state.socket) state.socket.write('\x1b]9;cwd:' + newDir + '\x07'); } catch(_) {}
-                    } catch(e) { try { if (state.socket) state.socket.write('\x1b[31m[cd: ' + e.message + ']\x1b[0m\r\n'); } catch(_) {} }
-                } else {
-                    state.busy = true;
-                    const sh = spawn('/system/bin/sh', ['-c', cmd], { env: buildEnv(), cwd: state.cwd });
-                    sh.stdout.on('data', d2 => { try { if (state.socket) state.socket.write(d2); } catch(_) {} });
-                    sh.stderr.on('data', d2 => { try { if (state.socket) state.socket.write(d2); } catch(_) {} });
-                    const shTid = setTimeout(() => {
-                        try { sh.kill('SIGTERM'); } catch(_) {}
-                        try { if (state.socket) state.socket.write('\x1b[31m[$ cmd timed out after 30 s]\x1b[0m\r\n'); } catch(_) {}
-                        state.busy = false;
-                    }, 30000);
-                    sh.on('close', () => {
-                        clearTimeout(shTid);
-                        state.busy = false;
-                    });
-                }
                 continue;
             }
 
