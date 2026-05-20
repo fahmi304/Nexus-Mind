@@ -131,6 +131,8 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this, com.claudecodesetup.ui.ProjectManagerActivity::class.java))
         }
 
+        binding.btnManageApprovals.setOnClickListener { showAutoApprovalsDialog() }
+
         binding.btnMcpServers.setOnClickListener {
             startActivity(Intent(this, com.claudecodesetup.ui.McpActivity::class.java))
         }
@@ -376,6 +378,57 @@ class SettingsActivity : AppCompatActivity() {
         binding.switchOverlay.isChecked         = enabled
         binding.btnOverlayPermission.visibility =
             if (!hasPermission && prefs.getOverlayEnabled()) View.VISIBLE else View.GONE
+    }
+
+    private fun showAutoApprovalsDialog() {
+        val file = java.io.File(filesDir, "auto_approve.json")
+        val list: MutableList<String> = try {
+            val obj = org.json.JSONObject(file.readText())
+            val arr = obj.optJSONArray("allow") ?: org.json.JSONArray()
+            (0 until arr.length()).map { arr.getString(it) }.toMutableList()
+        } catch (_: Exception) { mutableListOf() }
+
+        if (list.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setTitle("Auto-approved tools")
+                .setMessage("No tools have been auto-approved yet.\n\nWhen Claude asks permission to use a tool and you tap \"Always allow\", it appears here.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+
+        val labels = list.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Auto-approved tools (${list.size})")
+            .setItems(labels) { _, which ->
+                AlertDialog.Builder(this)
+                    .setTitle("Remove \"${list[which]}\"?")
+                    .setMessage("Claude will ask for permission again before using this tool.")
+                    .setPositiveButton("Remove") { _, _ ->
+                        list.removeAt(which)
+                        val obj = try { org.json.JSONObject(file.readText()) } catch (_: Exception) { org.json.JSONObject() }
+                        obj.put("allow", org.json.JSONArray(list))
+                        file.writeText(obj.toString(2))
+                        Toast.makeText(this, "Removed", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+            .setNeutralButton("Clear all") { _, _ ->
+                AlertDialog.Builder(this)
+                    .setTitle("Clear all auto-approvals?")
+                    .setMessage("Claude will ask permission for every tool again.")
+                    .setPositiveButton("Clear all") { _, _ ->
+                        val obj = try { org.json.JSONObject(file.readText()) } catch (_: Exception) { org.json.JSONObject() }
+                        obj.put("allow", org.json.JSONArray())
+                        file.writeText(obj.toString(2))
+                        Toast.makeText(this, "All auto-approvals cleared", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+            .setNegativeButton("Done", null)
+            .show()
     }
 
     // ─── Reset ─────────────────────────────────────────────────────────────────

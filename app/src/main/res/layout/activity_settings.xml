@@ -141,6 +141,37 @@
 
             </LinearLayout>
 
+            <!-- Auto-approvals -->
+            <TextView
+                style="@style/SectionHeader"
+                android:text="Auto-Approved Tools" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_provider_card"
+                android:padding="16dp"
+                android:layout_marginBottom="24dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Tools you tapped &#8220;Always allow&#8221; on — Claude will use these without asking."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="12dp" />
+
+                <Button
+                    android:id="@+id/btnManageApprovals"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Review auto-approvals"
+                    android:textColor="@color/accent_blue" />
+
+            </LinearLayout>
+
             <!-- MCP Servers -->
             <TextView
                 style="@style/SectionHeader"

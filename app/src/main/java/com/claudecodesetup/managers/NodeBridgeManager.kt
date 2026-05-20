@@ -142,21 +142,40 @@ class NodeBridgeManager(private val context: Context) {
 
     /** Re-write bridge_config.json from current prefs without restarting Node.js.
      *  bridge.js reads the config fresh on every spawn, so the next message picks
-     *  up the new model immediately. */
+     *  up the new model immediately.
+     *  If the provider or model changed, writes a history_clear flag so bridge.js
+     *  resets --continue on the next spawn (avoids feeding old context to a new model). */
     fun refreshConfig(prefs: AppPreferences) {
+        val prevModel    = lastKnownModel
+        val prevProvider = lastKnownProvider
+        val newModel     = prefs.getModelId()
+        val newProvider  = prefs.getProviderId()
+        lastKnownModel    = newModel
+        lastKnownProvider = newProvider
+
         writeConfig(
             mode               = prefs.getLoginMode(),
             apiKey             = prefs.getApiKey(),
-            modelId            = prefs.getModelId(),
+            modelId            = newModel,
             baseUrl            = prefs.getBaseUrl(),
-            providerId         = prefs.getProviderId(),
+            providerId         = newProvider,
             projectPath        = prefs.getProjectPath(),
             customSystemPrompt = prefs.getCustomSystemPrompt(),
             prefs              = prefs
         )
         writeDeviceContext()
         writeMcpConfig(prefs)
+
+        // Signal bridge to clear --continue history on next spawn when model/provider changed
+        val changed = (prevModel.isNotEmpty() && prevModel != newModel) ||
+                      (prevProvider.isNotEmpty() && prevProvider != newProvider)
+        if (changed) {
+            try { java.io.File(context.filesDir, "history_clear_requested").createNewFile() } catch (_: Exception) {}
+        }
     }
+
+    private var lastKnownModel:    String = ""
+    private var lastKnownProvider: String = ""
 
     fun writeDeviceContext() {
         try {

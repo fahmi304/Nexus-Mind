@@ -2814,6 +2814,18 @@ function openPrintSession() {
         const cliUrl  = 'file://' + CLAUDE_CLI;
         const exitLog = JSON.stringify(path.join(FILES_DIR, 'session_exit.log'));
 
+        // If model/provider changed since last session, clear history so the new
+        // model doesn't receive context it never produced.
+        const clearFlagPath = path.join(FILES_DIR, 'history_clear_requested');
+        if (fs.existsSync(clearFlagPath)) {
+            try { fs.unlinkSync(clearFlagPath); } catch(_) {}
+            if (state.hasHistory) {
+                state.hasHistory = false;
+                clearSessionState(state.sid);
+                try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[33m[Model changed — history cleared for clean start]\x1b[0m\r\n'); } catch(_) {}
+            }
+        }
+
         // argv for print mode — order matters for claude-code v2.1.112 arg parser:
         //   --output-format stream-json  → structured NDJSON output (must come first)
         //   --print                      → non-interactive, exits after response
