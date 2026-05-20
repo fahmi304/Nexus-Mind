@@ -1295,13 +1295,17 @@ function showPermissionDialog(perm){
   var hdr=document.createElement('div');
   hdr.style.cssText='background:rgba(147,51,234,0.15);padding:10px 14px 8px;display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(147,51,234,0.2);';
   var icon=document.createElement('span');
-  icon.textContent='🔐';
+  icon.textContent='✅';
   icon.style.fontSize='15px';
   var title=document.createElement('span');
   title.style.cssText='color:#d8b4fe;font-size:12px;font-family:Space Mono,monospace;font-weight:600;flex:1;';
-  title.textContent='Permission — '+perm.toolName;
+  title.textContent=perm.toolName+' ran';
+  var sub=document.createElement('span');
+  sub.style.cssText='color:rgba(196,181,253,0.5);font-size:9px;font-family:Space Mono,monospace;margin-left:6px;';
+  sub.textContent='configure future';
   hdr.appendChild(icon);
   hdr.appendChild(title);
+  hdr.appendChild(sub);
   wrap.appendChild(hdr);
 
   // Command/input preview (what Claude wants to run)
@@ -1314,7 +1318,7 @@ function showPermissionDialog(perm){
   if(inputStr){
     var pre=document.createElement('div');
     pre.style.cssText='padding:8px 14px 6px;font-size:11px;font-family:Space Mono,monospace;color:rgba(200,220,255,0.85);white-space:pre-wrap;word-break:break-all;border-bottom:1px solid rgba(147,51,234,0.1);max-height:90px;overflow:hidden;';
-    pre.textContent='▶ '+inputStr;
+    pre.textContent='✓ '+inputStr;
     wrap.appendChild(pre);
   }
 
@@ -1346,9 +1350,9 @@ function showPermissionDialog(perm){
   var btnRow=document.createElement('div');
   btnRow.style.cssText='display:flex;gap:0;';
   var buttons=[
-    {label:'Deny',   cmd:'!perm-deny',   bg:'rgba(239,68,68,0.12)', border:'rgba(239,68,68,0.3)',  color:'#f87171'},
-    {label:'Allow',  cmd:'!perm-allow',  bg:'rgba(34,197,94,0.12)', border:'rgba(34,197,94,0.3)',  color:'#4ade80'},
-    {label:'Always', cmd:'!perm-always', bg:'rgba(34,197,94,0.08)', border:'rgba(34,197,94,0.25)', color:'#86efac'},
+    {label:'Block future',  cmd:'!perm-deny',   bg:'rgba(239,68,68,0.12)', border:'rgba(239,68,68,0.3)',  color:'#f87171'},
+    {label:'Dismiss',       cmd:'!perm-allow',  bg:'rgba(100,116,139,0.12)',border:'rgba(100,116,139,0.3)',color:'#94a3b8'},
+    {label:'Always allow',  cmd:'!perm-always', bg:'rgba(34,197,94,0.08)', border:'rgba(34,197,94,0.25)', color:'#86efac'},
   ];
   buttons.forEach(function(b,i){
     var btn=document.createElement('button');
@@ -1829,14 +1833,10 @@ function submitLine(text){
       inputHistory.push(msg);
       if(inputHistory.length>50) inputHistory.shift();
     }
-    // Commands that bypass the bridge busy gate (always run immediately):
-    const alwaysRuns=msg.startsWith('!log')||msg.startsWith('!help')||
-                     msg.startsWith('$ ')||msg.startsWith('!confirm:')||
-                     msg.startsWith('!perm-');
-    const willBeQueued=!alwaysRuns&&(chatState==='RESPONDING'||chatState==='THINKING');
+    // All ! and $ commands run immediately regardless of busy state
     // Fresh sys bubble so bridge output appears below this cmd bubble
     sysEl=null; sysAnsi=makeAnsiState();
-    addCmdBubble(msg,willBeQueued);
+    addCmdBubble(msg,false);
     if(typeof Android!=='undefined') Android.sendInput(msg+'\r');
     return;
   }

@@ -1330,10 +1330,15 @@ function startProxyServer(onReady) {
             req.on('error', e => proxyError(res, 500, e.message));
             return;
         }
-        // GET /v1/models — Claude Code checks this on startup; return the configured model
-        // so it matches the ANTHROPIC_MODEL env var we set (always a claude-* name in proxy mode).
+        // GET /v1/models — Claude Code validates ANTHROPIC_MODEL against this list on startup.
+        // In proxy mode ANTHROPIC_MODEL is always 'claude-3-5-sonnet-20241022', so return that
+        // name here regardless of the actual provider model (cfg.modelId).
+        // In subscription mode return the real configured model.
         if (req.method === 'GET' && req.url.startsWith('/v1/models')) {
-            const modelId = (readConfig().modelId) || 'claude-3-5-sonnet-20241022';
+            const mcfg = readConfig();
+            const modelId = mcfg.mode === 'subscription'
+                ? (mcfg.modelId || 'claude-3-5-sonnet-20241022')
+                : 'claude-3-5-sonnet-20241022';
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
                 data: [{ id: modelId, display_name: modelId, created_at: '' }]
@@ -2015,6 +2020,18 @@ function saveSessionState(sid, state) {
 
 function clearSessionState(sid) {
     try { fs.unlinkSync(sessionFilePath(sid)); } catch(_) {}
+}
+
+// Wipe claude-code's own session files so --continue can't resurrect old history.
+// Called on !clear and whenever model/provider changes.
+function clearClaudeSessionFiles() {
+    try {
+        const dir = path.join(FILES_DIR, '.claude', 'projects');
+        if (!fs.existsSync(dir)) return;
+        for (const entry of fs.readdirSync(dir)) {
+            try { fs.rmSync(path.join(dir, entry), { recursive: true, force: true }); } catch(_) {}
+        }
+    } catch(_) {}
 }
 
 // Strip ANSI escape codes so captured responses store clean text in history.
@@ -2702,13 +2719,17 @@ function openPrintSession() {
                 s.customApiKeyResponses.rejected.filter(k => k !== 'sk-ant-proxy000');
             s.theme = 'dark'; s.hasCompletedOnboarding = true;
             s.hasShownWelcome = true; s.skipWelcome = true;
-            // Inject always-allow tool list so those tools never prompt
+            // Inject always-allow/always-deny lists so those tools never prompt
             const approveList = loadApproveList();
-            if (approveList.allow.length > 0) {
+            if (approveList.allow.length > 0 || (approveList.deny && approveList.deny.length > 0)) {
                 if (!s.permissions) s.permissions = { allow: [], deny: [] };
                 if (!Array.isArray(s.permissions.allow)) s.permissions.allow = [];
+                if (!Array.isArray(s.permissions.deny)) s.permissions.deny = [];
                 for (const t of approveList.allow) {
                     if (!s.permissions.allow.includes(t)) s.permissions.allow.push(t);
+                }
+                for (const t of (approveList.deny || [])) {
+                    if (!s.permissions.deny.includes(t)) s.permissions.deny.push(t);
                 }
             }
             fs.writeFileSync(sp, JSON.stringify(s, null, 2));
@@ -2769,8 +2790,11 @@ function openPrintSession() {
                 if (suggestions.length >= 4) break;
             }
             const permId = evt.id || (Date.now() + '-' + Math.random().toString(36).slice(2));
-            const perm = { toolName, toolInput, id: permId, suggestions };
+            const perm = { toolName, toolInput, id: permId, suggestions, autoApproved: true };
             state.pendingPerm = perm;
+            // Auto-approve immediately — claude-code has a 3-second stdin timeout in
+            // print mode; UI round-trip is too slow. Dialog is informational only.
+            try { proc.stdin.write('y\n'); } catch(_) {}
             const permB64 = Buffer.from(JSON.stringify(perm)).toString('base64');
             try { if (state.socket) state.socket.write('\x1b]9;permission:' + permB64 + '\x07'); } catch(_) {}
             return;
@@ -2800,8 +2824,9 @@ function openPrintSession() {
         // Extract tool name heuristically
         const toolMatch = line.match(/\b(?:run|execute|use|allow)\s+(\w[\w-]*)/i);
         const toolName  = toolMatch ? toolMatch[1] : 'tool';
-        const perm = { toolName, toolInput: { prompt: line }, id: Date.now() + '-txt' };
+        const perm = { toolName, toolInput: { prompt: line }, id: Date.now() + '-txt', autoApproved: true };
         state.pendingPerm = perm;
+        try { proc.stdin.write('y\n'); } catch(_) {}
         const permB64 = Buffer.from(JSON.stringify(perm)).toString('base64');
         try { if (state.socket) state.socket.write('\x1b]9;permission:' + permB64 + '\x07'); } catch(_) {}
     }
@@ -2819,11 +2844,10 @@ function openPrintSession() {
         const clearFlagPath = path.join(FILES_DIR, 'history_clear_requested');
         if (fs.existsSync(clearFlagPath)) {
             try { fs.unlinkSync(clearFlagPath); } catch(_) {}
-            if (state.hasHistory) {
-                state.hasHistory = false;
-                clearSessionState(state.sid);
-                try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[33m[Model changed — history cleared for clean start]\x1b[0m\r\n'); } catch(_) {}
-            }
+            state.hasHistory = false;
+            clearSessionState(state.sid);
+            clearClaudeSessionFiles();
+            try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[33m[Model changed — history cleared for clean start]\x1b[0m\r\n'); } catch(_) {}
         }
 
         // argv for print mode — order matters for claude-code v2.1.112 arg parser:
@@ -2942,6 +2966,7 @@ function openPrintSession() {
             state.thinkingDone = false;
             // Always send second thinking-done — closes/finalizes the AI bubble
             try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
+            if (proc._manualKill) return; // killed by !clear — suppress error message
             if (code !== 0 && !firstContent) {
                 const rateLimited = (Date.now() - lastRateLimitMs) < 30000;
                 if (rateLimited) {
@@ -3009,22 +3034,50 @@ function openPrintSession() {
                 continue;
             }
 
-            // ── Permission responses — bypass busy guard (proc is waiting on stdin) ──
+            // ── Permission responses — bypass busy guard ──────────────────────────
+            // Tool already ran (auto-approved on detection to beat claude-code's 3s
+            // stdin timeout). These buttons configure FUTURE spawns only.
             if (line.startsWith('!perm-allow') || line.startsWith('!perm-always') || line.startsWith('!perm-deny')) {
                 const perm = state.pendingPerm;
-                const proc = state.currentProc;
-                if (!perm || !proc) continue;
+                if (!perm) continue;
                 if (line.startsWith('!perm-always')) {
-                    // Persist the tool name to the always-allow list
                     const list = loadApproveList();
                     if (!list.allow.includes(perm.toolName)) {
                         list.allow.push(perm.toolName);
                         saveApproveList(list);
                     }
+                } else if (line.startsWith('!perm-deny')) {
+                    // "Block future" — add to deny list so next spawn never prompts
+                    const list = loadApproveList();
+                    if (!list.deny.includes(perm.toolName)) {
+                        list.deny.push(perm.toolName);
+                        saveApproveList(list);
+                    }
+                    try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[33m[' + perm.toolName + ' blocked for future sessions]\x1b[0m\r\n'); } catch(_) {}
                 }
-                const answer = line.startsWith('!perm-deny') ? 'n\n' : 'y\n';
-                try { proc.stdin.write(answer); } catch(_) {}
+                // !perm-allow = dismiss dialog — tool already ran, no list change
                 state.pendingPerm = null;
+                continue;
+            }
+
+            // ── !clear — interrupt current process and reset session ──────────────
+            if (line.startsWith('!clear')) {
+                if (state.currentProc) {
+                    state.currentProc._manualKill = true;
+                    try { state.currentProc.kill('SIGTERM'); } catch(_) {}
+                    state.currentProc = null;
+                }
+                state.busy          = false;
+                state.hasHistory    = false;
+                state.contextBlock  = '';
+                state.pendingAttach = null;
+                state.sessionTokens = 0;
+                state.agHistory     = [];
+                state.pendingPerm   = null;
+                clearSessionState(state.sid);
+                clearClaudeSessionFiles();
+                try { if (state.socket) state.socket.write('\x1b]9;tokens:0\x07'); } catch(_) {}
+                try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[2m[history cleared — next message starts a new session]\x1b[0m\r\n'); } catch(_) {}
                 continue;
             }
 
@@ -3092,31 +3145,14 @@ function openPrintSession() {
                 continue;
             }
 
-            // ── busy gate — all commands below wait for current request to finish ──
-            if (state.busy) {
-                // !cmd/$ cmd: index.html shows an inline "queued" indicator in the cmd
-                // bubble — no separate sys message needed (and it would interfere with
-                // the next command's sys bubble due to async timing).
-                // For plain text messages, tell the user to wait.
-                if (!line.startsWith('!') && !line.startsWith('$')) {
-                    try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[33m[busy — please wait]\x1b[0m\r\n'); } catch(_) {}
-                }
+            // ── busy gate — only block new AI messages while a response is in flight ──
+            // ! commands and $ shell commands always fall through regardless of busy state.
+            if (state.busy && !line.startsWith('!') && !line.startsWith('$')) {
+                try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[33m[busy — please wait]\x1b[0m\r\n'); } catch(_) {}
                 continue;
             }
 
-            // ── diagnostic commands — only run when NOT busy ──────────────────────
-            if (line.startsWith('!clear')) {
-                state.hasHistory    = false;
-                state.contextBlock  = '';
-                state.pendingAttach = null;
-                state.sessionTokens = 0;
-                state.agHistory     = [];
-                clearSessionState(state.sid);
-                try { if (state.socket) state.socket.write('\x1b]9;tokens:0\x07'); } catch(_) {}
-                try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[2m[history cleared — next message starts a new session]\x1b[0m\r\n'); } catch(_) {}
-                continue;
-            }
-
+            // ── ! commands ────────────────────────────────────────────────────────
             if (line.startsWith('!test-cli')) {
                 const sock2 = state.socket;
                 try { if (sock2) sock2.write(SYS_FENCE + '\r\n\x1b[33mRunning module-loader diagnostic (6 steps)…\x1b[0m\r\n'); } catch(_) {}
