@@ -1692,7 +1692,12 @@ window.termWrite=function(raw){
   }
 };
 
-window.termClear=function(){
+// ── Session HTML snapshots (save/restore rendered bubbles on tab switch) ──────
+// Keyed by session ID (integer). Stores msgs.innerHTML so switching tabs
+// restores the exact rendered conversation without replaying raw bytes.
+const _sessionSnaps = new Map();
+
+window.termClear=function(sid){
   stopThinkingTimer();
   msgs.innerHTML='';
   sysEl=null;
@@ -1702,6 +1707,30 @@ window.termClear=function(){
   chatState='IDLE';
   thinkBub.style.display='none';
   document.body.appendChild(thinkBub);
+  // Drop any saved snapshot so tab-switch-back doesn't restore stale content
+  if(sid!=null) _sessionSnaps.delete(sid);
+};
+
+window.termSaveSnapshot = function(sid) {
+  _sessionSnaps.set(sid, msgs.innerHTML);
+};
+
+// Returns true if snapshot existed and was restored, false if not found.
+window.termRestoreSnapshot = function(sid) {
+  if (!_sessionSnaps.has(sid)) return false;
+  stopThinkingTimer();
+  msgs.innerHTML = _sessionSnaps.get(sid);
+  sysEl=null; sysAnsi=makeAnsiState();
+  currentAiBubble=null; currentAiAnsi=null;
+  chatState='IDLE';
+  thinkBub.style.display='none';
+  document.body.appendChild(thinkBub);
+  scrollToBottom();
+  return true;
+};
+
+window.termDeleteSnapshot = function(sid) {
+  _sessionSnaps.delete(sid);
 };
 
 window.termSendInput=function(text){

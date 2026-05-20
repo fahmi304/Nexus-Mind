@@ -261,9 +261,9 @@ class TerminalActivity : AppCompatActivity() {
         }
     }
 
-    private fun clearTerminal() {
+    private fun clearTerminal(sessionId: Int = activeSessionId) {
         runOnUiThread {
-            binding.webViewTerminal.evaluateJavascript("window.termClear()", null)
+            binding.webViewTerminal.evaluateJavascript("window.termClear($sessionId)", null)
         }
     }
 
@@ -385,10 +385,15 @@ class TerminalActivity : AppCompatActivity() {
 
         cancelThinkingTimeout()
 
+        // Save rendered HTML of the session we're leaving before clearing
+        val leavingId = activeSessionId
+        if (leavingId != -1 && leavingId != id) {
+            binding.webViewTerminal.evaluateJavascript("window.termSaveSnapshot($leavingId)", null)
+        }
+
         activeSessionId = id
         claudeService?.switchToSession(id)
 
-        clearTerminal()
         binding.btnRestart.visibility = View.GONE
         updateTabActive(id)
         updateStatusForSession(id)
@@ -403,25 +408,34 @@ class TerminalActivity : AppCompatActivity() {
             binding.tvProjectName.visibility = android.view.View.GONE
         }
 
-        if (replay) {
-            val output = claudeService?.getSession(id)?.getOutput() ?: ""
-            if (output.isNotEmpty()) {
-                lifecycleScope.launch(Dispatchers.IO) {
-                    val chunkSize = 8192
-                    var offset = 0
-                    while (offset < output.length) {
-                        val end = minOf(offset + chunkSize, output.length)
-                        withContext(Dispatchers.Main) { writeToTerminal(output.substring(offset, end)) }
-                        offset = end
-                    }
-                    val alive = claudeService?.getSession(id)?.alive ?: false
-                    if (!alive) withContext(Dispatchers.Main) {
-                        binding.btnRestart.visibility = View.VISIBLE
+        // Try snapshot restore first — avoids replaying raw bytes through stateful renderer
+        val alive = claudeService?.getSession(id)?.alive ?: true
+        binding.webViewTerminal.evaluateJavascript("window.termRestoreSnapshot($id)") { result ->
+            if (result == "true") {
+                // Snapshot restored — just fix up restart button
+                if (!alive) binding.btnRestart.visibility = View.VISIBLE
+            } else {
+                // No snapshot yet — fall back to raw buffer replay
+                clearTerminal()
+                if (replay) {
+                    val output = claudeService?.getSession(id)?.getOutput() ?: ""
+                    if (output.isNotEmpty()) {
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            val chunkSize = 8192
+                            var offset = 0
+                            while (offset < output.length) {
+                                val end = minOf(offset + chunkSize, output.length)
+                                withContext(Dispatchers.Main) { writeToTerminal(output.substring(offset, end)) }
+                                offset = end
+                            }
+                            if (!alive) withContext(Dispatchers.Main) {
+                                binding.btnRestart.visibility = View.VISIBLE
+                            }
+                        }
+                    } else {
+                        if (!alive) binding.btnRestart.visibility = View.VISIBLE
                     }
                 }
-            } else {
-                val alive = claudeService?.getSession(id)?.alive ?: true
-                if (!alive) binding.btnRestart.visibility = View.VISIBLE
             }
         }
     }
@@ -476,6 +490,7 @@ class TerminalActivity : AppCompatActivity() {
         } else {
             claudeService?.closeSession(sessionId)
             tabButtons.remove(sessionId)?.let { binding.tabContainer.removeView(it) }
+            binding.webViewTerminal.evaluateJavascript("window.termDeleteSnapshot($sessionId)", null)
             val nextId = claudeService?.getAllSessions()?.firstOrNull()?.id ?: -1
             if (nextId >= 0) switchToSession(nextId, replay = true)
             updateNewSessionButton()
