@@ -104,7 +104,7 @@ private fun buildRequest(provider: Provider, key: String): Request? {
             .url("https://generativelanguage.googleapis.com/v1beta/models?key=$key")
             .build()
         "openrouter" -> builder
-            .url("https://openrouter.ai/api/v1/auth/key")
+            .url("https://openrouter.ai/api/v1/models")
             .header("Authorization", "Bearer $key")
             .build()
         "nvidia_nim" -> builder

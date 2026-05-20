@@ -1328,6 +1328,29 @@ function hasMarkdownStructures(text){
          text.indexOf('$$')!==-1||/\$[^$\n]+\$/.test(text);
 }
 
+// Extract the AI's actual response text from a full PTY/TUI stream.
+// Claude Code's TUI marks each AI turn with ✦ on its own line.
+// We strip all ANSI escape sequences then pull everything after the last ✦
+// up to the input prompt (❯), discarding the surrounding TUI chrome.
+function extractResponseFromPty(raw){
+  // Strip all ANSI/VT escape sequences
+  var stripped=raw
+    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g,'')
+    .replace(/\x1b\][^\x07]*\x07/g,'')
+    .replace(/\x1b[^[\]]/g,'')
+    .replace(/\r\n/g,'\n')
+    .replace(/\r/g,'\n');
+  var idx=stripped.lastIndexOf('✦'); // ✦
+  if(idx===-1) return null;
+  var text=stripped.slice(idx+1);
+  // Trim off the input prompt and anything after it
+  var promptMatch=text.search(/\n\s*[❯>]\s*\n?$/m);
+  if(promptMatch!==-1) text=text.slice(0,promptMatch);
+  // Remove leading provider label (e.g. " openrouter\n") that sometimes follows ✦
+  text=text.replace(/^\s*\S+\s*\n/,'');
+  return text.trim()||null;
+}
+
 function startAiBubble(){
   const row=document.createElement('div');
   row.className='msg-row ai-row';
@@ -1393,23 +1416,37 @@ function scheduleAiRender(){
 
 function finalizeAiBubble(){
   if(currentAiBubble){
-    if(hasMarkdownStructures(rawAiText)){
-      currentAiBubble.innerHTML=renderMarkdown(rawAiText);
-    } else if(rawAiText.trim()){
-      renderAiBubble();
+    // PTY/TUI mode: rawAiText is a full terminal screen dump containing TUI chrome.
+    // Extract just the AI response text using the ✦ turn marker.
+    var displayText=rawAiText;
+    if(rawAiText.indexOf('✦')!==-1){ // ✦
+      var extracted=extractResponseFromPty(rawAiText);
+      if(extracted) displayText=extracted;
+    }
+    if(hasMarkdownStructures(displayText)){
+      currentAiBubble.innerHTML=renderMarkdown(displayText);
+    } else if(displayText.trim()){
+      // Strip any residual ANSI colour codes then render as plain text
+      var plain=displayText.replace(/\x1b\[[0-9;]*[mA-Za-z]/g,'');
+      if(hasMarkdownStructures(plain)){
+        currentAiBubble.innerHTML=renderMarkdown(plain);
+      } else {
+        // Fall back to ANSI screen render only when no ✦ extraction was possible
+        renderAiBubble();
+      }
     } else {
       // no content ever arrived — remove the bubble entirely
       const row=currentAiBubble.parentElement;
       if(row) row.remove();
     }
     // Store raw text so copy button can access it after rawAiText is cleared
-    currentAiBubble._rawText=rawAiText;
+    currentAiBubble._rawText=displayText;
     // Reveal action footer at bottom of bubble
     const actFooter=currentAiBubble.querySelector('.bubble-act-footer');
     if(actFooter) actFooter.style.display='flex';
     // TTS: speak the response
-    if(typeof Android!=='undefined'&&rawAiText.trim()){
-      const ttsText=rawAiText.replace(/\x1b\[[0-9;]*m/g,'').replace(/```[\s\S]*?```/g,'[code block]').replace(/[*_#`]/g,'').trim().slice(0,500);
+    if(typeof Android!=='undefined'&&displayText.trim()){
+      const ttsText=displayText.replace(/\x1b\[[0-9;]*m/g,'').replace(/```[\s\S]*?```/g,'[code block]').replace(/[*_#`]/g,'').trim().slice(0,500);
       if(ttsText) Android.speakText(ttsText);
     }
     scrollToBottom();
@@ -1451,7 +1488,11 @@ window.termWrite=function(raw){
   if(chatState==='RESPONDING'){
     rawAiText+=raw;
     processAnsiBytes(currentAiAnsi,raw);
-    scheduleAiRender();
+    // PTY/TUI mode: full-screen ANSI sequences (cursor home, erase screen, absolute
+    // positioning) produce garbled chrome if rendered mid-stream. Skip intermediate
+    // renders when TUI chrome is detected; finalizeAiBubble will extract clean text.
+    var hasTuiChrome=/\x1b\[H|\x1b\[2J|\x1b\[\d+;\d+H/.test(raw);
+    if(!hasTuiChrome) scheduleAiRender();
   } else {
     processAnsiBytes(sysAnsi,raw);
     // OSC sequences (e.g. thinking-start) change chatState during processAnsiBytes;

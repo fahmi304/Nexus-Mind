@@ -598,7 +598,7 @@ function callProxyStreaming(socket, messages, tools, onThinkingDone) {
             ? AGENTIC_SYSTEM_PROMPT + '\n\n[Custom Instructions]\n' + customPrompt
             : AGENTIC_SYSTEM_PROMPT;
         const body = JSON.stringify({
-            model: 'claude-3-5-sonnet-20241022',
+            model: cfg.modelId || 'claude-3-5-sonnet-20241022',
             max_tokens: 4096,
             messages,
             tools,
@@ -1093,6 +1093,10 @@ function patchCliJsForAndroid(cliPath) {
     // at the top of every TUI layout. The function is unique (s(35) hook, Zq() theme).
     // Replacing it with a no-op removes the banner from all sessions and reconnects.
     rep('function Cm6(){', 'function Cm6(){return null;}function _Cm6_orig(){');
+
+    // Remove "Welcome back!" (shown to returning users instead of the first-run banner)
+    rep('"Welcome back!"', '"         "');
+    rep("'Welcome back!'", "'         '");
 
     try { fs.writeFileSync(cliPath, src); } catch (e) {
         log('Patch write failed: ' + e.message + '\n'); return;
@@ -2703,13 +2707,17 @@ function openPersistentSession() {
             }
             try { if (state.socket) state.socket.write(chunk); } catch(_) {}
 
-            // Mark session not-busy after 800 ms of silence (turn likely complete)
+            // Mark session not-busy after 800 ms of silence (turn likely complete).
+            // Also send the second thinking-done so the terminal finalizes the AI bubble.
             if (outputIdleTimer) clearTimeout(outputIdleTimer);
             outputIdleTimer = setTimeout(() => {
                 if (state.busy) {
                     state.busy = false;
                     state.thinkingDone = false;
                     if (state.currentTid) { clearTimeout(state.currentTid); state.currentTid = null; }
+                    // Second thinking-done: signals the terminal that the AI turn is complete
+                    // and the response bubble should be finalized.
+                    try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
                 }
             }, 800);
         });
