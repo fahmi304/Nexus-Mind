@@ -110,10 +110,10 @@
 
             </LinearLayout>
 
-            <!-- Project directory -->
+            <!-- Projects -->
             <TextView
                 style="@style/SectionHeader"
-                android:text="Project Directory" />
+                android:text="Projects" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -126,81 +126,18 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Working directory for AI and shell commands"
+                    android:text="Create and switch between saved project workspaces. Each project has its own folder, system prompt, and persistent history."
                     android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
+                    android:textSize="12sp"
+                    android:layout_marginBottom="12dp" />
 
-                <EditText
-                    android:id="@+id/etProjectPath"
+                <Button
+                    android:id="@+id/btnManageProjects"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:hint="/path/to/your/project"
-                    android:inputType="textUri"
-                    android:textColor="@color/text_primary"
-                    android:textColorHint="@color/text_secondary"
-                    android:textSize="13sp"
-                    android:background="@android:color/transparent"
-                    android:padding="4dp" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginTop="8dp">
-                    <Button
-                        android:id="@+id/btnBrowseFolder"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Browse"
-                        android:textColor="@color/text_primary" />
-                    <Button
-                        android:id="@+id/btnGrantStorage"
-                        style="@style/Widget.Material3.Button.TextButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Grant storage access"
-                        android:textColor="@color/accent_blue"
-                        android:layout_marginStart="8dp" />
-                </LinearLayout>
-
-            </LinearLayout>
-
-            <!-- Custom system prompt -->
-            <TextView
-                style="@style/SectionHeader"
-                android:text="Custom System Prompt" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:background="@drawable/bg_provider_card"
-                android:padding="16dp"
-                android:layout_marginBottom="24dp">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Extra instructions prepended to every AI message (optional)"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
-
-                <EditText
-                    android:id="@+id/etCustomSystemPrompt"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:hint="e.g. Always reply in Bahasa Malaysia."
-                    android:inputType="textMultiLine|textCapSentences"
-                    android:minLines="3"
-                    android:gravity="top"
-                    android:textColor="@color/text_primary"
-                    android:textColorHint="@color/text_secondary"
-                    android:textSize="13sp"
-                    android:background="@android:color/transparent"
-                    android:padding="4dp" />
+                    android:text="Manage Projects"
+                    android:textColor="@color/accent_blue" />
 
             </LinearLayout>
 
