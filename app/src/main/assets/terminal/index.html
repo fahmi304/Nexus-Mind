@@ -623,7 +623,7 @@ html, body {
 <div id="cwd-bar" style="position:fixed;bottom:58px;left:0;right:0;padding:2px 10px;font-size:9px;font-family:'Space Mono','Courier New',monospace;color:rgba(0,200,255,0.35);letter-spacing:0.5px;z-index:89;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:none;"></div>
 
 <!-- Image preview indicator (shown when image is attached) -->
-<div id="img-preview" style="position:fixed;bottom:68px;left:12px;background:rgba(255,150,50,0.15);border:1px solid rgba(255,150,50,0.35);border-radius:10px;padding:4px 8px 4px 6px;z-index:91;display:none;cursor:pointer;display:none;align-items:center;gap:6px;">
+<div id="img-preview" style="position:fixed;bottom:68px;left:12px;background:rgba(255,150,50,0.15);border:1px solid rgba(255,150,50,0.35);border-radius:10px;padding:4px 8px 4px 6px;z-index:91;display:none;cursor:pointer;align-items:center;gap:6px;">
   <img id="img-thumb" src="" style="height:40px;width:40px;object-fit:cover;border-radius:6px;display:none;">
   <span id="img-label" style="font-size:11px;color:#fbbf24;">📷 Image attached</span>
   <span style="font-size:11px;color:rgba(251,191,36,0.6);">✕</span>
@@ -1779,13 +1779,29 @@ window.termSetImageReady = function(dataUrl) {
     imgThumbEl.style.display = 'none';
   }
   imgPreviewEl.style.display = 'flex';
+  // Push msgs up so last message isn't hidden behind the preview (preview is ~60px tall)
+  var cur = parseInt(msgs.style.paddingBottom) || 0;
+  msgs.dataset.extraPad = '64';
+  msgs.style.paddingBottom = (cur + 64) + 'px';
+  scrollToBottom();
 };
+
+function _hideImgPreview() {
+  imgPreviewEl.style.display = 'none';
+  imgThumbEl.src = '';
+  // Restore padding
+  var extra = parseInt(msgs.dataset.extraPad || '0');
+  if (extra > 0) {
+    var cur = parseInt(msgs.style.paddingBottom) || 0;
+    msgs.style.paddingBottom = Math.max(0, cur - extra) + 'px';
+    msgs.dataset.extraPad = '0';
+  }
+}
 
 imgPreviewEl.addEventListener('click', function() {
   pendingImageAttached = false;
   pendingImageDataUrl  = null;
-  imgPreviewEl.style.display = 'none';
-  imgThumbEl.src = '';
+  _hideImgPreview();
   if(typeof Android!=='undefined') Android.cancelPendingImage();
 });
 
@@ -1839,8 +1855,7 @@ function submitLine(text){
     const thumbUrl = pendingImageDataUrl;
     pendingImageAttached = false;
     pendingImageDataUrl  = null;
-    imgPreviewEl.style.display = 'none';
-    imgThumbEl.src = '';
+    _hideImgPreview();
     addUserBubble(displayMsg, thumbUrl);
     if(typeof Android!=='undefined') Android.submitMessageWithImage(msg);
   } else {
