@@ -1153,6 +1153,25 @@ function addUserBubble(text){
   scrollToBottom();
 }
 
+// Terminal command bubble — right-aligned like user bubble but with green
+// monospace styling so it's visually distinct from normal chat messages.
+function addCmdBubble(text){
+  const row=document.createElement('div');
+  row.className='msg-row user-row';
+  const av=document.createElement('div');
+  av.className='avatar user-avatar';
+  av.textContent='$';
+  av.style.cssText='background:linear-gradient(135deg,#14532d,#166534);color:#86efac;font-size:11px;font-family:Space Mono,monospace;';
+  const bub=document.createElement('div');
+  bub.className='bubble user-bubble';
+  bub.textContent=text;
+  bub.style.cssText='background:linear-gradient(135deg,rgba(0,80,40,0.22) 0%,rgba(0,80,40,0.1) 100%);border-color:rgba(0,180,80,0.3);color:#86efac;font-family:Space Mono,Courier New,monospace;';
+  row.appendChild(av);
+  row.appendChild(bub);
+  msgs.appendChild(row);
+  scrollToBottom();
+}
+
 // ── Markdown renderer ─────────────────────────────────────────────────────────
 let rawAiText='';
 
@@ -1567,8 +1586,20 @@ function scheduleSysRender(){
   });
 }
 
+// SYS_FENCE prefix: bridge.js prepends this to all diagnostic/shell output so
+// it is always routed to a sys bubble regardless of current chatState.
+const SYS_FENCE_PFX = '\x1b]9;sys-fence\x07';
+
 // ── Public API ────────────────────────────────────────────────────────────────
 window.termWrite=function(raw){
+  // Fenced sys output — always route to sys bubble, never to AI bubble.
+  if(raw.startsWith(SYS_FENCE_PFX)){
+    const content=raw.slice(SYS_FENCE_PFX.length);
+    processAnsiBytes(sysAnsi,content);
+    const hasText=sysAnsi.lines.some(function(l){return l&&l.length>0;});
+    if(hasText){getSysBubble();scheduleSysRender();}
+    return;
+  }
   if(chatState==='RESPONDING'){
     rawAiText+=raw;
     processAnsiBytes(currentAiAnsi,raw);
@@ -1579,9 +1610,6 @@ window.termWrite=function(raw){
     if(!hasTuiChrome) scheduleAiRender();
   } else {
     processAnsiBytes(sysAnsi,raw);
-    // During RESPONDING the AI bubble owns all output. During THINKING or IDLE
-    // render a sys bubble so !log / !help / $ cmd output is visible even while busy.
-    if(chatState==='RESPONDING') return;
     const hasText=sysAnsi.lines.some(function(l){return l&&l.length>0;});
     if(hasText){getSysBubble();scheduleSysRender();}
   }
@@ -1659,14 +1687,17 @@ function submitLine(text){
   savedInput='';
   updateInputDisp();
   if(!msg && !pendingImageAttached) return;
-  // Local bridge commands (!log, !help, !clear, $ cmd, etc.) bypass the chat
-  // path entirely — they go as raw input so they don't disturb the AI bubble
-  // state machine, don't add a user bubble, and don't trigger a thinking spinner.
+  // Local bridge commands (!log, !help, !clear, $ cmd, etc.): show a terminal
+  // command bubble so the user sees what was typed, then send as raw input.
+  // No thinking spinner, no AI bubble — bridge handles these directly.
   if(msg.startsWith('!')||msg.startsWith('$')){
     if(msg.length>0&&inputHistory[inputHistory.length-1]!==msg){
       inputHistory.push(msg);
       if(inputHistory.length>50) inputHistory.shift();
     }
+    // Fresh sys bubble so bridge output appears below this cmd bubble
+    sysEl=null; sysAnsi=makeAnsiState();
+    addCmdBubble(msg);
     if(typeof Android!=='undefined') Android.sendInput(msg+'\r');
     return;
   }

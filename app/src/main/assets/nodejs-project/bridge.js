@@ -167,6 +167,11 @@ const PROXY_PORT         = 8082;
 const DEVICE_CONTROL_PORT = 8081;
 const HOST               = '127.0.0.1';
 
+// Prefix written before any diagnostic text sent from bridge to socket so that
+// index.html termWrite can route it to a sys bubble regardless of chatState.
+// Must NOT be used on OSC protocol messages (thinking-start, thinking-done, etc.).
+const SYS_FENCE = '\x1b]9;sys-fence\x07';
+
 // ─── Eval bootstrap shims ─────────────────────────────────────────────────────
 // These are injected as strings into every LAUNCHER -e evalCode bootstrap,
 // before import(cli.js). Defined at module scope so all session types can
@@ -2978,9 +2983,12 @@ function openPrintSession() {
                 continue;
             }
 
-            // ── diagnostic commands — always available, even while busy ─────────
+            // ── !log and !help — safe to run even while claude is busy ──────────
+            // These only read files / print static text; they don't touch the
+            // running claude process. SYS_FENCE ensures output routes to a sys
+            // bubble and never pollutes the AI bubble.
             if (line === '!help') {
-                try { if (state.socket) state.socket.write(
+                try { if (state.socket) state.socket.write(SYS_FENCE +
                     '\x1b[1m[print mode — per-message spawn]\x1b[0m\r\n' +
                     '  \x1b[33m!clear\x1b[0m              Start a new conversation\r\n' +
                     '  \x1b[33m!context [path]\x1b[0m     Load file/dir as context\r\n' +
@@ -2997,6 +3005,55 @@ function openPrintSession() {
                 continue;
             }
 
+            if (line.startsWith('!log')) {
+                const n = parseInt(line.slice(4).trim()) || 40;
+                try {
+                    const logData = fs.readFileSync(SETUP_LOG, 'utf8');
+                    if (state.socket) state.socket.write(SYS_FENCE + '\x1b[2m' + logData.split('\n').slice(-n).join('\r\n') + '\x1b[0m\r\n');
+                } catch(_) { try { if (state.socket) state.socket.write(SYS_FENCE + '[no log]\r\n'); } catch(_) {} }
+                continue;
+            }
+
+            // ── Shell commands: $ cmd — run even while claude is busy ────────────
+            // Output wrapped in SYS_FENCE so it always routes to a sys bubble,
+            // never into the AI bubble even when chatState is RESPONDING.
+            if (line.startsWith('$ ')) {
+                const cmd = line.slice(2).trim();
+                if (cmd.startsWith('cd ')) {
+                    const newDir = cmd.slice(3).trim();
+                    try {
+                        process.chdir(newDir);
+                        state.cwd = newDir;
+                        saveSessionState(state.sid, state);
+                        try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[2m[cwd: ' + newDir + ']\x1b[0m\r\n'); } catch(_) {}
+                        try { if (state.socket) state.socket.write('\x1b]9;cwd:' + newDir + '\x07'); } catch(_) {}
+                    } catch(e) { try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[31m[cd: ' + e.message + ']\x1b[0m\r\n'); } catch(_) {} }
+                } else {
+                    const wasBusy = state.busy;
+                    if (!wasBusy) state.busy = true;
+                    const sh = spawn('/system/bin/sh', ['-c', cmd], { env: buildEnv(), cwd: state.cwd });
+                    sh.stdout.on('data', d2 => { try { if (state.socket) state.socket.write(SYS_FENCE + d2.toString()); } catch(_) {} });
+                    sh.stderr.on('data', d2 => { try { if (state.socket) state.socket.write(SYS_FENCE + d2.toString()); } catch(_) {} });
+                    const shTid = setTimeout(() => {
+                        try { sh.kill('SIGTERM'); } catch(_) {}
+                        try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[31m[$ cmd timed out after 30 s]\x1b[0m\r\n'); } catch(_) {}
+                        if (!wasBusy) state.busy = false;
+                    }, 30000);
+                    sh.on('close', () => {
+                        clearTimeout(shTid);
+                        if (!wasBusy) state.busy = false;
+                    });
+                }
+                continue;
+            }
+
+            // ── busy gate — all commands below wait for current request to finish ──
+            if (state.busy) {
+                try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[33m[busy — please wait]\x1b[0m\r\n'); } catch(_) {}
+                continue;
+            }
+
+            // ── diagnostic commands — only run when NOT busy ──────────────────────
             if (line === '!clear') {
                 state.hasHistory    = false;
                 state.contextBlock  = '';
@@ -3005,22 +3062,13 @@ function openPrintSession() {
                 state.agHistory     = [];
                 clearSessionState(state.sid);
                 try { if (state.socket) state.socket.write('\x1b]9;tokens:0\x07'); } catch(_) {}
-                try { if (state.socket) state.socket.write('\x1b[2m[history cleared — next message starts a new session]\x1b[0m\r\n'); } catch(_) {}
-                continue;
-            }
-
-            if (line.startsWith('!log')) {
-                const n = parseInt(line.slice(4).trim()) || 40;
-                try {
-                    const logData = fs.readFileSync(SETUP_LOG, 'utf8');
-                    if (state.socket) state.socket.write('\x1b[2m' + logData.split('\n').slice(-n).join('\r\n') + '\x1b[0m\r\n');
-                } catch(_) { try { if (state.socket) state.socket.write('[no log]\r\n'); } catch(_) {} }
+                try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[2m[history cleared — next message starts a new session]\x1b[0m\r\n'); } catch(_) {}
                 continue;
             }
 
             if (line === '!test-cli') {
                 const sock2 = state.socket;
-                try { if (sock2) sock2.write('\r\n\x1b[33mRunning module-loader diagnostic (6 steps)…\x1b[0m\r\n'); } catch(_) {}
+                try { if (sock2) sock2.write(SYS_FENCE + '\r\n\x1b[33mRunning module-loader diagnostic (6 steps)…\x1b[0m\r\n'); } catch(_) {}
                 const env2 = buildEnv();
                 const cliUrl2 = 'file://' + CLAUDE_CLI;
                 const exitLog2 = JSON.stringify(SETUP_LOG);
@@ -3029,10 +3077,10 @@ function openPrintSession() {
                     let out = '', err = '';
                     let ch;
                     try { ch = spawn(LAUNCHER, ['-e', evalCode2], { env: env2, cwd: FILES_DIR }); ch.stdin.end(); }
-                    catch(e) { try { if (sock2) sock2.write('\x1b[31m  ' + label + ': spawn-err ' + e.message + '\x1b[0m\r\n'); } catch(_) {} cb(); return; }
+                    catch(e) { try { if (sock2) sock2.write(SYS_FENCE + '\x1b[31m  ' + label + ': spawn-err ' + e.message + '\x1b[0m\r\n'); } catch(_) {} cb(); return; }
                     ch.stdout.on('data', d => { out += d.toString(); });
                     ch.stderr.on('data', d => { err += d.toString(); });
-                    const tid = setTimeout(() => { try { ch.kill(); } catch(_) {} try { if (sock2) sock2.write('\x1b[31m  ' + label + ': TIMEOUT\x1b[0m\r\n'); } catch(_) {} cb(); }, 30000);
+                    const tid = setTimeout(() => { try { ch.kill(); } catch(_) {} try { if (sock2) sock2.write(SYS_FENCE + '\x1b[31m  ' + label + ': TIMEOUT\x1b[0m\r\n'); } catch(_) {} cb(); }, 30000);
                     ch.on('close', code => {
                         clearTimeout(tid);
                         log('[test-cli] ' + label + ' exit=' + code + ' out=' + JSON.stringify(out.slice(0,200)) + ' err=' + JSON.stringify(err.slice(0,300)) + '\n');
@@ -3040,7 +3088,7 @@ function openPrintSession() {
                         let msg2 = mark + ' ' + label + ' exit=' + code + '\x1b[0m';
                         if (out.trim()) msg2 += '  out:' + out.trim().slice(0,80);
                         if (err.trim()) msg2 += '\r\n    \x1b[31merr:' + err.trim().slice(0,200) + '\x1b[0m';
-                        try { if (sock2) sock2.write('  ' + msg2 + '\r\n'); } catch(_) {}
+                        try { if (sock2) sock2.write(SYS_FENCE + '  ' + msg2 + '\r\n'); } catch(_) {}
                         cb();
                     });
                 }
@@ -3069,44 +3117,7 @@ function openPrintSession() {
                     '.catch(function(e){process.stderr.write("ERR:"+String(e)+"\\n");process.exit(1)});',
                 runEvalStep2.bind(null, '[4] net: connect to proxy port ' + PROXY_PORT,
                     netTestCode,
-                () => { try { if (sock2) sock2.write('\x1b[33mDone. Type !log for details.\x1b[0m\r\n'); } catch(_) {} }))));
-                continue;
-            }
-
-            // ── Shell commands: $ cmd — run even while claude is busy ────────────
-            if (line.startsWith('$ ')) {
-                const cmd = line.slice(2).trim();
-                if (cmd.startsWith('cd ')) {
-                    const newDir = cmd.slice(3).trim();
-                    try {
-                        process.chdir(newDir);
-                        state.cwd = newDir;
-                        saveSessionState(state.sid, state);
-                        try { if (state.socket) state.socket.write('\x1b[2m[cwd: ' + newDir + ']\x1b[0m\r\n'); } catch(_) {}
-                        try { if (state.socket) state.socket.write('\x1b]9;cwd:' + newDir + '\x07'); } catch(_) {}
-                    } catch(e) { try { if (state.socket) state.socket.write('\x1b[31m[cd: ' + e.message + ']\x1b[0m\r\n'); } catch(_) {} }
-                } else {
-                    const wasBusy = state.busy;
-                    if (!wasBusy) state.busy = true;
-                    const sh = spawn('/system/bin/sh', ['-c', cmd], { env: buildEnv(), cwd: state.cwd });
-                    sh.stdout.on('data', d2 => { try { if (state.socket) state.socket.write(d2); } catch(_) {} });
-                    sh.stderr.on('data', d2 => { try { if (state.socket) state.socket.write(d2); } catch(_) {} });
-                    const shTid = setTimeout(() => {
-                        try { sh.kill('SIGTERM'); } catch(_) {}
-                        try { if (state.socket) state.socket.write('\x1b[31m[$ cmd timed out after 30 s]\x1b[0m\r\n'); } catch(_) {}
-                        if (!wasBusy) state.busy = false;
-                    }, 30000);
-                    sh.on('close', () => {
-                        clearTimeout(shTid);
-                        if (!wasBusy) state.busy = false;
-                    });
-                }
-                continue;
-            }
-
-            // ── busy gate — all commands below wait for current request to finish ──
-            if (state.busy) {
-                try { if (state.socket) state.socket.write('\x1b[33m[busy — please wait]\x1b[0m\r\n'); } catch(_) {}
+                () => { try { if (sock2) sock2.write(SYS_FENCE + '\x1b[33mDone. Type !log for details.\x1b[0m\r\n'); } catch(_) {} }))));
                 continue;
             }
 
