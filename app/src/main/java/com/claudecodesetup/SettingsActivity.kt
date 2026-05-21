@@ -4,7 +4,6 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.provider.Settings
 import android.view.MenuItem
 import android.view.View
 import android.widget.Toast
@@ -16,7 +15,6 @@ import com.claudecodesetup.databinding.ActivitySettingsBinding
 import com.claudecodesetup.managers.NodeBridgeManager
 import com.claudecodesetup.managers.ScheduledPrompt
 import com.claudecodesetup.managers.ScheduledPromptsManager
-import com.claudecodesetup.services.FloatingOverlayService
 import java.io.File
 
 class SettingsActivity : AppCompatActivity() {
@@ -44,12 +42,10 @@ class SettingsActivity : AppCompatActivity() {
 
         populateFields()
         setupActions()
-        setupOverlaySwitch()
     }
 
     override fun onResume() {
         super.onResume()
-        syncOverlaySwitchState()
         val mcpCount = try {
             org.json.JSONArray(prefs.getMcpServersJson()).length() +
             org.json.JSONArray(prefs.getMcpStdioServersJson()).length()
@@ -311,81 +307,7 @@ class SettingsActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun setupOverlaySwitch() {
-        syncOverlaySwitchState()
-
-        binding.switchOverlay.setOnCheckedChangeListener { _, isChecked ->
-            if (isChecked) {
-                if (!Settings.canDrawOverlays(this)) {
-                    // Permission not granted — show the button and revert the switch
-                    binding.switchOverlay.isChecked = false
-                    binding.btnOverlayPermission.visibility = View.VISIBLE
-                } else {
-                    binding.btnOverlayPermission.visibility = View.GONE
-                    prefs.setOverlayEnabled(true)
-                    startForegroundService(Intent(this, FloatingOverlayService::class.java))
-                    Toast.makeText(this, "Floating overlay enabled", Toast.LENGTH_SHORT).show()
-                }
-            } else {
-                binding.btnOverlayPermission.visibility = View.GONE
-                prefs.setOverlayEnabled(false)
-                startService(Intent(this, FloatingOverlayService::class.java)
-                    .setAction(FloatingOverlayService.ACTION_STOP))
-                Toast.makeText(this, "Floating overlay disabled", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        binding.btnOverlayPermission.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")))
-        }
-
-        binding.btnEditOverlayPrompts.setOnClickListener { showEditPromptsDialog() }
-    }
-
-    private fun showEditPromptsDialog() {
-        val prompts = prefs.getOverlayPrompts().toMutableList()
-        val input   = android.widget.EditText(this).apply {
-            setText(prompts.joinToString("\n"))
-            hint       = "One prompt per line"
-            inputType  = android.text.InputType.TYPE_CLASS_TEXT or
-                         android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            minLines   = 5
-            gravity    = android.view.Gravity.TOP
-            setPadding(dpToPx(16), dpToPx(12), dpToPx(16), dpToPx(12))
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Overlay quick prompts")
-            .setMessage("One prompt per line (max 10)")
-            .setView(input)
-            .setPositiveButton("Save") { _, _ ->
-                val updated = input.text.toString()
-                    .split("\n")
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-                    .take(10)
-                prefs.setOverlayPrompts(updated)
-                Toast.makeText(this, "Prompts saved — reopen overlay to see changes", Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton("Cancel", null)
-            .setNeutralButton("Reset defaults") { _, _ ->
-                prefs.setOverlayPrompts(com.claudecodesetup.data.AppPreferences.DEFAULT_OVERLAY_PROMPTS)
-                Toast.makeText(this, "Reset to defaults", Toast.LENGTH_SHORT).show()
-            }
-            .show()
-    }
-
     private fun dpToPx(dp: Int) = (dp * resources.displayMetrics.density + 0.5f).toInt()
-
-    private fun syncOverlaySwitchState() {
-        val hasPermission = Settings.canDrawOverlays(this)
-        val enabled       = prefs.getOverlayEnabled() && hasPermission
-        // Update pref if permission was revoked externally
-        if (!hasPermission && prefs.getOverlayEnabled()) prefs.setOverlayEnabled(false)
-        binding.switchOverlay.isChecked         = enabled
-        binding.btnOverlayPermission.visibility =
-            if (!hasPermission && prefs.getOverlayEnabled()) View.VISIBLE else View.GONE
-    }
 
     private fun showAutoApprovalsDialog() {
         val file = java.io.File(filesDir, "auto_approve.json")

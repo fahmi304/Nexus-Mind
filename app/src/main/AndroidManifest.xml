@@ -7,7 +7,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
@@ -128,12 +127,6 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
-        <!-- Floating overlay service -->
-        <service
-            android:name=".services.FloatingOverlayService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-
         <!-- Accessibility service: silent screenshot + device control -->
         <service
             android:name=".services.DeviceControlService"
@@ -147,18 +140,6 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
-
-        <!-- Transparent activity to capture voice via SpeechRecognizer -->
-        <activity
-            android:name=".services.VoiceInputActivity"
-            android:exported="false"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
-
-        <!-- Transparent activity to read clipboard (requires Activity focus on Android 10+) -->
-        <activity
-            android:name=".services.ClipboardHelperActivity"
-            android:exported="false"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- Boot receiver -->
         <receiver

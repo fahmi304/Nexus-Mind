@@ -96,26 +96,6 @@ class AppPreferences(context: Context) {
     fun getTtsEnabled(): Boolean = prefs.getBoolean(KEY_TTS_ENABLED, false)
     fun setTtsEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_TTS_ENABLED, enabled).apply()
 
-    fun getOverlayPrompts(): List<String> {
-        val json = prefs.getString(KEY_OVERLAY_PROMPTS, null) ?: return DEFAULT_OVERLAY_PROMPTS
-        return try {
-            val arr = org.json.JSONArray(json)
-            (0 until arr.length()).map { arr.getString(it) }.filter { it.isNotBlank() }
-                .ifEmpty { DEFAULT_OVERLAY_PROMPTS }
-        } catch (_: Exception) { DEFAULT_OVERLAY_PROMPTS }
-    }
-
-    fun setOverlayPrompts(prompts: List<String>) {
-        val arr = org.json.JSONArray()
-        prompts.forEach { arr.put(it) }
-        prefs.edit().putString(KEY_OVERLAY_PROMPTS, arr.toString()).apply()
-    }
-
-    // ─── Overlay ─────────────────────────────────────────────────────────────
-
-    fun getOverlayEnabled(): Boolean = prefs.getBoolean(KEY_OVERLAY_ENABLED, false)
-    fun setOverlayEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_OVERLAY_ENABLED, enabled).apply()
-
     // ─── Live provider updates ────────────────────────────────────────────────
 
     fun getProviderRemoteUrl(): String = prefs.getString(KEY_PROVIDER_REMOTE_URL, "") ?: ""
@@ -181,21 +161,8 @@ class AppPreferences(context: Context) {
         private const val KEY_MCP_SERVERS          = "mcp_servers_json"
         private const val KEY_MCP_STDIO_SERVERS    = "mcp_stdio_servers_json"
         private const val KEY_TTS_ENABLED          = "tts_enabled"
-        private const val KEY_OVERLAY_ENABLED      = "overlay_enabled"
-        private const val KEY_OVERLAY_PROMPTS      = "overlay_quick_prompts"
         private const val KEY_PROVIDER_REMOTE_URL  = "provider_remote_url"
         private const val KEY_SCHEDULED_PROMPTS    = "scheduled_prompts_json"
-
-        val DEFAULT_OVERLAY_PROMPTS = listOf(
-            "Summarize what's on my screen",
-            "Explain what I'm reading",
-            "Translate this to English",
-            "Fact check this",
-            "Explain this like I'm 5",
-            "What does this mean?",
-            "Fix the error on my screen",
-            "Reply to this message professionally"
-        )
 
         const val MODE_SUBSCRIPTION = "subscription"
         const val MODE_PROXY        = "proxy"

@@ -469,8 +469,6 @@ class ClaudeService : LifecycleService() {
         const val ACTION_RESTART_BRIDGE = "com.claudecodesetup.RESTART_BRIDGE"
         const val MAX_SESSIONS = 4
 
-        // Static reference so FloatingOverlayService can send to the active session
-        // without binding. Cleared in onDestroy.
         var instance: ClaudeService? = null
     }
 }
