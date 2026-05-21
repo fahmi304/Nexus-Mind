@@ -3621,19 +3621,21 @@ function openPrintSession() {
             const leftover  = hdrBuf.slice(nl + 1);
             hdrBuf = '';
             rawSocket.removeListener('data', onHeader);
-            let sid = '0';
-            if (firstLine.startsWith('SESSION:')) {
-                const parts = firstLine.slice(8).split(':');
-                sid = parts[0];
-                const token = parts[1] || '';
-                let expectedToken = '';
-                try { expectedToken = fs.readFileSync(path.join(FILES_DIR, 'local_token'), 'utf8').trim().slice(0, 200); } catch(_) {}
-                // Reject if token missing/empty OR if presented token does not match.
-                // An empty expectedToken must never match anything — reject all.
-                if (!expectedToken || token !== expectedToken) {
-                    try { rawSocket.write('\r\n\x1b[31mUnauthorized connection rejected.\x1b[0m\r\n'); rawSocket.end(); } catch(_) {}
-                    return;
-                }
+            // Require SESSION:<sid>:<token> header — reject anything else.
+            if (!firstLine.startsWith('SESSION:')) {
+                try { rawSocket.write('\r\n\x1b[31mUnauthorized connection rejected.\x1b[0m\r\n'); rawSocket.end(); } catch(_) {}
+                return;
+            }
+            const parts = firstLine.slice(8).split(':');
+            const sid   = parts[0] || '0';
+            const token = parts[1] || '';
+            let expectedToken = '';
+            try { expectedToken = fs.readFileSync(path.join(FILES_DIR, 'local_token'), 'utf8').trim().slice(0, 200); } catch(_) {}
+            // Reject if token missing/empty OR if presented token does not match.
+            // An empty expectedToken must never match anything — reject all.
+            if (!expectedToken || token !== expectedToken) {
+                try { rawSocket.write('\r\n\x1b[31mUnauthorized connection rejected.\x1b[0m\r\n'); rawSocket.end(); } catch(_) {}
+                return;
             }
             attachSession(sid, rawSocket, leftover);
         }

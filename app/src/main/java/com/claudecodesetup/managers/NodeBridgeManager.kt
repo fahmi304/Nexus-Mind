@@ -118,7 +118,7 @@ class NodeBridgeManager(private val context: Context) {
                 val argsStr = server.optString("args")
                 if (name.isNotEmpty() && command.isNotEmpty()) {
                     val argsArr = org.json.JSONArray()
-                    argsStr.trim().split("\\s+".toRegex()).filter { it.isNotEmpty() }.forEach { argsArr.put(it) }
+                    shellSplit(argsStr).forEach { argsArr.put(it) }
                     mcpServers.put(name, org.json.JSONObject().apply {
                         put("type", "stdio")
                         put("command", command)
@@ -289,6 +289,28 @@ class NodeBridgeManager(private val context: Context) {
             configFile.setWritable(true, true)
         } catch (e: Exception) {
             Log.e(TAG, "Could not write bridge config", e)
+        }
+    }
+
+    companion object {
+        /** Shell-like word split: honours single/double quotes so paths with spaces work. */
+        fun shellSplit(s: String): List<String> {
+            val result = mutableListOf<String>()
+            val buf = StringBuilder()
+            var inSingle = false
+            var inDouble = false
+            for (c in s.trim()) {
+                when {
+                    inSingle -> if (c == '\'') inSingle = false else buf.append(c)
+                    inDouble -> if (c == '"')  inDouble = false else buf.append(c)
+                    c == '\'' -> inSingle = true
+                    c == '"'  -> inDouble = true
+                    c == ' ' || c == '\t' -> { if (buf.isNotEmpty()) { result.add(buf.toString()); buf.clear() } }
+                    else -> buf.append(c)
+                }
+            }
+            if (buf.isNotEmpty()) result.add(buf.toString())
+            return result
         }
     }
 }
