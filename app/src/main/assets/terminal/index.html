@@ -1322,8 +1322,10 @@ function showPermissionDialog(perm){
   var inputStr='';
   try{
     var inp=perm.toolInput||{};
-    var preview=inp.command||inp.code||inp.path||inp.prompt||inp.query||Object.values(inp)[0]||'';
-    inputStr=String(preview).slice(0,300);
+    var fallback=Object.values(inp)[0];
+    var preview=inp.command||inp.code||inp.path||inp.prompt||inp.query||
+      (fallback!==undefined?(typeof fallback==='object'?JSON.stringify(fallback).slice(0,120):String(fallback)):'');
+    inputStr=String(preview||'').slice(0,300);
   }catch(_){}
   if(inputStr){
     var pre=document.createElement('div');
