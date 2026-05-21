@@ -1839,7 +1839,15 @@ function updateInputDisp(){
 }
 
 function submitLine(text){
-  const msg=(text!==undefined?text:inputBuffer).trim();
+  // Normalize BEFORE routing: strip zero-width chars and fullwidth punctuation so
+  // that Android IME artifacts (invisible chars prepended by keyboard) don't cause
+  // ! and $ commands to slip through to AI instead of the bridge.
+  let msg=(text!==undefined?text:inputBuffer)
+    .replace(/[​‌‍﻿⁠­  ]/g,'') // zero-width + soft-hyphen + line seps
+    .replace(/！/g,'!')   // fullwidth ! → ASCII !
+    .replace(/＄/g,'$')   // fullwidth $ → ASCII $
+    .trim();
+  if(/^!\s+/.test(msg)) msg='!'+msg.slice(1).trimStart(); // "! cmd" → "!cmd"
   inputBuffer='';
   ghost.value='';
   historyIdx=-1;
@@ -1925,7 +1933,8 @@ ghost.addEventListener('blur',function(){
 // interacting with Claude Code's TUI menus (theme picker, prompts, etc.).
 // The send button (→) still uses submitLine() for proper chat message behavior.
 function sendRawInput(){
-  const text=inputBuffer;
+  // Strip zero-width Unicode chars that Android IME may prepend (same as submitLine)
+  const text=inputBuffer.replace(/[​-‏  ‪-‮⁠-⁯﻿­]/g,'').trim();
   inputBuffer='';ghost.value='';historyIdx=-1;savedInput='';
   updateInputDisp();
   if(text.length>0){
