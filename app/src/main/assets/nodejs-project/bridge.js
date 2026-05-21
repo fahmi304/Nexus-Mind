@@ -698,6 +698,20 @@ function callProxyStreaming(socket, messages, tools, onThinkingDone) {
     });
 }
 
+const GUARDIAN_PROMPT =
+    'Before executing any destructive or irreversible operation — including deleting files, ' +
+    'directories, repos, or branches; force pushing; closing or merging PRs; dropping databases ' +
+    'or tables; bulk overwrites; rm -rf; or any remote action that permanently removes something — ' +
+    'you MUST:\n' +
+    '1. Stop — do not execute yet\n' +
+    '2. Tell the user exactly what you are about to do (show the exact command if applicable)\n' +
+    '3. Ask "Proceed?" and wait for their reply\n' +
+    'Reply meanings:\n' +
+    '• No → abort, explain what was skipped, wait for next instruction\n' +
+    '• Yes → execute, report what happened, ask fresh again next time\n' +
+    '• Always → execute now and skip asking for the rest of this session\n' +
+    'Never execute a destructive action without confirmation unless the user said "Always" earlier in this conversation.';
+
 const AGENTIC_SYSTEM_PROMPT =
     'You are an AI assistant running directly on an Android device via Claude Code Setup. ' +
     'You have the following tools available — use them proactively to complete tasks:\n' +
@@ -2854,15 +2868,22 @@ function openPrintSession() {
         //   --print                           → non-interactive, exits after response
         //   --verbose                         → required alongside --output-format=stream-json
         //   --dangerously-skip-permissions    → auto-approve all tool use (no stdin wait)
+        //   --append-system-prompt            → guardian + custom system prompt
         //   --continue                        → resume last session (preserves history)
         //   <message>                         → the user's message
+        const customPrompt = (cfg.customSystemPrompt || '').trim();
+        const fullSystemPrompt = customPrompt
+            ? GUARDIAN_PROMPT + '\n\n' + customPrompt
+            : GUARDIAN_PROMPT;
         let argvCode =
             'process.argv[2]="--output-format";' +
             'process.argv[3]="stream-json";' +
             'process.argv[4]="--print";' +
             'process.argv[5]="--verbose";' +
-            'process.argv[6]="--dangerously-skip-permissions";';
-        let argvLen = 7;
+            'process.argv[6]="--dangerously-skip-permissions";' +
+            'process.argv[7]="--append-system-prompt";' +
+            'process.argv[8]=' + JSON.stringify(fullSystemPrompt) + ';';
+        let argvLen = 9;
         if (state.hasHistory) {
             argvCode += 'process.argv[' + argvLen + ']="--continue";';
             argvLen++;
