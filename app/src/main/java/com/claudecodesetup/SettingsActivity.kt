@@ -91,7 +91,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun setupActions() {
         binding.btnChangeProvider.setOnClickListener {
             startActivity(Intent(this, com.claudecodesetup.ui.ComposeActivity::class.java)
-                .putExtra("start_at", "providers"))
+                .putExtra("start_at", "subscription"))
             finish()
         }
 

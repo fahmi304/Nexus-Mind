@@ -49,20 +49,144 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
-// ── Simple question screens ───────────────────────────────────────────────────
+// ── Login mode selection screen ───────────────────────────────────────────────
 
 @Composable
 fun SubscriptionScreen(onYes: () -> Unit, onNo: () -> Unit) {
-    QuestionCard(
-        icon = "🧬",
-        question = "Do you have a Claude subscription?",
-        subtitle = "Use your Claude.ai account or API key for direct access",
-        primaryLabel = "Yes — use my account",
-        secondaryLabel = "No — use a free provider",
-        onPrimary = onYes,
-        onSecondary = onNo,
-        accentColor = Color(0xFF8B5CF6)
-    )
+    var entered by remember { mutableStateOf(false) }
+    val alpha by animateFloatAsState(if (entered) 1f else 0f, tween(400), label = "alpha")
+    val offset by animateFloatAsState(
+        if (entered) 0f else 24f, tween(420, easing = FastOutSlowInEasing), label = "offset")
+    LaunchedEffect(Unit) { entered = true }
+
+    AppBackground {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 380.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .graphicsLayer { this.alpha = alpha; translationY = offset * density },
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Header
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(bottom = 8.dp)
+                ) {
+                    Text(
+                        "Choose your setup",
+                        fontFamily = DmSansFamily,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        "You can change this any time in Settings",
+                        fontFamily = DmSansFamily,
+                        fontSize = 13.sp,
+                        color = Color(0xFF9CA3AF),
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                // Claude Subscription card
+                LoginModeCard(
+                    icon = "🧬",
+                    title = "Claude Subscription",
+                    description = "Login with your Claude.ai account or use an Anthropic API key for direct access",
+                    accentColor = Color(0xFF8B5CF6),
+                    onClick = onYes
+                )
+
+                // Proxy / Free Providers card
+                LoginModeCard(
+                    icon = "🔌",
+                    title = "Proxy / Free Providers",
+                    description = "Use OpenRouter, Gemini, Groq, DeepSeek and more — no Claude account needed",
+                    accentColor = Color(0xFF00C8FF),
+                    onClick = onNo
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoginModeCard(
+    icon: String,
+    title: String,
+    description: String,
+    accentColor: Color,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, tween(120), label = "scale")
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .glowShadow(accentColor.copy(alpha = 0.12f), 16.dp, 20.dp)
+            .background(Color(0x12FFFFFF), RoundedCornerShape(20.dp))
+            .border(1.dp, accentColor.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .padding(20.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Icon box
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(accentColor.copy(alpha = 0.22f), accentColor.copy(alpha = 0.10f))
+                        ),
+                        RoundedCornerShape(14.dp)
+                    )
+                    .border(1.dp, accentColor.copy(alpha = 0.35f), RoundedCornerShape(14.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(icon, fontSize = 22.sp)
+            }
+
+            // Text
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    title,
+                    fontFamily = DmSansFamily,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    description,
+                    fontFamily = DmSansFamily,
+                    fontSize = 12.sp,
+                    color = Color(0xFF9CA3AF),
+                    lineHeight = 17.sp
+                )
+            }
+
+            // Arrow
+            Text(
+                "›",
+                fontSize = 22.sp,
+                color = accentColor.copy(alpha = 0.7f),
+                fontWeight = FontWeight.Light
+            )
+        }
+    }
 }
 
 @Composable
