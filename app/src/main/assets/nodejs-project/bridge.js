@@ -3024,10 +3024,12 @@ function openPrintSession() {
             state.inputBuf = state.inputBuf.slice(nl + 1);
             if (!line) continue;
 
-            // Normalize "! cmd" → "!cmd" (Android keyboard autocorrect adds space after !)
-            // Bare "$" with nothing after it is a no-op
-            if (/^! \S/.test(line)) line = '!' + line.slice(2).trimStart();
-            if (line === '$') continue;
+            // Normalize "! cmd" / "!  cmd" → "!cmd" (autocorrect adds space(s) after !)
+            if (/^!\s+/.test(line)) line = '!' + line.slice(1).trimStart();
+            // Normalize "$cmd" → "$ cmd" so the shell handler matches
+            if (line.startsWith('$') && !line.startsWith('$ ') && line.length > 1) line = '$ ' + line.slice(1).trimStart();
+            // Bare "!" or "$" alone is a no-op
+            if (line === '!' || line === '$') continue;
 
             // ── Confirm responses (agentic install confirmation) ──────────────────
             if (line.startsWith('!confirm:')) {
