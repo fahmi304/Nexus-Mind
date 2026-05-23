@@ -66,7 +66,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="8dp"
                         android:text="Change provider"
-                        android:backgroundTint="@color/accent_green" />
+                        android:backgroundTint="@color/accent_orange" />
 
                     <Button
                         android:id="@+id/btnChangeModel"
@@ -137,7 +137,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Manage Projects"
-                    android:textColor="@color/accent_blue" />
+                    android:textColor="@color/accent_orange" />
 
             </LinearLayout>
 
@@ -168,7 +168,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Tool Permissions"
-                    android:textColor="@color/accent_blue" />
+                    android:textColor="@color/accent_orange" />
 
             </LinearLayout>
 
@@ -216,7 +216,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
                 android:text="Manage scheduled prompts"
-                android:textColor="@color/accent_blue" />
+                android:textColor="@color/accent_orange" />
 
             <TextView
                 android:layout_width="match_parent"
@@ -238,7 +238,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
                 android:text="Manage custom slash commands"
-                android:textColor="@color/accent_blue" />
+                android:textColor="@color/accent_orange" />
 
             <TextView
                 android:layout_width="match_parent"
@@ -319,7 +319,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Report a problem (GitHub Issues)"
-                android:textColor="@color/accent_blue" />
+                android:textColor="@color/accent_orange" />
 
         </LinearLayout>
 

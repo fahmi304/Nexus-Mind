@@ -133,12 +133,12 @@ fun ProjectManagerScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(
-                                    if (isActive) Color(0x1A10B981) else Color(0x0FFFFFFF),
+                                    if (isActive) NexusGreenDim else NexusSurface,
                                     RoundedCornerShape(14.dp)
                                 )
                                 .border(
                                     1.dp,
-                                    if (isActive) Color(0x3310B981) else Color(0x17FFFFFF),
+                                    if (isActive) Color(0x3310B981) else NexusBorder,
                                     RoundedCornerShape(14.dp)
                                 )
                                 .clickable { onOpenProject(p) }
@@ -231,7 +231,7 @@ fun ProjectManagerScreen(
                                 )
                                 Box(
                                     modifier = Modifier
-                                        .background(Color(0xFF374151), RoundedCornerShape(8.dp))
+                                        .background(NexusSurface2, RoundedCornerShape(8.dp))
                                         .clickable {
                                             onPickFolder { path -> newPath = path }
                                         }

@@ -97,7 +97,7 @@ fun McpScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "←", fontSize = 20.sp, color = Color(0xFF60A5FA),
+                        "←", fontSize = 20.sp, color = NexusBlue,
                         modifier = Modifier
                             .clickable(onClick = onBack)
                             .padding(end = 10.dp, top = 4.dp, bottom = 4.dp)
@@ -105,7 +105,7 @@ fun McpScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
                             "MCP", fontFamily = SpaceMonoFamily, fontSize = 8.sp,
-                            letterSpacing = 3.sp, color = Color(0xB360A5FA)
+                            letterSpacing = 3.sp, color = NexusBlue.copy(alpha = 0.70f)
                         )
                         Text(
                             "MCP Servers", fontFamily = DmSansFamily, fontSize = 17.sp,
@@ -115,7 +115,7 @@ fun McpScreen(
                 }
                 Box(
                     modifier = Modifier
-                        .background(Color(0xFF3B82F6), RoundedCornerShape(10.dp))
+                        .background(NexusAccent, RoundedCornerShape(10.dp))
                         .clickable { showAddDialog = true }
                         .padding(horizontal = 14.dp, vertical = 8.dp)
                 ) {
@@ -129,7 +129,7 @@ fun McpScreen(
             Text(
                 "MCP servers extend Claude with custom tools. HTTP for remote servers (e.g. Exa, Smithery), stdio for local scripts.",
                 fontFamily = DmSansFamily, fontSize = 12.sp,
-                color = Color(0xFF6B7280),
+                color = NexusText3,
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
             )
 
@@ -143,11 +143,11 @@ fun McpScreen(
                         Text("🔌", fontSize = 40.sp)
                         Text(
                             "No MCP servers yet", fontFamily = DmSansFamily,
-                            fontSize = 16.sp, color = Color(0xFF6B7280)
+                            fontSize = 16.sp, color = NexusText3
                         )
                         Text(
                             "Tap ＋ Add to configure one", fontFamily = DmSansFamily,
-                            fontSize = 13.sp, color = Color(0xFF4B5563)
+                            fontSize = 13.sp, color = NexusText3
                         )
                     }
                 }
@@ -160,7 +160,7 @@ fun McpScreen(
                         item {
                             Text(
                                 "HTTP (REMOTE)", fontFamily = SpaceMonoFamily, fontSize = 9.sp,
-                                letterSpacing = 2.sp, color = Color(0xFF60A5FA),
+                                letterSpacing = 2.sp, color = NexusBlue,
                                 modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
                             )
                         }
@@ -184,7 +184,7 @@ fun McpScreen(
                         item {
                             Text(
                                 "STDIO (local process)", fontFamily = SpaceMonoFamily, fontSize = 9.sp,
-                                letterSpacing = 2.sp, color = Color(0xFF34D399),
+                                letterSpacing = 2.sp, color = NexusGreen,
                                 modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
                             )
                         }
@@ -225,7 +225,7 @@ fun McpScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .background(
-                                        if (!isStdio) Color(0xFF3B82F6) else Color(0x22FFFFFF),
+                                        if (!isStdio) NexusAccent else NexusSurface2,
                                         RoundedCornerShape(8.dp)
                                     )
                                     .clickable { isStdio = false }
@@ -239,7 +239,7 @@ fun McpScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .background(
-                                        if (isStdio) Color(0xFF059669) else Color(0x22FFFFFF),
+                                        if (isStdio) NexusGreen else NexusSurface2,
                                         RoundedCornerShape(8.dp)
                                     )
                                     .clickable { isStdio = true }
@@ -275,7 +275,7 @@ fun McpScreen(
                             )
                             Text(
                                 "The command will run as a child process speaking MCP JSON-RPC over stdin/stdout.",
-                                fontFamily = DmSansFamily, fontSize = 11.sp, color = Color(0xFF6B7280)
+                                fontFamily = DmSansFamily, fontSize = 11.sp, color = NexusText3
                             )
                         }
                     }
@@ -369,8 +369,8 @@ private fun McpServerCard(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0x0FFFFFFF), RoundedCornerShape(14.dp))
-            .border(1.dp, Color(0x17FFFFFF), RoundedCornerShape(14.dp))
+            .background(NexusSurface, RoundedCornerShape(14.dp))
+            .border(1.dp, NexusBorder, RoundedCornerShape(14.dp))
             .padding(14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -390,9 +390,9 @@ private fun McpServerCard(
                 // Status dot — only for HTTP servers (pingStatus != null)
                 if (pingStatus != null) {
                     val dotColor = when (pingStatus) {
-                        PingStatus.OK       -> Color(0xFF22C55E)  // green
+                        PingStatus.OK       -> NexusGreen          // green
                         PingStatus.ERROR    -> Color(0xFFEF4444)  // red
-                        PingStatus.CHECKING -> Color(0xFF6B7280)  // gray (pulsing would need animation)
+                        PingStatus.CHECKING -> NexusText3          // gray (pulsing would need animation)
                     }
                     val dotLabel = when (pingStatus) {
                         PingStatus.OK       -> "live"
@@ -420,7 +420,7 @@ private fun McpServerCard(
             }
             Text(
                 subtitle, fontFamily = SpaceMonoFamily,
-                fontSize = 10.sp, color = Color(0xFF6B7280)
+                fontSize = 10.sp, color = NexusText3
             )
         }
         Text(

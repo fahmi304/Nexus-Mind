@@ -1,28 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Aurora dark theme -->
-    <color name="bg_dark">#0a0618</color>
-    <color name="surface">#150d30</color>
-    <color name="toolbar_bg">#0d0820</color>
-    <color name="terminal_bg">#0a0618</color>
+    <!-- ── Background layers ── -->
+    <color name="bg_dark">#0C0C0F</color>
+    <color name="surface">#151518</color>
+    <color name="surface2">#1E1E22</color>
+    <color name="toolbar_bg">#0C0C0F</color>
+    <color name="terminal_bg">#0C0C0F</color>
 
-    <!-- Text -->
-    <color name="text_primary">#FFFFFF</color>
-    <color name="text_secondary">#9CA3AF</color>
+    <!-- ── Borders ── -->
+    <color name="border">#2A2A30</color>
+    <color name="border2">#3A3A42</color>
 
-    <!-- Aurora purple primary accent -->
-    <color name="accent_orange">#6440ff</color>
-    <color name="accent_orange_dark">#4828cc</color>
-    <color name="accent_green">#6440ff</color>
+    <!-- ── Text ── -->
+    <color name="text_primary">#F0F0F2</color>
+    <color name="text_secondary">#9090A0</color>
+    <color name="text_tertiary">#60606E</color>
 
-    <!-- Aurora cyan secondary accent -->
-    <color name="accent_blue">#00c8ff</color>
+    <!-- ── Amber accent (primary) ── -->
+    <color name="accent_orange">#E8834A</color>
+    <color name="accent_orange_dark">#C4632A</color>
+    <color name="accent_orange_dim">#E8834A22</color>
 
-    <!-- Status -->
-    <color name="error_red">#ff4060</color>
-    <color name="warning_bg">#1a0030</color>
-    <color name="warning_text">#ff6080</color>
+    <!-- ── Green (success / free) ── -->
+    <color name="accent_green">#3DD68C</color>
+    <color name="accent_green_dim">#3DD68C18</color>
 
-    <!-- Tab active indicator -->
-    <color name="tab_active">#6440ff</color>
+    <!-- ── Blue (local / info) ── -->
+    <color name="accent_blue">#60A5FA</color>
+
+    <!-- ── Amber (warning) ── -->
+    <color name="accent_amber">#FBBF24</color>
+
+    <!-- ── Status ── -->
+    <color name="error_red">#F87171</color>
+    <color name="warning_bg">#1A120A</color>
+    <color name="warning_text">#E8834A</color>
+
+    <!-- ── Tab / indicator ── -->
+    <color name="tab_active">#E8834A</color>
 </resources>

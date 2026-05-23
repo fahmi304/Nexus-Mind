@@ -122,18 +122,18 @@ fun SplashAnimationScreen(shouldPlay: Boolean = true, onFinished: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF030712))
+            .background(Color(0xFF0C0C0F))
             .graphicsLayer { alpha = screenAlpha },
         contentAlignment = Alignment.Center
     ) {
-        // Ambient purple glow — intensifies during bloom and flash
+        // Ambient amber glow — intensifies during bloom and flash
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            Color(0.35f, 0.196f, 0.706f,
+                            Color(0.91f, 0.51f, 0.29f,
                                 (0.05f + bloomOpacity * 0.09f + flashT * 0.14f).coerceIn(0f, 1f)),
                             Color.Transparent
                         )
@@ -159,7 +159,7 @@ fun SplashAnimationScreen(shouldPlay: Boolean = true, onFinished: () -> Unit) {
                         val gridAlpha = (((t - 0.5f) / 1.2f).coerceIn(0f, 1f) * 0.055f)
                         listOf(20f, 35f, 48f).forEach { r ->
                             drawCircle(
-                                color = Color(0xFF6366F1).copy(alpha = gridAlpha),
+                                color = Color(0xFFE8834A).copy(alpha = gridAlpha),
                                 radius = r / 100f * s,
                                 center = Offset(CX * s, CY * s),
                                 style = Stroke(width = 0.3f / 100f * s)
@@ -180,7 +180,7 @@ fun SplashAnimationScreen(shouldPlay: Boolean = true, onFinished: () -> Unit) {
                             )
                         }
                         drawCircle(
-                            color = Color(0xFFF0E6FF).copy(alpha = 0.75f * flashT),
+                            color = Color(0xFFFFF0E6).copy(alpha = 0.75f * flashT),
                             radius = 7f / 100f * s * flashT,
                             center = Offset(CX * s, CY * s)
                         )
@@ -190,7 +190,7 @@ fun SplashAnimationScreen(shouldPlay: Boolean = true, onFinished: () -> Unit) {
                     if (bloomOpacity > 0f) {
                         val bRadius = lerp(4f / 100f * s, 46f / 100f * s, bloomT)
                         drawCircle(
-                            color = Color(0xFFA78BFA).copy(alpha = 0.40f * bloomOpacity),
+                            color = Color(0xFFE8834A).copy(alpha = 0.40f * bloomOpacity),
                             radius = bRadius.coerceAtLeast(1f),
                             center = Offset(CX * s, CY * s),
                             style = Stroke(width = 1.3f / 100f * s)
@@ -198,8 +198,8 @@ fun SplashAnimationScreen(shouldPlay: Boolean = true, onFinished: () -> Unit) {
                         drawCircle(
                             brush = Brush.radialGradient(
                                 colors = listOf(
-                                    Color(0xFFE9D5FF).copy(alpha = 0.20f * bloomOpacity),
-                                    Color(0xFFA78BFA).copy(alpha = 0.08f * bloomOpacity),
+                                    Color(0xFFFFE8D5).copy(alpha = 0.20f * bloomOpacity),
+                                    Color(0xFFE8834A).copy(alpha = 0.08f * bloomOpacity),
                                     Color.Transparent
                                 ),
                                 center = Offset(CX * s, CY * s),
@@ -280,7 +280,7 @@ fun SplashAnimationScreen(shouldPlay: Boolean = true, onFinished: () -> Unit) {
                         // Outer glow diamond
                         drawPath(
                             path = diamondPath(cx, cy, outerHalf),
-                            color = Color(0xFFA78BFA).copy(alpha = (0.22f + pulseT * 0.22f) * diamondOpacity),
+                            color = Color(0xFFE8834A).copy(alpha = (0.22f + pulseT * 0.22f) * diamondOpacity),
                             style = Stroke(width = 0.4f / 100f * s)
                         )
 
@@ -289,9 +289,9 @@ fun SplashAnimationScreen(shouldPlay: Boolean = true, onFinished: () -> Unit) {
                             path = diamondPath(cx, cy, half),
                             brush = Brush.radialGradient(
                                 colors = listOf(
-                                    Color(0xFFF0E6FF),
-                                    Color(0xFFA78BFA),
-                                    Color(0xFF4C1D95).copy(alpha = 0.3f)
+                                    Color(0xFFFFF0E6),
+                                    Color(0xFFE8834A),
+                                    Color(0xFF7A3A10).copy(alpha = 0.3f)
                                 ),
                                 center = Offset(cx - half * 0.23f, cy - half * 0.37f),
                                 radius = half * 1.4f
@@ -300,15 +300,15 @@ fun SplashAnimationScreen(shouldPlay: Boolean = true, onFinished: () -> Unit) {
                         )
                         drawPath(
                             path = diamondPath(cx, cy, half),
-                            color = Color(0xFFA78BFA).copy(alpha = 0.90f * diamondOpacity),
+                            color = Color(0xFFE8834A).copy(alpha = 0.90f * diamondOpacity),
                             style = Stroke(width = 0.8f / 100f * s)
                         )
 
                         // Inner cross-facet lines
                         val crossAlpha = 0.20f * diamondOpacity
-                        drawLine(Color(0xFFE9D5FF).copy(alpha = crossAlpha),
+                        drawLine(Color(0xFFFFE8D5).copy(alpha = crossAlpha),
                             Offset(cx, cy - half), Offset(cx, cy + half), 0.4f / 100f * s)
-                        drawLine(Color(0xFFE9D5FF).copy(alpha = crossAlpha),
+                        drawLine(Color(0xFFFFE8D5).copy(alpha = crossAlpha),
                             Offset(cx - half, cy), Offset(cx + half, cy), 0.4f / 100f * s)
 
                         // Specular face
@@ -338,7 +338,7 @@ fun SplashAnimationScreen(shouldPlay: Boolean = true, onFinished: () -> Unit) {
                         // 3 pulsing concentric rings
                         listOf(9f, 13f, 18f).forEachIndexed { ri, rr ->
                             drawCircle(
-                                color = Color(0xFFA78BFA).copy(alpha = (0.20f - ri * 0.04f) * diamondOpacity),
+                                color = Color(0xFFE8834A).copy(alpha = (0.20f - ri * 0.04f) * diamondOpacity),
                                 radius = (rr + pulseT * 1.8f) / 100f * s,
                                 center = Offset(cx, cy),
                                 style = Stroke(width = 0.35f / 100f * s)
@@ -353,7 +353,7 @@ fun SplashAnimationScreen(shouldPlay: Boolean = true, onFinished: () -> Unit) {
                             Offset(cx, cy + half) to Offset(cx - half, cy),
                             Offset(cx - half, cy) to Offset(cx, cy - half),
                         ).forEach { (a, b) ->
-                            drawLine(Color(0xFFE9D5FF).copy(alpha = edgeAlpha), a, b,
+                            drawLine(Color(0xFFFFE8D5).copy(alpha = edgeAlpha), a, b,
                                 strokeWidth = 0.55f / 100f * s)
                         }
 
@@ -361,7 +361,7 @@ fun SplashAnimationScreen(shouldPlay: Boolean = true, onFinished: () -> Unit) {
                         drawCircleGlow(
                             center = Offset(cx, cy),
                             radius = (2.2f + pulseT * 0.8f) / 100f * s,
-                            color = Color(0xFFF0E6FF).copy(alpha = diamondOpacity),
+                            color = Color(0xFFFFF0E6).copy(alpha = diamondOpacity),
                             blurRadius = 2.0f / 100f * s
                         )
                     }
@@ -369,7 +369,7 @@ fun SplashAnimationScreen(shouldPlay: Boolean = true, onFinished: () -> Unit) {
                     // Corner tick marks
                     if (diamondOpacity > 0.3f) {
                         val tickAlpha = (diamondOpacity - 0.3f) / 0.7f
-                        val tickColor = Color(0xFFA78BFA).copy(alpha = 0.32f * tickAlpha)
+                        val tickColor = Color(0xFFE8834A).copy(alpha = 0.32f * tickAlpha)
                         listOf(
                             listOf(3f, 3f, 9f, 3f, 3f, 3f, 3f, 9f),
                             listOf(91f, 3f, 97f, 3f, 97f, 3f, 97f, 9f),
@@ -426,8 +426,8 @@ fun SplashAnimationScreen(shouldPlay: Boolean = true, onFinished: () -> Unit) {
                                 SpanStyle(
                                     brush = Brush.linearGradient(
                                         colors = listOf(
-                                            Color(0xFFA78BFA),
-                                            Color(0xFFE879F9),
+                                            Color(0xFFE8834A),
+                                            Color(0xFFC4632A),
                                             Color(0xFFf97316)
                                         )
                                     )
@@ -446,7 +446,7 @@ fun SplashAnimationScreen(shouldPlay: Boolean = true, onFinished: () -> Unit) {
                     Text(
                         text = "MANY PATHS · ONE DOOR",
                         fontSize = 11.sp,
-                        color = Color(0xFF94A3B8),
+                        color = NexusText2,
                         letterSpacing = 3.sp,
                         fontFamily = SpaceMonoFamily,
                         textAlign = TextAlign.Center,

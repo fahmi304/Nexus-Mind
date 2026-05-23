@@ -4,13 +4,8 @@ import android.graphics.BlurMaskFilter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -78,59 +73,30 @@ fun Modifier.glowShadow(color: Color, blurRadius: Dp, cornerRadius: Dp): Modifie
         }
     }
 
+// Design system color tokens
+val NexusBg      = Color(0xFF0C0C0F)
+val NexusSurface = Color(0xFF151518)
+val NexusSurface2 = Color(0xFF1E1E22)
+val NexusBorder  = Color(0xFF2A2A30)
+val NexusBorder2 = Color(0xFF3A3A42)
+val NexusAccent  = Color(0xFFE8834A)   // amber — primary
+val NexusAccentDim = Color(0x22E8834A)
+val NexusGreen   = Color(0xFF3DD68C)
+val NexusGreenDim = Color(0x183DD68C)
+val NexusBlue    = Color(0xFF60A5FA)
+val NexusAmber   = Color(0xFFFBBF24)
+val NexusRed     = Color(0xFFF87171)
+val NexusText    = Color(0xFFF0F0F2)
+val NexusText2   = Color(0xFF9090A0)
+val NexusText3   = Color(0xFF60606E)
+
 @Composable
 fun AppBackground(content: @Composable () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        // Base dark violet gradient
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            Color(0xFF07061A),
-                            Color(0xFF0E0C28),
-                            Color(0xFF07061A),
-                        )
-                    )
-                )
-        )
-        // Violet orb — top-left
-        Box(
-            modifier = Modifier
-                .offset((-80).dp, (-60).dp)
-                .size(320.dp)
-                .background(
-                    Brush.radialGradient(
-                        listOf(Color(0x2E6D28D9), Color.Transparent)
-                    ),
-                    CircleShape
-                )
-        )
-        // Cyan orb — bottom-right
-        Box(
-            modifier = Modifier
-                .offset(180.dp, 560.dp)
-                .size(260.dp)
-                .background(
-                    Brush.radialGradient(
-                        listOf(Color(0x1A06B6D4), Color.Transparent)
-                    ),
-                    CircleShape
-                )
-        )
-        // Violet orb — center
-        Box(
-            modifier = Modifier
-                .offset(60.dp, 280.dp)
-                .size(200.dp)
-                .background(
-                    Brush.radialGradient(
-                        listOf(Color(0x147C3AED), Color.Transparent)
-                    ),
-                    CircleShape
-                )
-        )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(NexusBg)
+    ) {
         content()
     }
 }

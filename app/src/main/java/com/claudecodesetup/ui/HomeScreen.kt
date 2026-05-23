@@ -93,9 +93,9 @@ fun HomeScreen(
             Box(
                 modifier = Modifier
                     .size(76.dp)
-                    .glowShadow(Color(0x408B5CF6), 24.dp, 20.dp)
-                    .background(Color(0x14FFFFFF), RoundedCornerShape(20.dp))
-                    .border(1.dp, Color(0x20FFFFFF), RoundedCornerShape(20.dp)),
+                    .glowShadow(Color(0x40E8834A), 24.dp, 20.dp)
+                    .background(Color(0xFF151518), RoundedCornerShape(20.dp))
+                    .border(1.dp, Color(0xFF2A2A30), RoundedCornerShape(20.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 if (appIconBitmap != null) {
@@ -113,38 +113,45 @@ fun HomeScreen(
                 text = appName,
                 fontSize = 26.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = Color(0xFFF0EEFF),
+                color = NexusText,
                 fontFamily = SyneFamily,
             )
 
             Spacer(Modifier.height(8.dp))
 
-            // Pulsing status row
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
+            // Pulsing status pill
+            Box(
+                modifier = Modifier
+                    .background(NexusAccentDim, RoundedCornerShape(99.dp))
+                    .border(1.dp, Color(0x40E8834A), RoundedCornerShape(99.dp))
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .background(
-                            Color(0xFF22C55E).copy(alpha = pulseAlpha),
-                            CircleShape
-                        )
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    "All systems online",
-                    fontSize = 12.sp,
-                    color = Color(0xFF86EFAC).copy(alpha = 0.8f),
-                    fontFamily = DmSansFamily,
-                    fontWeight = FontWeight.Medium,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(
+                                NexusAccent.copy(alpha = pulseAlpha),
+                                CircleShape
+                            )
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "All systems online",
+                        fontSize = 12.sp,
+                        color = NexusAccent,
+                        fontFamily = DmSansFamily,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
             }
 
             Spacer(Modifier.height(44.dp))
 
-            // Section label — JetBrains Mono style with gradient line
+            // Section label
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -153,7 +160,7 @@ fun HomeScreen(
                     "MENU",
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Normal,
-                    color = Color(0xFF7C6FAA),
+                    color = NexusText3,
                     fontFamily = JetBrainsMonoFamily,
                     letterSpacing = 2.5.sp,
                 )
@@ -162,11 +169,7 @@ fun HomeScreen(
                     modifier = Modifier
                         .weight(1f)
                         .height(1.dp)
-                        .background(
-                            Brush.horizontalGradient(
-                                listOf(Color(0x407C6FAA), Color.Transparent)
-                            )
-                        )
+                        .background(NexusBorder)
                 )
             }
 
@@ -180,7 +183,7 @@ fun HomeScreen(
                 MenuCard(
                     title = "Chat Box",
                     subtitle = "Start a conversation with AI",
-                    accentColor = Color(0xFF8B5CF6),
+                    accentColor = NexusAccent,
                     onClick = onChatBox,
                     iconContent = { ChatBoxIcon() }
                 )
@@ -196,7 +199,7 @@ fun HomeScreen(
                 MenuCard(
                     title = "Testing Response",
                     subtitle = "Check if the free AI model is responding",
-                    accentColor = Color(0xFF22D3EE),
+                    accentColor = NexusBlue,
                     onClick = onTesting,
                     iconContent = { TestingIcon() }
                 )
@@ -212,7 +215,7 @@ fun HomeScreen(
                 MenuCard(
                     title = "Setting",
                     subtitle = "Manage your preferences & app options",
-                    accentColor = Color(0xFF8B5CF6),
+                    accentColor = Color(0xFF9575CD),
                     onClick = onSettings,
                     iconContent = { SettingsIcon() }
                 )
@@ -228,7 +231,7 @@ fun HomeScreen(
                 MenuCard(
                     title = "Projects",
                     subtitle = "Switch between saved project workspaces",
-                    accentColor = Color(0xFF22C55E),
+                    accentColor = NexusGreen,
                     onClick = onProjects,
                     iconContent = { ProjectsIcon() }
                 )
@@ -247,39 +250,35 @@ private fun BoxScope.ChatBoxIcon() {
         modifier = Modifier
             .size(56.dp)
             .drawBehind {
-                // Gradient background
+                // Muted amber gradient — primary action
                 drawRoundRect(
                     brush = Brush.linearGradient(
-                        listOf(Color(0xFF8B5CF6), Color(0xFF6D28D9))
+                        listOf(Color(0xFFB05A28), Color(0xFF6B3012))
                     ),
                     cornerRadius = CornerRadius(16.dp.toPx())
                 )
-                // Top shine overlay
                 drawRoundRect(
-                    color = Color(0x12FFFFFF),
+                    color = Color(0x10FFFFFF),
                     topLeft = Offset.Zero,
                     size = Size(size.width, size.height * 0.42f),
                     cornerRadius = CornerRadius(16.dp.toPx())
                 )
-                // Chat bubble body
                 drawRoundRect(
-                    color = Color.White.copy(alpha = 0.93f),
+                    color = Color.White.copy(alpha = 0.88f),
                     topLeft = Offset(11.dp.toPx(), 9.dp.toPx()),
                     size = Size(34.dp.toPx(), 22.dp.toPx()),
                     cornerRadius = CornerRadius(5.dp.toPx())
                 )
-                // Bubble tail
                 val path = Path().apply {
                     moveTo(14.dp.toPx(), 31.dp.toPx())
                     lineTo(11.dp.toPx(), 38.dp.toPx())
                     lineTo(22.dp.toPx(), 31.dp.toPx())
                     close()
                 }
-                drawPath(path, Color.White.copy(alpha = 0.93f))
-                // 3 dots inside bubble
-                drawCircle(Color(0xFF8B5CF6), 2.5.dp.toPx(), center = Offset(20.dp.toPx(), 20.dp.toPx()))
-                drawCircle(Color(0xFF8B5CF6), 2.5.dp.toPx(), center = Offset(28.dp.toPx(), 20.dp.toPx()))
-                drawCircle(Color(0xFF8B5CF6), 2.5.dp.toPx(), center = Offset(36.dp.toPx(), 20.dp.toPx()))
+                drawPath(path, Color.White.copy(alpha = 0.88f))
+                drawCircle(Color(0xFFB05A28), 2.5.dp.toPx(), center = Offset(20.dp.toPx(), 20.dp.toPx()))
+                drawCircle(Color(0xFFB05A28), 2.5.dp.toPx(), center = Offset(28.dp.toPx(), 20.dp.toPx()))
+                drawCircle(Color(0xFFB05A28), 2.5.dp.toPx(), center = Offset(36.dp.toPx(), 20.dp.toPx()))
             }
     )
 }
@@ -290,16 +289,15 @@ private fun BoxScope.TestingIcon() {
         modifier = Modifier
             .size(56.dp)
             .drawBehind {
-                // Gradient background
+                // Muted navy gradient — testing/diagnostic
                 drawRoundRect(
                     brush = Brush.linearGradient(
-                        listOf(Color(0xFF06B6D4), Color(0xFF0891B2))
+                        listOf(Color(0xFF1A4A6E), Color(0xFF0D2C45))
                     ),
                     cornerRadius = CornerRadius(16.dp.toPx())
                 )
-                // Top shine overlay
                 drawRoundRect(
-                    color = Color(0x12FFFFFF),
+                    color = Color(0x10FFFFFF),
                     topLeft = Offset.Zero,
                     size = Size(size.width, size.height * 0.42f),
                     cornerRadius = CornerRadius(16.dp.toPx())
@@ -346,16 +344,15 @@ private fun BoxScope.SettingsIcon() {
         modifier = Modifier
             .size(56.dp)
             .drawBehind {
-                // Gradient background
+                // Muted deep purple — settings/config
                 drawRoundRect(
                     brush = Brush.linearGradient(
-                        listOf(Color(0xFF7C3AED), Color(0xFF4C1D95))
+                        listOf(Color(0xFF2E1760), Color(0xFF1A0D3A))
                     ),
                     cornerRadius = CornerRadius(16.dp.toPx())
                 )
-                // Top shine overlay
                 drawRoundRect(
-                    color = Color(0x12FFFFFF),
+                    color = Color(0x10FFFFFF),
                     topLeft = Offset.Zero,
                     size = Size(size.width, size.height * 0.42f),
                     cornerRadius = CornerRadius(16.dp.toPx())
@@ -388,22 +385,21 @@ private fun BoxScope.ProjectsIcon() {
         modifier = Modifier
             .size(56.dp)
             .drawBehind {
-                // Gradient background
+                // Muted forest green — projects
                 drawRoundRect(
                     brush = Brush.linearGradient(
-                        listOf(Color(0xFF10B981), Color(0xFF059669))
+                        listOf(Color(0xFF1B5E35), Color(0xFF0D3A1E))
                     ),
                     cornerRadius = CornerRadius(16.dp.toPx())
                 )
-                // Top shine overlay
                 drawRoundRect(
-                    color = Color(0x12FFFFFF),
+                    color = Color(0x10FFFFFF),
                     topLeft = Offset.Zero,
                     size = Size(size.width, size.height * 0.42f),
                     cornerRadius = CornerRadius(16.dp.toPx())
                 )
-                val bodyColor = Color.White.copy(alpha = 0.92f)
-                val lineColor = Color(0xFF059669)
+                val bodyColor = Color.White.copy(alpha = 0.88f)
+                val lineColor = Color(0xFF0D3A1E)
                 // Folder tab
                 drawRoundRect(
                     color = bodyColor,
@@ -442,12 +438,12 @@ private fun MenuCard(
     var pressed by remember { mutableStateOf(false) }
 
     val bgColor by animateColorAsState(
-        targetValue = if (pressed) accentColor.copy(alpha = 0.12f) else Color(0x09FFFFFF),
+        targetValue = if (pressed) accentColor.copy(alpha = 0.10f) else NexusSurface,
         animationSpec = tween(150),
         label = "bg"
     )
     val borderColor by animateColorAsState(
-        targetValue = if (pressed) accentColor.copy(alpha = 0.45f) else Color(0x12FFFFFF),
+        targetValue = if (pressed) accentColor.copy(alpha = 0.45f) else NexusBorder,
         animationSpec = tween(150),
         label = "border"
     )
@@ -469,21 +465,12 @@ private fun MenuCard(
                 )
             }
     ) {
-        // Top-edge shine strip
+        // Top-edge separator
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(
-                            Color.Transparent,
-                            Color(0x18FFFFFF),
-                            Color(0x18FFFFFF),
-                            Color.Transparent
-                        )
-                    )
-                )
+                .background(NexusBorder2)
                 .align(Alignment.TopCenter)
         )
 
@@ -507,14 +494,14 @@ private fun MenuCard(
                     title,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFF0EEFF),
+                    color = NexusText,
                     fontFamily = SyneFamily,
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
                     subtitle,
                     fontSize = 12.sp,
-                    color = Color(0xFF5B5880),
+                    color = NexusText2,
                     fontFamily = DmSansFamily,
                     lineHeight = 17.sp,
                 )
@@ -525,7 +512,7 @@ private fun MenuCard(
             Image(
                 painter = painterResource(R.drawable.ic_chevron_right),
                 contentDescription = null,
-                colorFilter = ColorFilter.tint(Color(0xFF3D3A5C)),
+                colorFilter = ColorFilter.tint(NexusText3),
                 modifier = Modifier.size(16.dp)
             )
         }

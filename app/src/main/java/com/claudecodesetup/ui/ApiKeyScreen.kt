@@ -159,17 +159,17 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
 
     val borderColor by animateColorAsState(
         when (status) {
-            KeyStatus.IDLE    -> Color(0x1FFFFFFF)
-            KeyStatus.LOADING -> Color(0x9960A5FA)
-            KeyStatus.SUCCESS -> Color(0xFF10B981)
+            KeyStatus.IDLE    -> NexusBorder
+            KeyStatus.LOADING -> Color(0x99E8834A)
+            KeyStatus.SUCCESS -> NexusGreen
             KeyStatus.ERROR   -> Color(0xFFEF4444)
         }, tween(250), label = "border"
     )
     val glowColor by animateColorAsState(
         when (status) {
             KeyStatus.IDLE    -> Color.Transparent
-            KeyStatus.LOADING -> Color(0x1A60A5FA)
-            KeyStatus.SUCCESS -> Color(0x1F10B981)
+            KeyStatus.LOADING -> NexusAccentDim
+            KeyStatus.SUCCESS -> NexusGreenDim
             KeyStatus.ERROR   -> Color(0x1FEF4444)
         }, tween(250), label = "glow"
     )
@@ -204,10 +204,10 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
     val isPressed by buttonInteraction.collectIsPressedAsState()
     val buttonScale by animateFloatAsState(if (isPressed) 0.97f else 1f, tween(150), label = "btn_scale")
     val buttonGradient = if (status == KeyStatus.SUCCESS)
-        Brush.linearGradient(listOf(Color(0xFF10B981), Color(0xFF059669)))
+        Brush.linearGradient(listOf(NexusGreen, Color(0xFF2DA870)))
     else
-        Brush.linearGradient(listOf(Color(0xFF3B82F6), Color(0xFF6366F1)))
-    val buttonGlowColor = if (status == KeyStatus.SUCCESS) Color(0x6610B981) else Color(0x943B82F6)
+        Brush.linearGradient(listOf(NexusAccent, Color(0xFFC4632A)))
+    val buttonGlowColor = if (status == KeyStatus.SUCCESS) Color(0x663DD68C) else NexusAccent.copy(alpha = 0.35f)
     val isDisabled = status == KeyStatus.LOADING || status == KeyStatus.SUCCESS
 
     fun validate() {
@@ -249,7 +249,7 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
                     .padding(horizontal = 14.dp, vertical = 12.dp)
             ) {
                 Text(
-                    "←", fontSize = 20.sp, color = Color(0xFF60A5FA),
+                    "←", fontSize = 20.sp, color = NexusBlue,
                     modifier = Modifier
                         .clickable(onClick = onBack)
                         .padding(end = 10.dp, top = 4.dp, bottom = 4.dp)
@@ -271,9 +271,9 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
                             alpha = entryAlpha
                             translationY = entryOffset * density
                         }
-                        .glowShadow(Color(0x1A3B82F6), 20.dp, 24.dp)
-                        .background(Color(0x12FFFFFF), RoundedCornerShape(24.dp))
-                        .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(24.dp))
+                        .glowShadow(NexusAccent.copy(alpha = 0.10f), 20.dp, 24.dp)
+                        .background(NexusSurface2, RoundedCornerShape(24.dp))
+                        .border(1.dp, NexusBorder, RoundedCornerShape(24.dp))
                         .padding(32.dp)
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -313,7 +313,7 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
                                 if (provider.requiresApiKey) "Required to access ${provider.name} models"
                                 else "Tap Continue to connect to ${provider.name}",
                                 fontFamily = DmSansFamily, fontSize = 12.sp,
-                                color = Color(0xFF4B5563), textAlign = TextAlign.Center
+                                color = NexusText3, textAlign = TextAlign.Center
                             )
                         }
 
@@ -322,14 +322,14 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
                                 Text(
                                     "Server URL", fontFamily = DmSansFamily,
                                     fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF9CA3AF)
+                                    color = NexusText2
                                 )
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(Color(0x0AFFFFFF), RoundedCornerShape(12.dp))
+                                        .background(NexusSurface, RoundedCornerShape(12.dp))
                                         .border(1.dp,
-                                            if (status == KeyStatus.ERROR) Color(0xFFEF4444) else Color(0x1FFFFFFF),
+                                            if (status == KeyStatus.ERROR) Color(0xFFEF4444) else NexusBorder,
                                             RoundedCornerShape(12.dp))
                                         .padding(horizontal = 14.dp, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically
@@ -381,7 +381,7 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .glowShadow(glowColor, 8.dp, 12.dp)
-                                        .background(Color(0x0AFFFFFF), RoundedCornerShape(12.dp))
+                                        .background(NexusSurface, RoundedCornerShape(12.dp))
                                         .border(1.dp, borderColor, RoundedCornerShape(12.dp))
                                         .padding(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically
@@ -472,11 +472,11 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
                         if (provider.requiresApiKey) {
                             Text(
                                 text = buildAnnotatedString {
-                                    withStyle(SpanStyle(color = Color(0xFF9CA3AF), fontSize = 11.sp,
+                                    withStyle(SpanStyle(color = NexusText2, fontSize = 11.sp,
                                         fontFamily = DmSansFamily)) {
                                         append("Don't have a key? ")
                                     }
-                                    withStyle(SpanStyle(color = Color(0xFF60A5FA), fontSize = 11.sp,
+                                    withStyle(SpanStyle(color = NexusBlue, fontSize = 11.sp,
                                         fontFamily = DmSansFamily)) {
                                         append("Get one free at ${provider.signupUrl} →")
                                     }

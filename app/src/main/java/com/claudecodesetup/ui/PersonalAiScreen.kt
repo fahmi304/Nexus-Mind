@@ -119,9 +119,9 @@ private val CATALOG = listOf(
     )
 )
 
-private val accent = Color(0xFF8B5CF6)
-private val green  = Color(0xFF10B981)
-private val blue   = Color(0xFF60A5FA)
+private val accent = NexusAccent
+private val green  = NexusGreen
+private val blue   = NexusBlue
 private val amber  = Color(0xFFF59E0B)
 
 @Composable
@@ -286,7 +286,7 @@ fun LocalModelsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
-                    .background(Color(0x0AFFFFFF), RoundedCornerShape(12.dp))
+                    .background(NexusSurface, RoundedCornerShape(12.dp))
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -306,8 +306,8 @@ fun LocalModelsScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0x0AFFFFFF), RoundedCornerShape(14.dp))
-                            .border(1.dp, Color(0x15FFFFFF), RoundedCornerShape(14.dp))
+                            .background(NexusSurface, RoundedCornerShape(14.dp))
+                            .border(1.dp, NexusBorder, RoundedCornerShape(14.dp))
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
@@ -319,7 +319,7 @@ fun LocalModelsScreen(
                         Text(
                             "Enter the URL of your Ollama server or any OpenAI-compatible API (e.g. Oracle Cloud, VPS, home server).",
                             fontFamily = DmSansFamily, fontSize = 12.sp,
-                            color = Color(0xFF9CA3AF), lineHeight = 18.sp
+                            color = NexusText2, lineHeight = 18.sp
                         )
                         OutlinedTextField(
                             value = remoteUrl,
@@ -329,7 +329,7 @@ fun LocalModelsScreen(
                                 Text(
                                     "http://your-server:11434",
                                     fontFamily = DmSansFamily, fontSize = 13.sp,
-                                    color = Color(0xFF4B5563)
+                                    color = NexusText3
                                 )
                             },
                             singleLine = true,
@@ -345,7 +345,7 @@ fun LocalModelsScreen(
                             ),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = blue.copy(alpha = 0.6f),
-                                unfocusedBorderColor = Color(0x30FFFFFF),
+                                unfocusedBorderColor = NexusBorder,
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White,
                                 cursorColor = blue
@@ -367,15 +367,15 @@ fun LocalModelsScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0x0AFFFFFF), RoundedCornerShape(14.dp))
-                            .border(1.dp, Color(0x15FFFFFF), RoundedCornerShape(14.dp))
+                            .background(NexusSurface, RoundedCornerShape(14.dp))
+                            .border(1.dp, NexusBorder, RoundedCornerShape(14.dp))
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
                             "EXAMPLES",
                             fontFamily = SpaceMonoFamily, fontSize = 8.sp,
-                            letterSpacing = 2.sp, color = Color(0xFF4B5563)
+                            letterSpacing = 2.sp, color = NexusText3
                         )
                         listOf(
                             "Oracle Cloud / VPS" to "http://<your-ip>:11434",
@@ -387,8 +387,8 @@ fun LocalModelsScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(label, fontFamily = DmSansFamily, fontSize = 11.sp, color = Color(0xFF6B7280))
-                                Text(example, fontFamily = SpaceMonoFamily, fontSize = 10.sp, color = Color(0xFF4B5563))
+                                Text(label, fontFamily = DmSansFamily, fontSize = 11.sp, color = NexusText3)
+                                Text(example, fontFamily = SpaceMonoFamily, fontSize = 10.sp, color = NexusText3)
                             }
                         }
                     }
@@ -434,7 +434,7 @@ fun LocalModelsScreen(
                         Text(
                             "Available Models",
                             fontFamily = SpaceMonoFamily, fontSize = 9.sp,
-                            letterSpacing = 2.sp, color = Color(0xFF4B5563)
+                            letterSpacing = 2.sp, color = NexusText3
                         )
                     }
 
@@ -496,7 +496,7 @@ private fun RowScope.LocalTabButton(label: String, selected: Boolean, color: Col
         Text(
             label, fontFamily = DmSansFamily, fontSize = 13.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (selected) color else Color(0xFF6B7280)
+            color = if (selected) color else NexusText3
         )
     }
 }
@@ -508,7 +508,7 @@ private fun LlamaStatusCard(binaryAvailable: Boolean, serverRunning: Boolean, ac
     val statusColor: Color
     val bgColor: Color
     when {
-        !binaryAvailable -> { icon = "✗"; statusText = "Local AI binary not available in this build"; statusColor = Color(0xFF6B7280); bgColor = Color(0x0A6B7280) }
+        !binaryAvailable -> { icon = "✗"; statusText = "Local AI binary not available in this build"; statusColor = NexusText3; bgColor = Color(0x0A60606E) }
         serverRunning && activeModel != null -> { icon = "●"; statusText = "Server running · $activeModel · localhost:8080"; statusColor = green; bgColor = Color(0x0F10B981) }
         serverRunning -> { icon = "●"; statusText = "Server running · localhost:8080"; statusColor = green; bgColor = Color(0x0F10B981) }
         else -> { icon = "○"; statusText = "No model loaded — download a model below"; statusColor = amber; bgColor = Color(0x0FF59E0B) }
@@ -553,13 +553,13 @@ private fun LocalModelCard(
     val borderColor = when {
         isActive -> green.copy(alpha = 0.4f)
         isInstalled -> green.copy(alpha = 0.2f)
-        else -> Color(0x15FFFFFF)
+        else -> NexusBorder
     }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0x0AFFFFFF), RoundedCornerShape(14.dp))
+            .background(NexusSurface, RoundedCornerShape(14.dp))
             .border(1.dp, borderColor, RoundedCornerShape(14.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -588,13 +588,13 @@ private fun LocalModelCard(
                 }
                 Text(
                     model.description, fontFamily = DmSansFamily, fontSize = 11.sp,
-                    color = Color(0xFF6B7280)
+                    color = NexusText3
                 )
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     model.sizeLabel, fontFamily = SpaceMonoFamily, fontSize = 10.sp,
-                    color = Color(0xFF4B5563)
+                    color = NexusText3
                 )
                 Box(
                     modifier = Modifier
@@ -618,7 +618,7 @@ private fun LocalModelCard(
                         progress = { downloadProgress },
                         modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
                         color = blue,
-                        trackColor = Color(0x1560A5FA),
+                        trackColor = NexusBlue.copy(alpha = 0.085f),
                         strokeCap = StrokeCap.Round
                     )
                 }
@@ -647,15 +647,15 @@ private fun LocalModelCard(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .background(Color(0x0AFFFFFF), RoundedCornerShape(8.dp))
-                                .border(1.dp, Color(0x20FFFFFF), RoundedCornerShape(8.dp))
+                                .background(NexusSurface, RoundedCornerShape(8.dp))
+                                .border(1.dp, NexusBorder, RoundedCornerShape(8.dp))
                                 .padding(vertical = 8.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 "Load (needs release build)",
                                 fontFamily = DmSansFamily, fontSize = 11.sp,
-                                color = Color(0xFF4B5563), textAlign = TextAlign.Center
+                                color = NexusText3, textAlign = TextAlign.Center
                             )
                         }
                     }

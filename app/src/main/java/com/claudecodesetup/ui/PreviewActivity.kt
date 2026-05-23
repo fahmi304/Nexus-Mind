@@ -37,8 +37,8 @@ class PreviewActivity : AppCompatActivity() {
             wv.loadUrl("file://${indexFile.absolutePath}")
         } else {
             wv.loadData(
-                "<html><body style='background:#0a0618;color:#9ca3af;font-family:monospace;padding:24px'>" +
-                "<h2 style='color:#c8b8ff'>No index.html found</h2>" +
+                "<html><body style='background:#0C0C0F;color:#9090A0;font-family:monospace;padding:24px'>" +
+                "<h2 style='color:#E8834A'>No index.html found</h2>" +
                 "<p>Project path: $projectPath</p>" +
                 "<p>Create an index.html file to preview it here.</p></body></html>",
                 "text/html", "utf-8"

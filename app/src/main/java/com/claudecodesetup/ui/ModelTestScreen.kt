@@ -308,7 +308,7 @@ private fun TabbedModelTestScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF07061A), Color(0xFF0E0C28))))
+            .background(Color(0xFF0C0C0F))
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             ScreenHeader(
@@ -331,7 +331,7 @@ private fun TabbedModelTestScreen(
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 10.dp)
                     .background(Color(0x07FFFFFF), RoundedCornerShape(14.dp))
-                    .border(1.dp, Color(0x12FFFFFF), RoundedCornerShape(14.dp))
+                    .border(1.dp, NexusBorder, RoundedCornerShape(14.dp))
                     .padding(5.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -344,7 +344,7 @@ private fun TabbedModelTestScreen(
                             .clip(RoundedCornerShape(10.dp))
                             .then(
                                 if (isSelected) Modifier.background(
-                                    Brush.linearGradient(listOf(Color(0xFF7C3AED), Color(0xFF6D28D9)))
+                                    Brush.linearGradient(listOf(NexusAccent, Color(0xFFC4632A)))
                                 ) else Modifier.background(Color.Transparent)
                             )
                             .clickable { selectedTab = idx },
@@ -354,7 +354,7 @@ private fun TabbedModelTestScreen(
                             label,
                             fontSize = 13.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) Color(0xFFF0EEFF) else Color(0xFF5B5880),
+                            color = if (isSelected) NexusText else NexusText3,
                             fontFamily = DmSansFamily
                         )
                     }
@@ -403,15 +403,15 @@ private fun ScreenHeader(
         Box(
             modifier = Modifier
                 .size(34.dp)
-                .background(Color(0x09FFFFFF), RoundedCornerShape(17.dp))
-                .border(1.dp, Color(0x12FFFFFF), RoundedCornerShape(17.dp))
+                .background(NexusSurface, RoundedCornerShape(17.dp))
+                .border(1.dp, NexusBorder, RoundedCornerShape(17.dp))
                 .clickable(onClick = onBack),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 "←",
                 fontSize = 16.sp,
-                color = Color(0xFF8B5CF6),
+                color = NexusAccent,
                 fontFamily = DmSansFamily
             )
         }
@@ -423,13 +423,13 @@ private fun ScreenHeader(
                 title,
                 fontSize = 19.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFFF0EEFF),
+                color = NexusText,
                 fontFamily = SyneFamily
             )
             Text(
                 subtitle.uppercase(),
                 fontSize = 10.sp,
-                color = Color(0xFF5B5880),
+                color = NexusText3,
                 fontFamily = JetBrainsMonoFamily,
                 letterSpacing = 1.sp,
             )
@@ -440,15 +440,15 @@ private fun ScreenHeader(
             Box(
                 modifier = Modifier
                     .size(34.dp)
-                    .background(Color(0x09FFFFFF), RoundedCornerShape(10.dp))
-                    .border(1.dp, Color(0x12FFFFFF), RoundedCornerShape(10.dp))
+                    .background(NexusSurface, RoundedCornerShape(10.dp))
+                    .border(1.dp, NexusBorder, RoundedCornerShape(10.dp))
                     .run { if (!isLoading && !isTesting) clickable(onClick = onRefresh) else this },
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     "↻",
                     fontSize = 16.sp,
-                    color = if (!isLoading && !isTesting) Color(0xFF8B5CF6) else Color(0xFF3D3A5C),
+                    color = if (!isLoading && !isTesting) NexusAccent else NexusText3,
                     fontFamily = DmSansFamily
                 )
             }
@@ -458,21 +458,21 @@ private fun ScreenHeader(
         // Live status pill
         Row(
             modifier = Modifier
-                .background(Color(0x0C8B5CF6), RoundedCornerShape(20.dp))
-                .border(1.dp, Color(0x258B5CF6), RoundedCornerShape(20.dp))
+                .background(NexusAccentDim, RoundedCornerShape(20.dp))
+                .border(1.dp, Color(0x40E8834A), RoundedCornerShape(20.dp))
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
                     .size(5.dp)
-                    .background(Color(0xFF8B5CF6).copy(alpha = pulseAlpha), CircleShape)
+                    .background(NexusAccent.copy(alpha = pulseAlpha), CircleShape)
             )
             Spacer(Modifier.width(4.dp))
             Text(
                 "Live",
                 fontSize = 10.sp,
-                color = Color(0xFF8B5CF6),
+                color = NexusAccent,
                 fontFamily = JetBrainsMonoFamily,
                 fontWeight = FontWeight.Medium,
             )
@@ -484,7 +484,7 @@ private fun ScreenHeader(
         TestButton(
             label = testingLabel,
             enabled = testEnabled,
-            color = Color(0xFF22D3EE),
+            color = NexusBlue,
             onClick = onTestAll
         )
     }
@@ -500,12 +500,12 @@ private fun ModelLoadContent(
         is ModelLoadState.Loading -> {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = Color(0xFF8B5CF6), strokeWidth = 2.dp)
+                    CircularProgressIndicator(color = NexusAccent, strokeWidth = 2.dp)
                     Spacer(Modifier.height(12.dp))
                     Text(
                         "Fetching models…",
                         fontSize = 13.sp,
-                        color = Color(0xFF5B5880),
+                        color = NexusText3,
                         fontFamily = JetBrainsMonoFamily
                     )
                 }
@@ -525,11 +525,11 @@ private fun ModelLoadContent(
                     Text(
                         state.message,
                         fontSize = 11.sp,
-                        color = Color(0xFF5B5880),
+                        color = NexusText3,
                         fontFamily = JetBrainsMonoFamily
                     )
                     Spacer(Modifier.height(16.dp))
-                    TestButton(label = "↻ Retry", enabled = true, color = Color(0xFF22D3EE), onClick = onRetry)
+                    TestButton(label = "↻ Retry", enabled = true, color = NexusBlue, onClick = onRetry)
                 }
             }
         }
@@ -582,7 +582,7 @@ private fun StatsStrip(results: List<ModelTestResult>) {
         StatCard(
             value = passCount.toString(),
             label = "Passing",
-            valueColor = Color(0xFF22C55E),
+            valueColor = NexusGreen,
             modifier = Modifier.weight(1f)
         )
         StatCard(
@@ -600,7 +600,7 @@ private fun StatsStrip(results: List<ModelTestResult>) {
         StatCard(
             value = if (avgLatency > 0) "${avgLatency}ms" else "—",
             label = "Avg. Time",
-            valueColor = Color(0xFFA78BFA),
+            valueColor = NexusAccent,
             modifier = Modifier.weight(1f)
         )
     }
@@ -610,8 +610,8 @@ private fun StatsStrip(results: List<ModelTestResult>) {
 private fun StatCard(value: String, label: String, valueColor: Color, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .background(Color(0x09FFFFFF), RoundedCornerShape(12.dp))
-            .border(1.dp, Color(0x12FFFFFF), RoundedCornerShape(12.dp))
+            .background(NexusSurface, RoundedCornerShape(12.dp))
+            .border(1.dp, NexusBorder, RoundedCornerShape(12.dp))
             .padding(vertical = 8.dp, horizontal = 4.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -626,7 +626,7 @@ private fun StatCard(value: String, label: String, valueColor: Color, modifier: 
             Text(
                 label,
                 fontSize = 9.sp,
-                color = Color(0xFF7C6FAA),
+                color = NexusText3,
                 fontFamily = JetBrainsMonoFamily,
             )
         }
@@ -643,19 +643,19 @@ private fun LegendRow(totalCount: Int) {
             .padding(horizontal = 16.dp)
             .padding(bottom = 4.dp)
             .background(Color(0x07FFFFFF), RoundedCornerShape(12.dp))
-            .border(1.dp, Color(0x12FFFFFF), RoundedCornerShape(12.dp))
+            .border(1.dp, NexusBorder, RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        LegendDot(Color(0xFF22C55E), "Pass")
+        LegendDot(NexusGreen, "Pass")
         LegendDot(Color(0xFFF59E0B), "Rate limited")
         LegendDot(Color(0xFFEF4444), "Fail")
         Spacer(Modifier.weight(1f))
         Text(
             "$totalCount models",
             fontSize = 10.sp,
-            color = Color(0xFF5B5880),
+            color = NexusText3,
             fontFamily = JetBrainsMonoFamily,
         )
     }
@@ -733,7 +733,7 @@ private fun SingleProviderTestScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF07061A), Color(0xFF0E0C28))))
+            .background(Color(0xFF0C0C0F))
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             ScreenHeader(
@@ -758,9 +758,9 @@ private fun SingleProviderTestScreen(
 @Composable
 private fun ModelResultRow(result: ModelTestResult) {
     val (bgColor, borderColor, label, labelColor) = when (result.status) {
-        TestStatus.PENDING      -> Quad(Color(0x08FFFFFF), Color(0x12FFFFFF), "—",             Color(0xFF5B5880))
-        TestStatus.TESTING      -> Quad(Color(0x0F22D3EE), Color(0x3022D3EE), "Testing…",     Color(0xFF22D3EE))
-        TestStatus.PASS         -> Quad(Color(0x0F22C55E), Color(0x2522C55E), "Responds",      Color(0xFF22C55E))
+        TestStatus.PENDING      -> Quad(Color(0x08FFFFFF), NexusBorder, "—",             NexusText3)
+        TestStatus.TESTING      -> Quad(NexusAccentDim, Color(0x40E8834A), "Testing…",         NexusAccent)
+        TestStatus.PASS         -> Quad(NexusGreenDim, Color(0x253DD68C), "Responds",          NexusGreen)
         TestStatus.EMPTY        -> Quad(Color(0x0FF59E0B), Color(0x25F59E0B), "Empty",         Color(0xFFF59E0B))
         TestStatus.RATE_LIMITED -> Quad(Color(0x0FF59E0B), Color(0x25F59E0B), "Rate limit",    Color(0xFFF59E0B))
         TestStatus.FAIL         -> Quad(Color(0x0FEF4444), Color(0x25EF4444), "Failed",        Color(0xFFEF4444))
@@ -768,13 +768,13 @@ private fun ModelResultRow(result: ModelTestResult) {
     }
 
     val glowBarColor = when (result.status) {
-        TestStatus.PASS         -> Color(0xFF22C55E)
+        TestStatus.PASS         -> NexusGreen
         TestStatus.FAIL         -> Color(0xFFEF4444)
         TestStatus.RATE_LIMITED,
         TestStatus.TIMEOUT,
         TestStatus.EMPTY        -> Color(0xFFF59E0B)
-        TestStatus.TESTING      -> Color(0xFF22D3EE)
-        TestStatus.PENDING      -> Color(0xFF3D3A5C)
+        TestStatus.TESTING      -> NexusAccent
+        TestStatus.PENDING      -> NexusText3
     }
 
     val cappedLatency = result.latencyMs.coerceAtMost(10_000L)
@@ -804,7 +804,7 @@ private fun ModelResultRow(result: ModelTestResult) {
             if (result.status == TestStatus.TESTING) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(16.dp),
-                    color = Color(0xFF22D3EE),
+                    color = NexusAccent,
                     strokeWidth = 2.dp
                 )
             } else {
@@ -828,7 +828,7 @@ private fun ModelResultRow(result: ModelTestResult) {
                     result.model.name,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
-                    color = Color(0xFFF0EEFF),
+                    color = NexusText,
                     fontFamily = DmSansFamily,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -836,7 +836,7 @@ private fun ModelResultRow(result: ModelTestResult) {
                 Text(
                     result.model.modelId,
                     fontSize = 9.5.sp,
-                    color = Color(0xFF5B5880),
+                    color = NexusText3,
                     fontFamily = JetBrainsMonoFamily,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -858,7 +858,7 @@ private fun ModelResultRow(result: ModelTestResult) {
                     Text(
                         "${result.latencyMs}ms",
                         fontSize = 10.sp,
-                        color = Color(0xFF5B5880),
+                        color = NexusText3,
                         fontFamily = JetBrainsMonoFamily,
                     )
                     Spacer(Modifier.height(4.dp))
@@ -867,7 +867,7 @@ private fun ModelResultRow(result: ModelTestResult) {
                         modifier = Modifier
                             .width(60.dp)
                             .height(2.dp)
-                            .background(Color(0x12FFFFFF), RoundedCornerShape(1.dp))
+                            .background(NexusBorder, RoundedCornerShape(1.dp))
                     ) {
                         Box(
                             modifier = Modifier
@@ -889,8 +889,8 @@ private fun TestButton(label: String, enabled: Boolean, color: Color, onClick: (
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
-            .background(if (enabled) color.copy(alpha = 0.15f) else Color(0x09FFFFFF))
-            .border(1.dp, if (enabled) color.copy(alpha = 0.45f) else Color(0x12FFFFFF), RoundedCornerShape(10.dp))
+            .background(if (enabled) color.copy(alpha = 0.15f) else NexusSurface)
+            .border(1.dp, if (enabled) color.copy(alpha = 0.45f) else NexusBorder, RoundedCornerShape(10.dp))
             .run { if (enabled) clickable(onClick = onClick) else this }
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
@@ -898,7 +898,7 @@ private fun TestButton(label: String, enabled: Boolean, color: Color, onClick: (
             label,
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
-            color = if (enabled) color else Color(0xFF3D3A5C),
+            color = if (enabled) color else NexusText3,
             fontFamily = DmSansFamily,
         )
     }
@@ -911,7 +911,7 @@ private fun LegendDot(color: Color, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(7.dp).background(color, CircleShape))
         Spacer(Modifier.width(4.dp))
-        Text(label, fontSize = 11.sp, color = Color(0xFF5B5880), fontFamily = DmSansFamily)
+        Text(label, fontSize = 11.sp, color = NexusText3, fontFamily = DmSansFamily)
     }
 }
 

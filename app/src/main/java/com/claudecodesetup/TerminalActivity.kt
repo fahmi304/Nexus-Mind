@@ -869,7 +869,7 @@ class TerminalActivity : AppCompatActivity() {
         val editText = android.widget.EditText(this).apply {
             setText(content)
             setTextColor(Color.WHITE)
-            setBackgroundColor(android.graphics.Color.parseColor("#0d1a2e"))
+            setBackgroundColor(android.graphics.Color.parseColor("#0C0C0F"))
             textSize = 12f
             typeface = android.graphics.Typeface.MONOSPACE
             setPadding(24, 24, 24, 24)

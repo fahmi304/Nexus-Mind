@@ -46,25 +46,25 @@ import kotlin.math.ceil
 
 // Capability filter chips shown at top of picker
 val CAP_FILTERS = listOf(
-    "All"          to null,
-    "🔧 Tools"     to Cap.TOOLS,
-    "👁 Vision"    to Cap.VISION,
-    "🧠 Reasoning" to Cap.REASONING,
-    "⚡ Fast"      to Cap.FAST,
-    "🆓 Free"      to Cap.FREE,
-    "💻 Coding"    to Cap.CODING,
-    "📜 Long Ctx"  to Cap.LONG_CTX
+    "All"       to null,
+    "Tools"     to Cap.TOOLS,
+    "Vision"    to Cap.VISION,
+    "Reasoning" to Cap.REASONING,
+    "Fast"      to Cap.FAST,
+    "Free"      to Cap.FREE,
+    "Coding"    to Cap.CODING,
+    "Long Ctx"  to Cap.LONG_CTX
 )
 
 // Ordered list of caps shown as pills on each card
 val CAP_PILL_ORDER = listOf(
-    Cap.TOOLS     to "🔧",
-    Cap.VISION    to "👁",
-    Cap.REASONING to "🧠",
-    Cap.FAST      to "⚡",
-    Cap.LONG_CTX  to "📜",
-    Cap.CODING    to "💻",
-    Cap.FREE      to "🆓"
+    Cap.TOOLS     to "tools",
+    Cap.VISION    to "vision",
+    Cap.REASONING to "reason",
+    Cap.FAST      to "fast",
+    Cap.LONG_CTX  to "ctx",
+    Cap.CODING    to "code",
+    Cap.FREE      to "free"
 )
 
 private data class ModelDisplay(
@@ -102,9 +102,9 @@ private fun toDisplay(model: AiModel): ModelDisplay {
         else -> "🤖"
     }
     val color = when {
-        "gemini"  in id -> Color(0xFF10B981)
-        "claude"  in id -> Color(0xFF8B5CF6)
-        "gpt"     in id || "openai"   in id -> Color(0xFF3B82F6)
+        "gemini"  in id -> NexusGreen
+        "claude"  in id -> NexusAccent
+        "gpt"     in id || "openai"   in id -> NexusAccent
         "llama"   in id || "meta"     in id -> Color(0xFFF97316)
         "deepseek" in id -> Color(0xFF06B6D4)
         "kimi"    in id || "moonshot" in id -> Color(0xFFF59E0B)
@@ -112,7 +112,7 @@ private fun toDisplay(model: AiModel): ModelDisplay {
         "qwen"    in id -> Color(0xFFF59E0B)
         "mistral" in id || "mixtral"  in id -> Color(0xFF22D3EE)
         "minimax" in id -> Color(0xFFA78BFA)
-        else -> Color(0xFF60A5FA)
+        else -> NexusBlue
     }
     val speed = when {
         Cap.FAST in caps && "1.2b" in id -> 97
@@ -226,7 +226,7 @@ fun ModelPickerScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Text(
-                        "←", fontSize = 20.sp, color = Color(0xFF60A5FA),
+                        "←", fontSize = 20.sp, color = NexusBlue,
                         modifier = Modifier
                             .clickable(onClick = onBack)
                             .padding(end = 10.dp, top = 4.dp, bottom = 4.dp)
@@ -235,7 +235,7 @@ fun ModelPickerScreen(
                         Text(
                             provider.name.uppercase(),
                             fontFamily = SpaceMonoFamily, fontSize = 8.sp,
-                            letterSpacing = 3.sp, color = Color(0xB360A5FA)
+                            letterSpacing = 3.sp, color = NexusText3
                         )
                         Text(
                             "Choose Your Model", fontFamily = DmSansFamily, fontSize = 17.sp,
@@ -248,11 +248,11 @@ fun ModelPickerScreen(
                         Box(
                             modifier = Modifier
                                 .background(
-                                    if (isRefreshing) Color(0x0FFFFFFF) else Color(0x1F8B5CF6),
+                                    if (isRefreshing) NexusSurface else NexusAccentDim,
                                     RoundedCornerShape(8.dp)
                                 )
                                 .border(1.dp,
-                                    if (isRefreshing) Color(0x14FFFFFF) else Color(0x508B5CF6),
+                                    if (isRefreshing) NexusBorder else Color(0x50E8834A),
                                     RoundedCornerShape(8.dp))
                                 .clickable(enabled = !isRefreshing) { fetchLive() }
                                 .padding(horizontal = 10.dp, vertical = 5.dp),
@@ -260,10 +260,10 @@ fun ModelPickerScreen(
                         ) {
                             if (isRefreshing) {
                                 CircularProgressIndicator(
-                                    Modifier.size(12.dp), color = Color(0xFF8B5CF6), strokeWidth = 1.5.dp)
+                                    Modifier.size(12.dp), color = NexusAccent, strokeWidth = 1.5.dp)
                             } else {
                                 Text("↻ Refresh", fontFamily = DmSansFamily, fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold, color = Color(0xFF8B5CF6))
+                                    fontWeight = FontWeight.SemiBold, color = NexusAccent)
                             }
                         }
                     }
@@ -271,14 +271,14 @@ fun ModelPickerScreen(
                         val shortKey = if (apiKey.length > 8) apiKey.take(8) + "…" else apiKey
                         Row(
                             modifier = Modifier
-                                .background(Color(0x1F10B981), RoundedCornerShape(8.dp))
-                                .border(1.dp, Color(0x5010B981), RoundedCornerShape(8.dp))
+                                .background(Color(0x1F3DD68C), RoundedCornerShape(8.dp))
+                                .border(1.dp, Color(0x503DD68C), RoundedCornerShape(8.dp))
                                 .padding(horizontal = 9.dp, vertical = 3.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
-                            Box(Modifier.size(6.dp).background(Color(0xFF10B981), CircleShape))
-                            Text(shortKey, fontFamily = SpaceMonoFamily, fontSize = 9.sp, color = Color(0xFF10B981))
+                            Box(Modifier.size(6.dp).background(NexusGreen, CircleShape))
+                            Text(shortKey, fontFamily = SpaceMonoFamily, fontSize = 9.sp, color = NexusGreen)
                         }
                     }
                     AnimatedVisibility(
@@ -317,14 +317,14 @@ fun ModelPickerScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 4.dp)
-                    .background(Color(0x14FFFFFF), RoundedCornerShape(10.dp))
-                    .border(1.dp, Color(0x20FFFFFF), RoundedCornerShape(10.dp))
+                    .background(NexusSurface, RoundedCornerShape(10.dp))
+                    .border(1.dp, NexusBorder, RoundedCornerShape(10.dp))
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 decorationBox = { inner ->
                     if (searchQuery.isEmpty()) {
                         Text(
                             "Search models…",
-                            color = Color(0xFF475569),
+                            color = NexusText3,
                             fontSize = 13.sp,
                             fontFamily = DmSansFamily
                         )
@@ -343,11 +343,11 @@ fun ModelPickerScreen(
                     items(activeCapFilters) { (label, cap) ->
                         val isActive = selectedCap == cap
                         val chipBg by animateColorAsState(
-                            if (isActive) Color(0x2E60A5FA) else Color(0x0DFFFFFF), tween(150), label = "chip_bg")
+                            if (isActive) NexusAccentDim else NexusSurface, tween(150), label = "chip_bg")
                         val chipBorder by animateColorAsState(
-                            if (isActive) Color(0x7260A5FA) else Color(0x17FFFFFF), tween(150), label = "chip_border")
+                            if (isActive) Color(0x72E8834A) else NexusBorder, tween(150), label = "chip_border")
                         val chipText by animateColorAsState(
-                            if (isActive) Color(0xFF93C5FD) else Color(0xFF6B7280), tween(150), label = "chip_text")
+                            if (isActive) NexusAccent else NexusText3, tween(150), label = "chip_text")
                         Box(
                             modifier = Modifier
                                 .background(chipBg, RoundedCornerShape(20.dp))
@@ -386,18 +386,18 @@ fun ModelPickerScreen(
                             if (fetchError) "Check your API key and internet connection, then tap Refresh."
                             else "Tap ↻ Refresh to try again.",
                             fontFamily = DmSansFamily, fontSize = 12.sp,
-                            color = Color(0xFF6B7280)
+                            color = NexusText3
                         )
                         Box(
                             modifier = Modifier
-                                .background(Color(0x1F8B5CF6), RoundedCornerShape(8.dp))
-                                .border(1.dp, Color(0x508B5CF6), RoundedCornerShape(8.dp))
+                                .background(NexusAccentDim, RoundedCornerShape(8.dp))
+                                .border(1.dp, Color(0x50E8834A), RoundedCornerShape(8.dp))
                                 .clickable { fetchLive() }
                                 .padding(horizontal = 20.dp, vertical = 8.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text("↻ Retry", fontFamily = DmSansFamily, fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold, color = Color(0xFF8B5CF6))
+                                fontWeight = FontWeight.SemiBold, color = NexusAccent)
                         }
                     }
                 }
@@ -413,9 +413,9 @@ fun ModelPickerScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         CircularProgressIndicator(
-                            Modifier.size(32.dp), color = Color(0xFF8B5CF6), strokeWidth = 2.dp)
+                            Modifier.size(32.dp), color = NexusAccent, strokeWidth = 2.dp)
                         Text("Loading models…", fontFamily = DmSansFamily, fontSize = 13.sp,
-                            color = Color(0xFF6B7280))
+                            color = NexusText3)
                     }
                 }
             } else
@@ -426,7 +426,7 @@ fun ModelPickerScreen(
                 val pagedPaid = paged.filter { Cap.FREE !in it.effectiveCaps }
                 LazyColumn(modifier = Modifier.weight(1f).padding(horizontal = 10.dp)) {
                     if (pagedFree.isNotEmpty()) {
-                        item { SectionHeader("🆓 FREE", Color(0xFF10B981)) }
+                        item { SectionHeader("🆓 FREE", NexusGreen) }
                         item {
                             ModelSubGrid(
                                 models = pagedFree,
@@ -464,11 +464,11 @@ fun ModelPickerScreen(
                     repeat(totalPages) { i ->
                         val isActive = i == page
                         val pageBg by animateColorAsState(
-                            if (isActive) Color(0x3860A5FA) else Color(0x0DFFFFFF), tween(150), label = "page_bg")
+                            if (isActive) Color(0x38E8834A) else NexusSurface, tween(150), label = "page_bg")
                         val pageBorder by animateColorAsState(
-                            if (isActive) Color(0x8060A5FA) else Color.Transparent, tween(150), label = "page_border")
+                            if (isActive) Color(0x80E8834A) else Color.Transparent, tween(150), label = "page_border")
                         val pageText by animateColorAsState(
-                            if (isActive) Color(0xFF93C5FD) else Color(0xFF374151), tween(150), label = "page_text")
+                            if (isActive) NexusAccent else NexusText3, tween(150), label = "page_text")
                         Box(
                             modifier = Modifier
                                 .size(28.dp)
@@ -507,9 +507,9 @@ fun ModelPickerScreen(
                             scaleX = confirmScale; scaleY = confirmScale
                             alpha = if (canConfirm) 1f else 0.4f
                         }
-                        .glowShadow(Color(0x943B82F6), 12.dp, 13.dp)
+                        .glowShadow(Color(0x94E8834A), 12.dp, 13.dp)
                         .background(
-                            Brush.linearGradient(listOf(Color(0xFF3B82F6), Color(0xFF6366F1))),
+                            Brush.linearGradient(listOf(NexusAccent, NexusAccent)),
                             RoundedCornerShape(13.dp)
                         )
                         .clickable(
@@ -536,11 +536,11 @@ private fun ModelCard(display: ModelDisplay, isSelected: Boolean, onSelect: () -
     val cardScale by animateFloatAsState(if (isPressed) 0.95f else 1f, tween(150), label = "card_scale")
 
     val cardBg by animateColorAsState(
-        if (isSelected) display.color.copy(alpha = 0.22f) else Color(0x0FFFFFFF),
+        if (isSelected) display.color.copy(alpha = 0.22f) else NexusSurface,
         tween(200), label = "card_bg"
     )
     val cardBorder by animateColorAsState(
-        if (isSelected) display.color.copy(alpha = 0.66f) else Color(0x14FFFFFF),
+        if (isSelected) display.color.copy(alpha = 0.66f) else NexusBorder,
         tween(200), label = "card_border"
     )
 
@@ -600,7 +600,7 @@ private fun ModelCard(display: ModelDisplay, isSelected: Boolean, onSelect: () -
                     .fillMaxWidth()
                     .height(2.dp)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(Color(0x0FFFFFFF))
+                    .background(NexusSurface)
             ) {
                 Box(
                     modifier = Modifier
@@ -616,7 +616,7 @@ private fun ModelCard(display: ModelDisplay, isSelected: Boolean, onSelect: () -
 
             Column {
                 Divider(
-                    color = Color(0x0DFFFFFF), thickness = 1.dp,
+                    color = NexusBorder, thickness = 1.dp,
                     modifier = Modifier.padding(bottom = 5.dp)
                 )
                 Row(
@@ -635,7 +635,7 @@ private fun ModelCard(display: ModelDisplay, isSelected: Boolean, onSelect: () -
                             fontWeight = FontWeight.Bold, color = display.color
                         )
                     }
-                    Text(display.tokens, fontFamily = SpaceMonoFamily, fontSize = 7.sp, color = Color(0xFF374151))
+                    Text(display.tokens, fontFamily = SpaceMonoFamily, fontSize = 7.sp, color = NexusText3)
                 }
             }
         }
@@ -714,12 +714,12 @@ private fun ModelSubGrid(
 private fun PaginationButton(label: String, enabled: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .background(Color(0x0FFFFFFF), RoundedCornerShape(8.dp))
+            .background(NexusSurface, RoundedCornerShape(8.dp))
             .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .graphicsLayer { alpha = if (enabled) 1f else 0.2f },
         contentAlignment = Alignment.Center
     ) {
-        Text(label, fontFamily = DmSansFamily, fontSize = 14.sp, color = Color(0xFF6B7280))
+        Text(label, fontFamily = DmSansFamily, fontSize = 14.sp, color = NexusText3)
     }
 }

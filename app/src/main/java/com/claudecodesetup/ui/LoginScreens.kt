@@ -88,7 +88,7 @@ fun SubscriptionScreen(onYes: () -> Unit, onNo: () -> Unit) {
                         "You can change this any time in Settings",
                         fontFamily = DmSansFamily,
                         fontSize = 13.sp,
-                        color = Color(0xFF9CA3AF),
+                        color = NexusText2,
                         textAlign = TextAlign.Center
                     )
                 }
@@ -98,7 +98,7 @@ fun SubscriptionScreen(onYes: () -> Unit, onNo: () -> Unit) {
                     icon = "🧬",
                     title = "Claude Subscription",
                     description = "Login with your Claude.ai account or use an Anthropic API key for direct access",
-                    accentColor = Color(0xFF8B5CF6),
+                    accentColor = NexusAccent,
                     onClick = onYes
                 )
 
@@ -107,7 +107,7 @@ fun SubscriptionScreen(onYes: () -> Unit, onNo: () -> Unit) {
                     icon = "🔌",
                     title = "Proxy / Free Providers",
                     description = "Use OpenRouter, Gemini, Groq, DeepSeek and more — no Claude account needed",
-                    accentColor = Color(0xFF00C8FF),
+                    accentColor = NexusBlue,
                     onClick = onNo
                 )
             }
@@ -132,7 +132,7 @@ private fun LoginModeCard(
             .fillMaxWidth()
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .glowShadow(accentColor.copy(alpha = 0.12f), 16.dp, 20.dp)
-            .background(Color(0x12FFFFFF), RoundedCornerShape(20.dp))
+            .background(NexusSurface2, RoundedCornerShape(20.dp))
             .border(1.dp, accentColor.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
             .padding(20.dp)
@@ -173,7 +173,7 @@ private fun LoginModeCard(
                     description,
                     fontFamily = DmSansFamily,
                     fontSize = 12.sp,
-                    color = Color(0xFF9CA3AF),
+                    color = NexusText2,
                     lineHeight = 17.sp
                 )
             }
@@ -216,8 +216,8 @@ private fun QuestionCard(
                     .padding(horizontal = 16.dp)
                     .graphicsLayer { this.alpha = alpha; translationY = offset * density }
                     .glowShadow(accentColor.copy(alpha = 0.14f), 20.dp, 24.dp)
-                    .background(Color(0x12FFFFFF), RoundedCornerShape(24.dp))
-                    .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(24.dp))
+                    .background(NexusSurface2, RoundedCornerShape(24.dp))
+                    .border(1.dp, NexusBorder, RoundedCornerShape(24.dp))
                     .padding(32.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -248,7 +248,7 @@ private fun QuestionCard(
                     )
                     Text(
                         subtitle, fontFamily = DmSansFamily, fontSize = 13.sp,
-                        color = Color(0xFF9CA3AF), textAlign = TextAlign.Center
+                        color = NexusText2, textAlign = TextAlign.Center
                     )
                 }
 
@@ -304,7 +304,7 @@ fun ProviderListScreen(onSelect: (Provider) -> Unit, onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "←", fontSize = 20.sp, color = Color(0xFF60A5FA),
+                    "←", fontSize = 20.sp, color = NexusBlue,
                     modifier = Modifier
                         .clickable(onClick = onBack)
                         .padding(end = 10.dp, top = 4.dp, bottom = 4.dp)
@@ -312,7 +312,7 @@ fun ProviderListScreen(onSelect: (Provider) -> Unit, onBack: () -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         "PROVIDER", fontFamily = SpaceMonoFamily, fontSize = 8.sp,
-                        letterSpacing = 3.sp, color = Color(0xB360A5FA)
+                        letterSpacing = 3.sp, color = NexusBlue.copy(alpha = 0.7f)
                     )
                     Text(
                         "Choose Provider", fontFamily = DmSansFamily, fontSize = 17.sp,
@@ -346,8 +346,8 @@ private fun ProviderCard(provider: Provider, onSelect: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .background(Color(0x0CFFFFFF), RoundedCornerShape(16.dp))
-            .border(1.dp, Color(0x12FFFFFF), RoundedCornerShape(16.dp))
+            .background(NexusSurface, RoundedCornerShape(16.dp))
+            .border(1.dp, NexusBorder, RoundedCornerShape(16.dp))
             .clickable(interactionSource = interaction, indication = null, onClick = onSelect)
             .padding(13.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -394,7 +394,7 @@ private fun ProviderCard(provider: Provider, onSelect: () -> Unit) {
                     )
                 }
             }
-            Text(provider.rateLimit, fontFamily = DmSansFamily, fontSize = 11.sp, color = Color(0xFF6B7280))
+            Text(provider.rateLimit, fontFamily = DmSansFamily, fontSize = 11.sp, color = NexusText3)
             if (provider.warningNote != null) {
                 Text(
                     "⚠ ${provider.warningNote}", fontFamily = DmSansFamily,
@@ -403,21 +403,21 @@ private fun ProviderCard(provider: Provider, onSelect: () -> Unit) {
             }
         }
 
-        Text("›", fontSize = 20.sp, color = Color(0xFF374151))
+        Text("›", fontSize = 20.sp, color = NexusText3)
     }
 }
 
 internal fun providerDisplayInfo(id: String): Triple<String, Color, String> = when (id) {
-    "gemini"     -> Triple("✨", Color(0xFF10B981), "Best Free")
-    "openrouter" -> Triple("🔀", Color(0xFF8B5CF6), "Aggregator")
-    "deepseek"   -> Triple("🧠", Color(0xFF06B6D4), "Reasoning")
+    "gemini"     -> Triple("✨", NexusGreen, "Best Free")
+    "openrouter" -> Triple("🔀", NexusAccent, "Aggregator")
+    "deepseek"   -> Triple("🧠", NexusBlue, "Reasoning")
     "kimi"       -> Triple("🌙", Color(0xFFF59E0B), "Long CTX")
     "nvidia_nim" -> Triple("⚡", Color(0xFF76B900), "40 req/min")
     "meta_llama" -> Triple("🦙", Color(0xFF0467DF), "Open Source")
     "ollama"     -> Triple("💻", Color(0xFFEF4444), "Personal AI")
-    "anthropic"  -> Triple("🧬", Color(0xFF8B5CF6), "Subscription")
+    "anthropic"  -> Triple("🧬", NexusAccent, "Subscription")
     "groq"       -> Triple("⚡", Color(0xFFF97316), "14,400/day")
-    else         -> Triple("🤖", Color(0xFF6440FF), "AI Provider")
+    else         -> Triple("🤖", NexusAccent, "AI Provider")
 }
 
 // ── Shared button components ──────────────────────────────────────────────────
@@ -456,14 +456,14 @@ fun FlowOutlineButton(label: String, onClick: () -> Unit) {
             .fillMaxWidth()
             .height(46.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .background(Color(0x0FFFFFFF), RoundedCornerShape(13.dp))
-            .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(13.dp))
+            .background(NexusSurface, RoundedCornerShape(13.dp))
+            .border(1.dp, NexusBorder, RoundedCornerShape(13.dp))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
             label, fontFamily = DmSansFamily, fontSize = 15.sp,
-            fontWeight = FontWeight.Medium, color = Color(0xFF9CA3AF)
+            fontWeight = FontWeight.Medium, color = NexusText2
         )
     }
 }

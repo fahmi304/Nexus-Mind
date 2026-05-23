@@ -190,7 +190,7 @@ private fun ClaudeAuthScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF7C3AED), RoundedCornerShape(14.dp))
+                    .background(NexusAccent, RoundedCornerShape(14.dp))
                     .clickable { onLoginWithClaude() }
                     .padding(vertical = 18.dp),
                 contentAlignment = Alignment.Center
@@ -210,7 +210,7 @@ private fun ClaudeAuthScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF1E1B4B), RoundedCornerShape(14.dp))
+                    .background(NexusSurface2, RoundedCornerShape(14.dp))
                     .clickable { onUseApiKey() }
                     .padding(vertical = 18.dp),
                 contentAlignment = Alignment.Center
