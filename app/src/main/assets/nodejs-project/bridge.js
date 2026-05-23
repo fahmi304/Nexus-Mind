@@ -3481,8 +3481,12 @@ function openPrintSession() {
                 try {
                     const logData = fs.readFileSync(SETUP_LOG, 'utf8');
                     const lines = logData.split('\n');
-                    const out = (n === Infinity ? lines : lines.slice(-n)).join('\r\n');
-                    if (state.socket) state.socket.write(SYS_FENCE + '\x1b[2m' + out + '\x1b[0m\r\n');
+                    // Strip ANSI/cursor sequences — log may contain PTY output with cursor
+                    // movements that scatter characters across the terminal grid when re-parsed.
+                    const out = (n === Infinity ? lines : lines.slice(-n))
+                        .map(l => stripAnsi(l))
+                        .join('\r\n');
+                    if (state.socket) state.socket.write(SYS_FENCE + out + '\r\n');
                 } catch(_) { try { if (state.socket) state.socket.write(SYS_FENCE + '[no log]\r\n'); } catch(_) {} }
                 continue;
             }
