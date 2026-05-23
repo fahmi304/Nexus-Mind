@@ -618,6 +618,65 @@ html, body {
   font-family: 'Space Mono','Courier New',monospace;
   margin-left: 4px;
 }
+
+/* ── Sub-agent panel ─────────────────────────────────────────────────────── */
+.agent-panel {
+  margin: 6px 4px;
+  border-radius: 14px;
+  background: rgba(15,8,35,0.92);
+  border: 1px solid rgba(124,58,237,0.35);
+  box-shadow: 0 4px 20px rgba(124,58,237,0.12);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 14px 8px;
+  gap: 6px;
+}
+.agent-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+}
+.agent-panel-title {
+  color: #d8b4fe;
+  font-size: 11px;
+  font-family: 'Space Mono','Courier New',monospace;
+  font-weight: 600;
+  flex: 1;
+}
+.agent-panel-count {
+  color: rgba(196,181,253,0.5);
+  font-size: 9px;
+  font-family: 'Space Mono','Courier New',monospace;
+}
+.agent-panel-desc {
+  width: 100%;
+  font-size: 10px;
+  font-family: 'Space Mono','Courier New',monospace;
+  color: rgba(200,180,255,0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* SVG animation keyframes */
+@keyframes ap-pulse1 { 0%{r:13px;opacity:.18} 100%{r:21px;opacity:0} }
+@keyframes ap-pulse2 { 0%{r:13px;opacity:.12} 100%{r:24px;opacity:0} }
+@keyframes ap-orch   { 0%,100%{opacity:1}  50%{opacity:.85} }
+@keyframes ap-spin   { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+@keyframes ap-check  { 0%{stroke-dashoffset:14;opacity:0} 10%{opacity:1} 55%,100%{stroke-dashoffset:0;opacity:1} }
+@keyframes ap-pkt-r  { 0%{opacity:0} 5%{opacity:1} 45%{opacity:1} 50%,51%{opacity:0} 56%{opacity:.8} 95%{opacity:.8} 100%{opacity:0} }
+@keyframes ap-pkt-d  { 0%{opacity:0} 20%{opacity:.9} 60%,100%{opacity:.25} }
+@keyframes ap-pkt-q  { 0%,100%{opacity:.55} 50%{opacity:.2} }
+@keyframes ap-line-r { 0%,100%{opacity:.22} 45%{opacity:.7} 50%{opacity:.22} 95%{opacity:.55} }
+@keyframes ap-line-d { 0%,100%{opacity:.55} 50%{opacity:.45} }
+@keyframes ap-line-q { 0%,100%{opacity:.18} 50%{opacity:.3} }
+@keyframes ap-glow-g { 0%,100%{opacity:.95} 50%{opacity:1} }
+@keyframes ap-glow-b { 0%,100%{opacity:.92} 45%{opacity:1} }
+@keyframes ap-glow-o { 0%,100%{opacity:.65} 50%{opacity:.8} }
+@keyframes ap-arc-q  { 0%,100%{opacity:.25} 50%{opacity:.15} }
+@keyframes ap-done   { 0%{opacity:.92} 50%{opacity:1} }
 </style>
 </head>
 <body>
@@ -1084,6 +1143,8 @@ function resetToIdle(){
   thinkBub.style.display='none';
   if(thinkBub.parentNode===msgs) msgs.removeChild(thinkBub);
   chatState='IDLE';
+  // Complete any active agent panel — all sub-agents finished
+  completeAgentPanel();
 }
 
 function handleOSC(content){
@@ -1163,7 +1224,12 @@ function handleOSC(content){
     var permB64=content.slice(13);
     var perm={toolName:'tool',toolInput:{},id:Date.now()};
     try{ perm=JSON.parse(atob(permB64)); }catch(_){}
-    showPermissionDialog(perm);
+    // Agent/Task tool: show animated sub-agent panel instead of permission card
+    if(perm.toolName==='Agent'||perm.toolName==='Task'){
+      showAgentPanel(perm);
+    } else {
+      showPermissionDialog(perm);
+    }
   } else if(content.startsWith('9;mcp-ready:')){
     try{
       var mcpServers=JSON.parse(atob(content.slice(12)));
@@ -1435,6 +1501,372 @@ function showPermissionDialog(perm){
 
   msgs.appendChild(wrap);
   scrollToBottom();
+}
+
+// ── Sub-agent animated panel ──────────────────────────────────────────────────
+var agentPanelEl   = null;  // current panel DOM element
+var agentNodeStates= [];    // 'running' | 'done' per spawned agent
+
+// Node layout: orchestrator at center, up to 3 sub-agents around it
+var AGENT_POS = [
+  {cx:26, cy:26, grad:'subGrad1_ap'},  // top-left
+  {cx:76, cy:26, grad:'subGrad2_ap'},  // top-right
+  {cx:50, cy:78, grad:'subGrad3_ap'},  // bottom
+];
+
+function buildAgentSvg(states) {
+  var ns='http://www.w3.org/2000/svg';
+  var orch={cx:50,cy:46};
+  var visible=Math.min(states.length, 3);
+  var queued =Math.max(0, states.length - 3);
+
+  var svg=document.createElementNS(ns,'svg');
+  svg.setAttribute('xmlns',ns);
+  svg.setAttribute('viewBox','0 0 100 100');
+  svg.setAttribute('width','130');
+  svg.setAttribute('height','130');
+
+  var defs=document.createElementNS(ns,'defs');
+  // Gradients
+  var grads=[
+    {id:'apPG',  c1:'#a78bfa',c2:'#7c3aed'},
+    {id:'apSG1', c1:'#34d399',c2:'#059669'},
+    {id:'apSG2', c1:'#38bdf8',c2:'#0284c7'},
+    {id:'apSG3', c1:'#fb923c',c2:'#c2410c'},
+  ];
+  grads.forEach(function(g){
+    var lg=document.createElementNS(ns,'linearGradient');
+    lg.id=g.id; lg.setAttribute('x1','0%'); lg.setAttribute('y1','0%');
+    lg.setAttribute('x2','100%'); lg.setAttribute('y2','100%');
+    var s1=document.createElementNS(ns,'stop');
+    s1.setAttribute('offset','0%'); s1.style.stopColor=g.c1;
+    var s2=document.createElementNS(ns,'stop');
+    s2.setAttribute('offset','100%'); s2.style.stopColor=g.c2;
+    lg.appendChild(s1); lg.appendChild(s2);
+    defs.appendChild(lg);
+  });
+  // Filters
+  [['apFP','3.5'],['apFS','2.5'],['apFL','1.5'],['apFPkt','2']].forEach(function(f){
+    var fi=document.createElementNS(ns,'filter');
+    fi.id=f[0]; fi.setAttribute('x','-60%'); fi.setAttribute('y','-60%');
+    fi.setAttribute('width','220%'); fi.setAttribute('height','220%');
+    var blur=document.createElementNS(ns,'feGaussianBlur');
+    blur.setAttribute('stdDeviation',f[1]); blur.setAttribute('result','b');
+    var merge=document.createElementNS(ns,'feMerge');
+    var mn1=document.createElementNS(ns,'feMergeNode'); mn1.setAttribute('in','b');
+    var mn2=document.createElementNS(ns,'feMergeNode'); mn2.setAttribute('in','SourceGraphic');
+    merge.appendChild(mn1); merge.appendChild(mn2);
+    fi.appendChild(blur); fi.appendChild(merge);
+    defs.appendChild(fi);
+  });
+  svg.appendChild(defs);
+
+  // Background
+  var bg=document.createElementNS(ns,'rect');
+  bg.setAttribute('width','100'); bg.setAttribute('height','100');
+  bg.setAttribute('rx','20'); bg.setAttribute('fill','rgba(13,8,32,0.6)');
+  svg.appendChild(bg);
+
+  // Sub-agent nodes
+  var colors=['#34d399','#38bdf8','#fb923c'];
+  var gradIds=['apSG1','apSG2','apSG3'];
+  for(var i=0;i<visible;i++){
+    var pos=AGENT_POS[i];
+    var state=states[i]||'running';
+    var col=colors[i];
+
+    // Connection line orch→node
+    var line=document.createElementNS(ns,'line');
+    line.setAttribute('x1',orch.cx); line.setAttribute('y1',orch.cy);
+    line.setAttribute('x2',pos.cx);  line.setAttribute('y2',pos.cy);
+    line.setAttribute('stroke','#a78bfa'); line.setAttribute('stroke-width','1.2');
+    line.setAttribute('stroke-linecap','round');
+    line.setAttribute('filter','url(#apFL)');
+    if(state==='done'){
+      line.style.animation='ap-line-d 4s ease-in-out infinite';
+      line.setAttribute('opacity','0.55');
+    } else if(state==='running'){
+      line.style.animation='ap-line-r 2s ease-in-out infinite';
+      line.setAttribute('opacity','0.35');
+    } else {
+      line.style.animation='ap-line-q 2.8s ease-in-out infinite';
+      line.setAttribute('opacity','0.18');
+    }
+    svg.appendChild(line);
+
+    // Packet
+    var pkt=document.createElementNS(ns,'circle');
+    pkt.setAttribute('cx',pos.cx); pkt.setAttribute('cy',pos.cy);
+    pkt.setAttribute('r','2');
+    pkt.setAttribute('fill',col);
+    pkt.setAttribute('filter','url(#apFPkt)');
+    if(state==='done'){
+      pkt.style.animation='ap-pkt-d 1.5s ease-out forwards 0.1s';
+      pkt.setAttribute('opacity','0');
+    } else if(state==='running'){
+      // pkt animates between orch and node positions
+      var kf=[
+        {offset:0,    cx:orch.cx, cy:orch.cy, opacity:0},
+        {offset:0.05, cx:orch.cx, cy:orch.cy, opacity:1},
+        {offset:0.45, cx:pos.cx,  cy:pos.cy,  opacity:1},
+        {offset:0.50, cx:pos.cx,  cy:pos.cy,  opacity:0},
+        {offset:0.56, cx:pos.cx,  cy:pos.cy,  opacity:0.8},
+        {offset:0.95, cx:orch.cx, cy:orch.cy, opacity:0.8},
+        {offset:1,    cx:orch.cx, cy:orch.cy, opacity:0},
+      ];
+      // Use SMIL animate elements for cx/cy since CSS can't animate SVG attrs
+      ['cx','cy','opacity'].forEach(function(attr){
+        var anim=document.createElementNS(ns,'animate');
+        anim.setAttribute('attributeName',attr);
+        anim.setAttribute('values', kf.map(function(k){return k[attr];}).join(';'));
+        anim.setAttribute('keyTimes', kf.map(function(k){return k.offset;}).join(';'));
+        anim.setAttribute('dur','2s');
+        anim.setAttribute('calcMode','spline');
+        anim.setAttribute('keySplines', kf.slice(0,-1).map(function(){return '0.4 0 0.6 1';}).join(';'));
+        anim.setAttribute('repeatCount','indefinite');
+        pkt.appendChild(anim);
+      });
+      pkt.setAttribute('opacity','0');
+    } else {
+      pkt.setAttribute('cx',String((orch.cx+pos.cx)/2));
+      pkt.setAttribute('cy',String((orch.cy+pos.cy)/2));
+      pkt.style.animation='ap-pkt-q 2.8s ease-in-out infinite';
+      pkt.setAttribute('opacity','0.55');
+    }
+    svg.appendChild(pkt);
+
+    // Node group
+    var ng=document.createElementNS(ns,'g');
+    if(state==='done')       ng.style.animation='ap-glow-g 4s ease-in-out infinite';
+    else if(state==='running') ng.style.animation='ap-glow-b 2s ease-in-out infinite';
+    else                     ng.style.animation='ap-glow-o 3.5s ease-in-out infinite';
+
+    var nc=document.createElementNS(ns,'circle');
+    nc.setAttribute('cx',pos.cx); nc.setAttribute('cy',pos.cy);
+    nc.setAttribute('r','10');
+    nc.setAttribute('fill','url(#'+gradIds[i]+')');
+    nc.setAttribute('filter','url(#apFS)');
+    nc.setAttribute('opacity','0.95');
+    ng.appendChild(nc);
+
+    var nb=document.createElementNS(ns,'circle');
+    nb.setAttribute('cx',pos.cx); nb.setAttribute('cy',pos.cy);
+    nb.setAttribute('r','10'); nb.setAttribute('fill','none');
+    nb.setAttribute('stroke',col); nb.setAttribute('stroke-width','1');
+    nb.setAttribute('opacity','0.4');
+    ng.appendChild(nb);
+
+    if(state==='done'){
+      // Checkmark draw-in
+      var dx=pos.cx-26, dy=pos.cy-26;
+      var ck=document.createElementNS(ns,'path');
+      ck.setAttribute('d','M'+(21.5+dx)+','+(26+dy)+' L'+(24.5+dx)+','+(29.5+dy)+' L'+(31+dx)+','+(22+dy));
+      ck.setAttribute('fill','none'); ck.setAttribute('stroke','white');
+      ck.setAttribute('stroke-width','2'); ck.setAttribute('stroke-linecap','round');
+      ck.setAttribute('stroke-linejoin','round');
+      ck.setAttribute('stroke-dasharray','14');
+      ck.style.animation='ap-check 1.8s ease-out forwards 0.2s';
+      ng.appendChild(ck);
+    } else if(state==='running'){
+      // Spinning arc
+      var ag=document.createElementNS(ns,'g');
+      ag.style.transformOrigin=pos.cx+'px '+pos.cy+'px';
+      ag.style.animation='ap-spin 1.8s linear infinite';
+      var arc=document.createElementNS(ns,'path');
+      arc.setAttribute('d','M'+pos.cx+','+(pos.cy-9)+' A9,9 0 0,0 '+(pos.cx-9)+','+pos.cy);
+      arc.setAttribute('fill','none'); arc.setAttribute('stroke','white');
+      arc.setAttribute('stroke-width','2'); arc.setAttribute('stroke-linecap','round');
+      arc.setAttribute('opacity','0.6');
+      ag.appendChild(arc);
+      ng.appendChild(ag);
+    } else {
+      // Static arc (queued)
+      var qa=document.createElementNS(ns,'path');
+      qa.setAttribute('d','M'+pos.cx+','+(pos.cy-9)+' A9,9 0 0,1 '+(pos.cx+9)+','+pos.cy);
+      qa.setAttribute('fill','none'); qa.setAttribute('stroke','white');
+      qa.setAttribute('stroke-width','2'); qa.setAttribute('stroke-linecap','round');
+      qa.style.animation='ap-arc-q 3.5s ease-in-out infinite';
+      qa.setAttribute('opacity','0.25');
+      ng.appendChild(qa);
+      // Waiting dots
+      [-4,0,4].forEach(function(dx2,di){
+        var dot=document.createElementNS(ns,'circle');
+        dot.setAttribute('cx',String(pos.cx+dx2)); dot.setAttribute('cy',String(pos.cy));
+        dot.setAttribute('r','1.2'); dot.setAttribute('fill','white');
+        var da=document.createElementNS(ns,'animate');
+        da.setAttribute('attributeName','opacity');
+        da.setAttribute('values','0.3;0.9;0.3');
+        da.setAttribute('dur','1.4s');
+        da.setAttribute('begin',String(di*0.22)+'s');
+        da.setAttribute('repeatCount','indefinite');
+        dot.appendChild(da);
+        ng.appendChild(dot);
+      });
+    }
+
+    // Center dot
+    var cd=document.createElementNS(ns,'circle');
+    cd.setAttribute('cx',pos.cx); cd.setAttribute('cy',pos.cy);
+    cd.setAttribute('r','3'); cd.setAttribute('fill','white'); cd.setAttribute('opacity','0.9');
+    ng.appendChild(cd);
+    svg.appendChild(ng);
+  }
+
+  // Queued overflow badge (if >3 agents)
+  if(queued>0){
+    var qbg=document.createElementNS(ns,'rect');
+    qbg.setAttribute('x','72'); qbg.setAttribute('y','80');
+    qbg.setAttribute('width','24'); qbg.setAttribute('height','14');
+    qbg.setAttribute('rx','7');
+    qbg.setAttribute('fill','rgba(251,146,60,0.2)');
+    qbg.setAttribute('stroke','rgba(251,146,60,0.4)');
+    qbg.setAttribute('stroke-width','0.8');
+    svg.appendChild(qbg);
+    var qt=document.createElementNS(ns,'text');
+    qt.setAttribute('x','84'); qt.setAttribute('y','90');
+    qt.setAttribute('text-anchor','middle');
+    qt.setAttribute('font-size','8');
+    qt.setAttribute('fill','#fb923c');
+    qt.setAttribute('font-family','monospace');
+    qt.textContent='+'+queued+' queued';
+    svg.appendChild(qt);
+  }
+
+  // Orchestrator pulse rings
+  var pr1=document.createElementNS(ns,'circle');
+  pr1.setAttribute('cx',orch.cx); pr1.setAttribute('cy',orch.cy);
+  pr1.setAttribute('r','13'); pr1.setAttribute('fill','none');
+  pr1.setAttribute('stroke','#7c3aed'); pr1.setAttribute('stroke-width','1.2');
+  pr1.style.animation='ap-pulse1 2.2s ease-out infinite';
+  svg.appendChild(pr1);
+
+  var pr2=document.createElementNS(ns,'circle');
+  pr2.setAttribute('cx',orch.cx); pr2.setAttribute('cy',orch.cy);
+  pr2.setAttribute('r','13'); pr2.setAttribute('fill','none');
+  pr2.setAttribute('stroke','#7c3aed'); pr2.setAttribute('stroke-width','1');
+  pr2.style.animation='ap-pulse2 2.2s ease-out 0.75s infinite';
+  svg.appendChild(pr2);
+
+  // Orchestrator ambient halos
+  [0.12,0.1].forEach(function(op,hi){
+    var h=document.createElementNS(ns,'circle');
+    h.setAttribute('cx',orch.cx); h.setAttribute('cy',orch.cy);
+    h.setAttribute('r',hi===0?'16':'13'); h.setAttribute('fill','#7c3aed');
+    h.setAttribute('opacity',String(op));
+    svg.appendChild(h);
+  });
+
+  // Orchestrator main node
+  var og=document.createElementNS(ns,'g');
+  og.style.animation='ap-orch 3s ease-in-out infinite';
+  var oc=document.createElementNS(ns,'circle');
+  oc.setAttribute('cx',orch.cx); oc.setAttribute('cy',orch.cy);
+  oc.setAttribute('r','11');
+  oc.setAttribute('fill','url(#apPG)');
+  oc.setAttribute('filter','url(#apFP)');
+  og.appendChild(oc);
+  var ob=document.createElementNS(ns,'circle');
+  ob.setAttribute('cx',orch.cx); ob.setAttribute('cy',orch.cy);
+  ob.setAttribute('r','11'); ob.setAttribute('fill','none');
+  ob.setAttribute('stroke','#c4b5fd'); ob.setAttribute('stroke-width','1');
+  ob.setAttribute('opacity','0.5');
+  og.appendChild(ob);
+  // Diamond gem
+  var gem=document.createElementNS(ns,'polygon');
+  gem.setAttribute('points',orch.cx+','+(orch.cy-7)+' '+(orch.cx+5)+','+(orch.cy-1)+' '+orch.cx+','+(orch.cy+6)+' '+(orch.cx-5)+','+(orch.cy-1));
+  gem.setAttribute('fill','white'); gem.setAttribute('opacity','0.95');
+  og.appendChild(gem);
+  var gl=document.createElementNS(ns,'line');
+  gl.setAttribute('x1',String(orch.cx-5)); gl.setAttribute('y1',String(orch.cy-1));
+  gl.setAttribute('x2',String(orch.cx+5)); gl.setAttribute('y2',String(orch.cy-1));
+  gl.setAttribute('stroke','#7c3aed'); gl.setAttribute('stroke-width','1'); gl.setAttribute('opacity','0.5');
+  og.appendChild(gl);
+  svg.appendChild(og);
+
+  // Outer border
+  var border=document.createElementNS(ns,'rect');
+  border.setAttribute('width','100'); border.setAttribute('height','100');
+  border.setAttribute('rx','20'); border.setAttribute('fill','none');
+  border.setAttribute('stroke','#7c3aed'); border.setAttribute('stroke-width','1');
+  border.setAttribute('opacity','0.25');
+  svg.appendChild(border);
+
+  return svg;
+}
+
+function getAgentPanel(){
+  if(!agentPanelEl || !agentPanelEl.parentNode){
+    agentPanelEl=document.createElement('div');
+    agentPanelEl.className='agent-panel';
+    agentNodeStates=[];
+    msgs.appendChild(agentPanelEl);
+    scrollToBottom();
+  }
+  return agentPanelEl;
+}
+
+function showAgentPanel(perm){
+  agentNodeStates.push('running');
+  var panel=getAgentPanel();
+  panel.innerHTML='';
+
+  var hdr=document.createElement('div');
+  hdr.className='agent-panel-header';
+  var dot=document.createElement('span');
+  dot.textContent='⬡';
+  dot.style.cssText='color:#a78bfa;font-size:13px;';
+  var title=document.createElement('span');
+  title.className='agent-panel-title';
+  title.textContent='Sub-agents running';
+  var count=document.createElement('span');
+  count.className='agent-panel-count';
+  count.textContent=agentNodeStates.length+' agent'+(agentNodeStates.length>1?'s':'');
+  hdr.appendChild(dot); hdr.appendChild(title); hdr.appendChild(count);
+  panel.appendChild(hdr);
+
+  // Task description
+  var desc=perm.toolInput&&(perm.toolInput.description||perm.toolInput.prompt||'');
+  if(desc){
+    var d=document.createElement('div');
+    d.className='agent-panel-desc';
+    d.textContent=String(desc).slice(0,80);
+    panel.appendChild(d);
+  }
+
+  panel.appendChild(buildAgentSvg(agentNodeStates));
+  scrollToBottom();
+}
+
+function completeAgentPanel(){
+  if(!agentPanelEl||!agentPanelEl.parentNode) return;
+  agentNodeStates=agentNodeStates.map(function(){return 'done';});
+  var panel=agentPanelEl;
+  panel.innerHTML='';
+
+  var hdr=document.createElement('div');
+  hdr.className='agent-panel-header';
+  var dot=document.createElement('span');
+  dot.textContent='✦';
+  dot.style.cssText='color:#34d399;font-size:13px;';
+  var title=document.createElement('span');
+  title.className='agent-panel-title';
+  title.style.color='#86efac';
+  title.textContent='Agents completed';
+  var count=document.createElement('span');
+  count.className='agent-panel-count';
+  count.textContent=agentNodeStates.length+' done';
+  hdr.appendChild(dot); hdr.appendChild(title); hdr.appendChild(count);
+  panel.appendChild(hdr);
+  panel.appendChild(buildAgentSvg(agentNodeStates));
+
+  // Fade and remove after 3s
+  setTimeout(function(){
+    panel.style.transition='opacity 0.8s';
+    panel.style.opacity='0';
+    setTimeout(function(){ if(panel.parentNode) panel.parentNode.removeChild(panel); }, 900);
+    agentPanelEl=null;
+    agentNodeStates=[];
+  }, 3000);
 }
 
 // ── Follow-up suggestions ─────────────────────────────────────────────────────
