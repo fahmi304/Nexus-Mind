@@ -236,6 +236,8 @@ Written by `NodeBridgeManager.writeConfig()` before each `startBridge()`. Re-wri
 
 43. **`Providers.ALL` order** — `GROQ, GEMINI, OPENROUTER, ANTHROPIC_API, DEEPSEEK, KIMI, NVIDIA_NIM, META_LLAMA, OLLAMA`. `ANTHROPIC_API` is 4th (after OPENROUTER). `ANTHROPIC` (subscription) and `LOCAL_LLAMA` are NOT in `ALL` — accessed only via `byId()`.
 
+44. **Sub-agent animated panel replaces permission card for Agent/Task tool** — `index.html` routes `perm.toolName === 'Agent' || 'Task'` to `showAgentPanel(perm)` instead of `showPermissionDialog()`. The panel (`div.agent-panel`) is a single shared element in `msgs`; each new Agent call adds a node (blue spinning = running). On `resetToIdle()` all nodes flip to green checkmark via `completeAgentPanel()`, then the panel fades out after 3 s and removes itself. All other tools (Bash, Read, Write, etc.) still show the full permission card. `agentPanelEl` and `agentNodeStates` are module-level vars tracking the live panel.
+
 ---
 
 ## Known gaps
@@ -280,6 +282,7 @@ Written by `NodeBridgeManager.writeConfig()` before each `startBridge()`. Re-wri
 - [x] **MCP servers had no enable/disable toggle** — fixed; `SettingsActivity` now shows per-server Switch rows populated in `onResume()` via `refreshMcpRows()`; toggle updates `"enabled"` field in stored JSON and calls `writeMcpConfig()` immediately.
 - [x] **Subscription model list outdated** — fixed; `Providers.ANTHROPIC.models` updated to include `claude-sonnet-4-6` and `claude-opus-4-7` alongside 4.5 variants.
 - [x] **No Anthropic API key provider** — fixed; `ANTHROPIC_API` provider added to `Providers.ALL` with passthrough proxy mode; API key users no longer need to go through OpenRouter.
+- [x] **Agent/Task permission card showed even when auto-approved** — fixed; `index.html` routes Agent/Task tool events to animated sub-agent panel (`showAgentPanel`) instead of the generic permission card (`showPermissionDialog`).
 - [ ] **`ScheduledPrompt` day-of-week filtering missing** — WorkManager fires every day; data class has no `days` field.
 
 ### Screenshot / MediaProjection cleanup
