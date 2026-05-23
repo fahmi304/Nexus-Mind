@@ -95,7 +95,7 @@ private suspend fun validateKey(provider: Provider, key: String, serverUrl: Stri
 private fun buildRequest(provider: Provider, key: String): Request? {
     val builder = Request.Builder()
     return when (provider.id) {
-        "anthropic" -> builder
+        "anthropic", "anthropic_api" -> builder
             .url("https://api.anthropic.com/v1/models")
             .header("x-api-key", key)
             .header("anthropic-version", "2023-06-01")

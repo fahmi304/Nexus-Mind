@@ -233,16 +233,38 @@ object Providers {
         name = "Anthropic (Claude.ai)",
         iconUrl = "https://logo.clearbit.com/anthropic.com",
         supportsLiveFetch = false,
-        signupUrl = "https://console.anthropic.com/settings/api-keys",
+        signupUrl = "https://claude.ai",
         rateLimit = "Subscription billing",
         malaysiaStatus = MalaysiaStatus.GREEN,
         malaysiaNote = "Works everywhere",
         baseUrl = "",
         requiresProxy = false,
         models = listOf(
-            AiModel("Claude Sonnet 4.5", "claude-sonnet-4-5",         setOf(Cap.TOOLS, Cap.VISION, Cap.REASONING, Cap.LONG_CTX), "Best balance"),
-            AiModel("Claude Opus 4.5",   "claude-opus-4-5",           setOf(Cap.TOOLS, Cap.VISION, Cap.REASONING, Cap.LONG_CTX), "Most capable"),
-            AiModel("Claude Haiku 4.5",  "claude-haiku-4-5-20251001", setOf(Cap.TOOLS, Cap.VISION, Cap.FAST),                    "Fastest · cheap")
+            AiModel("Claude Sonnet 4.6", "claude-sonnet-4-6",         setOf(Cap.TOOLS, Cap.VISION, Cap.REASONING, Cap.LONG_CTX), "Best balance · latest"),
+            AiModel("Claude Opus 4.7",   "claude-opus-4-7",           setOf(Cap.TOOLS, Cap.VISION, Cap.REASONING, Cap.LONG_CTX), "Most capable · latest"),
+            AiModel("Claude Haiku 4.5",  "claude-haiku-4-5-20251001", setOf(Cap.TOOLS, Cap.VISION, Cap.FAST),                    "Fastest · cheapest"),
+            AiModel("Claude Sonnet 4.5", "claude-sonnet-4-5",         setOf(Cap.TOOLS, Cap.VISION, Cap.REASONING, Cap.LONG_CTX), "Previous gen"),
+            AiModel("Claude Opus 4.5",   "claude-opus-4-5",           setOf(Cap.TOOLS, Cap.VISION, Cap.REASONING, Cap.LONG_CTX), "Previous gen")
+        )
+    )
+
+    val ANTHROPIC_API = Provider(
+        id = "anthropic_api",
+        name = "Anthropic API",
+        iconUrl = "https://logo.clearbit.com/anthropic.com",
+        supportsLiveFetch = true,
+        signupUrl = "https://console.anthropic.com/settings/api-keys",
+        rateLimit = "Pay per token · no rate limit",
+        malaysiaStatus = MalaysiaStatus.GREEN,
+        malaysiaNote = "Works everywhere",
+        baseUrl = "https://api.anthropic.com",
+        requiresProxy = true,
+        models = listOf(
+            AiModel("Claude Sonnet 4.6", "claude-sonnet-4-6",         setOf(Cap.TOOLS, Cap.VISION, Cap.REASONING, Cap.LONG_CTX), "Best balance · latest"),
+            AiModel("Claude Opus 4.7",   "claude-opus-4-7",           setOf(Cap.TOOLS, Cap.VISION, Cap.REASONING, Cap.LONG_CTX), "Most capable · latest"),
+            AiModel("Claude Haiku 4.5",  "claude-haiku-4-5-20251001", setOf(Cap.TOOLS, Cap.VISION, Cap.FAST),                    "Fastest · cheapest"),
+            AiModel("Claude Sonnet 4.5", "claude-sonnet-4-5",         setOf(Cap.TOOLS, Cap.VISION, Cap.REASONING, Cap.LONG_CTX), "Previous gen"),
+            AiModel("Claude Opus 4.5",   "claude-opus-4-5",           setOf(Cap.TOOLS, Cap.VISION, Cap.REASONING, Cap.LONG_CTX), "Previous gen")
         )
     )
 
@@ -262,12 +284,13 @@ object Providers {
         models = emptyList()
     )
 
-    val ALL = listOf(GROQ, GEMINI, OPENROUTER, DEEPSEEK, KIMI, NVIDIA_NIM, META_LLAMA, OLLAMA)
+    val ALL = listOf(GROQ, GEMINI, OPENROUTER, ANTHROPIC_API, DEEPSEEK, KIMI, NVIDIA_NIM, META_LLAMA, OLLAMA)
 
     fun byId(id: String): Provider? = when (id) {
-        "anthropic"  -> ANTHROPIC
-        "local_llama" -> LOCAL_LLAMA
-        else         -> ALL.find { it.id == id }
+        "anthropic"     -> ANTHROPIC
+        "anthropic_api" -> ANTHROPIC_API
+        "local_llama"   -> LOCAL_LLAMA
+        else            -> ALL.find { it.id == id }
     }
 
     /** Infer capability flags from a model ID — used for live-fetched OpenRouter models. */

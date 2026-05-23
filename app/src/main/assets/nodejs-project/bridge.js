@@ -1523,6 +1523,71 @@ function tryOptimize(anthReq) {
     return null; // forward to provider
 }
 
+// Forward Anthropic-format request directly to api.anthropic.com — no format conversion.
+// Used when providerUrl is api.anthropic.com (ANTHROPIC_API provider with a real sk-ant- key).
+function sendToAnthropicDirect(providerUrl, apiKey, anthReq, stream, res) {
+    const https  = require('https');
+    const base   = providerUrl.endsWith('/') ? providerUrl.slice(0, -1) : providerUrl;
+    const parsed = new URL(base + '/v1/messages');
+    const body   = JSON.stringify(anthReq);
+
+    const headers = {
+        'content-type':      'application/json',
+        'content-length':    Buffer.byteLength(body),
+        'x-api-key':         apiKey,
+        'anthropic-version': '2023-06-01',
+    };
+    if (anthReq['anthropic-beta']) headers['anthropic-beta'] = anthReq['anthropic-beta'];
+
+    const provReq = https.request({
+        hostname: parsed.hostname,
+        port:     parsed.port || 443,
+        path:     parsed.pathname + (parsed.search || ''),
+        method:   'POST',
+        headers,
+    }, provRes => {
+        const code = provRes.statusCode || 500;
+        if (code !== 200) {
+            let err = '';
+            provRes.on('data', c => { err += c; });
+            provRes.on('end', () => proxyError(res, code, err || ('Anthropic API error ' + code)));
+            return;
+        }
+        if (stream) {
+            res.writeHead(200, {
+                'Content-Type':  'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection':    'keep-alive',
+            });
+            let idleTimer = setTimeout(() => {
+                log('[anthropic-direct] stream idle 30s — aborting\n');
+                try { provRes.destroy(); } catch(_) {}
+            }, 30000);
+            function resetIdle() {
+                clearTimeout(idleTimer);
+                idleTimer = setTimeout(() => {
+                    log('[anthropic-direct] stream idle 30s — aborting\n');
+                    try { provRes.destroy(); } catch(_) {}
+                }, 30000);
+            }
+            provRes.on('data',  chunk => { resetIdle(); res.write(chunk); });
+            provRes.on('end',   ()    => { clearTimeout(idleTimer); res.end(); });
+            provRes.on('error', ()    => { clearTimeout(idleTimer); });
+        } else {
+            let data = '';
+            provRes.on('data', c => { data += c; });
+            provRes.on('end', () => {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(data);
+            });
+        }
+    });
+
+    provReq.on('error', e => proxyError(res, 500, e.message));
+    provReq.write(body);
+    provReq.end();
+}
+
 function handleProxyRequest(anthReq, res) {
     const cfg   = readConfig();
     const pUrl  = cfg.providerUrl || '';
@@ -1530,6 +1595,11 @@ function handleProxyRequest(anthReq, res) {
     const stream = !!anthReq.stream;
 
     if (!pUrl) return proxyError(res, 500, 'No provider URL in config — check app settings');
+
+    // Anthropic API key users — forward request as-is (no OAI conversion needed)
+    if (pUrl.includes('api.anthropic.com')) {
+        return sendToAnthropicDirect(pUrl, key, anthReq, stream, res);
+    }
 
     const baseModel = cfg.modelId || anthReq.model || '';
     const modelList = Array.isArray(cfg.modelList) ? cfg.modelList : [];

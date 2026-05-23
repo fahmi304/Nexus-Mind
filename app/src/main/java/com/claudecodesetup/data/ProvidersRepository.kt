@@ -141,7 +141,8 @@ object ProvidersRepository {
         "groq"        -> fetchOpenAiStyleModels("https://api.groq.com/openai/v1/models", apiKey, provider, isAlwaysFree = true)
         "deepseek"    -> fetchOpenAiStyleModels("https://api.deepseek.com/models", apiKey, provider)
         "kimi"        -> fetchOpenAiStyleModels("https://api.moonshot.ai/v1/models", apiKey, provider)
-        "anthropic"   -> fetchAnthropicModels(apiKey)
+        "anthropic"     -> fetchAnthropicModels(apiKey)
+        "anthropic_api" -> fetchAnthropicModels(apiKey)
         "meta_llama"  -> fetchOpenAiStyleModels("https://api.llama.com/v1/models", apiKey, provider)
         "ollama"      -> fetchOllamaModels(provider.baseUrl.ifEmpty { "http://localhost:11434" }, apiKey)
         else          -> provider.models
