@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Convergence Gate — Option A (Converging Lines)
-  108×108dp adaptive icon foreground, 72dp safe zone.
-  Matches nexus-mind-logo.html Option A exactly (scaled ×1.8 from 60×60 concept).
-  Center (54,54). Diamond tips: top(54,8) right(100,54) bottom(54,100) left(8,54).
+  108×108dp adaptive icon foreground. Safe zone = 66dp circle (33dp radius from center 54,54).
+  Diamond tips at 32dp from center — fits all mask shapes (circle, squircle, rounded-square).
+  Alpha baked into ARGB color values to guarantee correct rendering on all API levels.
+
+  Tips: top(54,22) right(86,54) bottom(54,86) left(22,54)
+  Diagonals from: (31,31) (77,31) (31,77) (77,77) → center(54,54)
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -11,88 +14,73 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Diagonal accent lines from corners to center (opacity 0.20) -->
-    <path android:pathData="M18,18 L54,54"
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#E8834A"
+    <!-- Diagonal accent lines from safe-zone corners to center (0.20 opacity = #33) -->
+    <path android:pathData="M31,31 L54,54"
+        android:strokeColor="#33E8834A"
         android:strokeWidth="1.4"
-        android:strokeAlpha="0.20"
-        android:strokeLineCap="round" />
-    <path android:pathData="M90,18 L54,54"
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#E8834A"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
+    <path android:pathData="M77,31 L54,54"
+        android:strokeColor="#33E8834A"
         android:strokeWidth="1.4"
-        android:strokeAlpha="0.20"
-        android:strokeLineCap="round" />
-    <path android:pathData="M18,90 L54,54"
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#E8834A"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
+    <path android:pathData="M31,77 L54,54"
+        android:strokeColor="#33E8834A"
         android:strokeWidth="1.4"
-        android:strokeAlpha="0.20"
-        android:strokeLineCap="round" />
-    <path android:pathData="M90,90 L54,54"
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#E8834A"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
+    <path android:pathData="M77,77 L54,54"
+        android:strokeColor="#33E8834A"
         android:strokeWidth="1.4"
-        android:strokeAlpha="0.20"
-        android:strokeLineCap="round" />
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
 
-    <!-- Cardinal converging lines from just outside tips to center (opacity 0.35) -->
-    <path android:pathData="M54,9 L54,54"
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#E8834A"
+    <!-- Cardinal converging lines from tips to center (0.35 opacity = #59) -->
+    <path android:pathData="M54,22 L54,54"
+        android:strokeColor="#59E8834A"
         android:strokeWidth="1.8"
-        android:strokeAlpha="0.35"
-        android:strokeLineCap="round" />
-    <path android:pathData="M99,54 L54,54"
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#E8834A"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
+    <path android:pathData="M86,54 L54,54"
+        android:strokeColor="#59E8834A"
         android:strokeWidth="1.8"
-        android:strokeAlpha="0.35"
-        android:strokeLineCap="round" />
-    <path android:pathData="M54,99 L54,54"
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#E8834A"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
+    <path android:pathData="M54,86 L54,54"
+        android:strokeColor="#59E8834A"
         android:strokeWidth="1.8"
-        android:strokeAlpha="0.35"
-        android:strokeLineCap="round" />
-    <path android:pathData="M9,54 L54,54"
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#E8834A"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
+    <path android:pathData="M22,54 L54,54"
+        android:strokeColor="#59E8834A"
         android:strokeWidth="1.8"
-        android:strokeAlpha="0.35"
-        android:strokeLineCap="round" />
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
 
-    <!-- Diamond outline (opacity 0.60) -->
-    <path
-        android:pathData="M54,8 L100,54 L54,100 L8,54 Z"
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#E8834A"
+    <!-- Diamond outline — tips at 32dp from center (0.60 opacity = #99) -->
+    <path android:pathData="M54,22 L86,54 L54,86 L22,54 Z"
+        android:strokeColor="#99E8834A"
         android:strokeWidth="1.6"
-        android:strokeAlpha="0.60"
-        android:strokeLineJoin="round" />
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"/>
 
-    <!-- Tip dots at diamond vertices (r=3.6, opacity 0.50) -->
-    <path android:pathData="M54,8m-3.6,0a3.6,3.6 0 1,0 7.2,0a3.6,3.6 0 1,0 -7.2,0"
-        android:fillColor="#E8834A"
-        android:fillAlpha="0.50" />
-    <path android:pathData="M100,54m-3.6,0a3.6,3.6 0 1,0 7.2,0a3.6,3.6 0 1,0 -7.2,0"
-        android:fillColor="#E8834A"
-        android:fillAlpha="0.50" />
-    <path android:pathData="M54,100m-3.6,0a3.6,3.6 0 1,0 7.2,0a3.6,3.6 0 1,0 -7.2,0"
-        android:fillColor="#E8834A"
-        android:fillAlpha="0.50" />
-    <path android:pathData="M8,54m-3.6,0a3.6,3.6 0 1,0 7.2,0a3.6,3.6 0 1,0 -7.2,0"
-        android:fillColor="#E8834A"
-        android:fillAlpha="0.50" />
+    <!-- Tip dots at diamond vertices (0.50 opacity = #80, r=2.5) -->
+    <path android:pathData="M54,22 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0"
+        android:fillColor="#80E8834A"/>
+    <path android:pathData="M86,54 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0"
+        android:fillColor="#80E8834A"/>
+    <path android:pathData="M54,86 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0"
+        android:fillColor="#80E8834A"/>
+    <path android:pathData="M22,54 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0"
+        android:fillColor="#80E8834A"/>
 
-    <!-- Center glow halo (r=9, opacity 0.15) -->
-    <path android:pathData="M54,54m-9,0a9,9 0 1,0 18,0a9,9 0 1,0 -18,0"
-        android:fillColor="#E8834A"
-        android:fillAlpha="0.15" />
+    <!-- Center glow halo (0.15 opacity = #26, r=8) -->
+    <path android:pathData="M54,54 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0"
+        android:fillColor="#26E8834A"/>
 
-    <!-- Center node (r=5.4, solid) -->
-    <path android:pathData="M54,54m-5.4,0a5.4,5.4 0 1,0 10.8,0a5.4,5.4 0 1,0 -10.8,0"
-        android:fillColor="#E8834A" />
+    <!-- Center node solid (r=4.5) -->
+    <path android:pathData="M54,54 m-4.5,0 a4.5,4.5 0 1,0 9,0 a4.5,4.5 0 1,0 -9,0"
+        android:fillColor="#E8834A"/>
 
 </vector>
