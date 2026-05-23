@@ -1899,17 +1899,21 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on42
             let nextBlockIdx = 1; // 0 = text block; tool blocks start at 1
 
             // Idle timer: if OpenRouter sends 200 OK but then stalls sending SSE events,
-            // abort after 30 s rather than letting the claude --print 120 s timeout fire.
-            let streamIdleTimer = setTimeout(() => {
-                log('[proxy] stream idle timeout (30 s) — aborting stalled OpenRouter response\n');
+            // abort after 30 s rather than letting the claude --print 180 s timeout fire.
+            function abortStalled() {
+                log('[proxy] stream idle timeout (30 s) — aborting stalled provider response\n');
                 try { provRes.destroy(); } catch(_) {}
-            }, 30000);
+                // Close res directly in case destroy() doesn't fire error event synchronously
+                if (headersSent) {
+                    finishStream('end_turn');
+                } else {
+                    proxyError(res, 504, 'Provider stream idle timeout');
+                }
+            }
+            let streamIdleTimer = setTimeout(abortStalled, 30000);
             function resetStreamIdle() {
                 clearTimeout(streamIdleTimer);
-                streamIdleTimer = setTimeout(() => {
-                    log('[proxy] stream idle timeout (30 s) — aborting stalled OpenRouter response\n');
-                    try { provRes.destroy(); } catch(_) {}
-                }, 30000);
+                streamIdleTimer = setTimeout(abortStalled, 30000);
             }
 
             function sendEvent(event, data) {
@@ -2155,10 +2159,18 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on42
                     finishStream('end_turn');
                 }
             });
-            provRes.on('error', () => clearTimeout(streamIdleTimer));
+            provRes.on('error', err => {
+                clearTimeout(streamIdleTimer);
+                log('[proxy] provider response error: ' + err.message + '\n');
+                if (headersSent) {
+                    finishStream('end_turn');
+                } else {
+                    proxyError(res, 502, 'Provider disconnected: ' + err.message);
+                }
+            });
         }
 
-        provRes.on('error', err => log('Provider response error: ' + err.message + '\n'));
+        provRes.on('error', err => log('[proxy] provider response error (non-stream): ' + err.message + '\n'));
     });
 
     provReq.on('error', err => proxyError(res, 502, 'Provider unreachable: ' + err.message));

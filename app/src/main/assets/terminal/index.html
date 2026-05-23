@@ -135,8 +135,8 @@ html, body {
   font-family: 'Space Mono', 'Courier New', monospace;
 }
 .user-bubble {
-  background: #22E8834A;
-  border: 1px solid #E8834A30;
+  background: rgba(232,131,74,0.13);
+  border: 1px solid rgba(232,131,74,0.19);
   border-radius: 14px 14px 4px 14px;
   color: #F0F0F2;
   white-space: pre-wrap;
@@ -680,7 +680,7 @@ html, body {
 
 <!-- Thinking bubble (moved into #msgs when active) -->
 <div id="thinking-bubble">
-  <div class="avatar ai-avatar" id="thinking-avatar" style="border-color:#E8834A;background:#22E8834A"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#E8834A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12,1 23,12 12,23 1,12"/><line x1="12" y1="1" x2="12" y2="12"/><line x1="23" y1="12" x2="12" y2="12"/><line x1="12" y1="23" x2="12" y2="12"/><line x1="1" y1="12" x2="12" y2="12"/><circle cx="12" cy="12" r="2.2" fill="#E8834A" stroke="none"/></svg></div>
+  <div class="avatar ai-avatar" id="thinking-avatar" style="border-color:#E8834A;background:rgba(232,131,74,0.13)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#E8834A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12,1 23,12 12,23 1,12"/><line x1="12" y1="1" x2="12" y2="12"/><line x1="23" y1="12" x2="12" y2="12"/><line x1="12" y1="23" x2="12" y2="12"/><line x1="1" y1="12" x2="12" y2="12"/><circle cx="12" cy="12" r="2.2" fill="#E8834A" stroke="none"/></svg></div>
   <div class="thinking-content">
     <div class="thinking-dots">
       <div class="thinking-dot"></div>
@@ -1239,9 +1239,6 @@ function handleOSC(content){
 function addUserBubble(text, imgDataUrl){
   const row=document.createElement('div');
   row.className='msg-row user-row';
-  const av=document.createElement('div');
-  av.className='avatar user-avatar';
-  av.textContent='U';
   const bub=document.createElement('div');
   bub.className='bubble user-bubble';
   if(imgDataUrl){
@@ -1263,7 +1260,6 @@ function addUserBubble(text, imgDataUrl){
     updateInputDisp();
     ghost.focus();
   });
-  row.appendChild(av);
   row.appendChild(bub);
   msgs.appendChild(row);
   scrollToBottom();
