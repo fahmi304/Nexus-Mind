@@ -3280,13 +3280,13 @@ function openPrintSession() {
             try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07\x1b[31m[error] ' + e.message + '\x1b[0m\r\n'); } catch(_) {}
         });
 
-        // 120-second hard timeout
+        // 180-second hard timeout (increased from 120 s to support large/slow models)
         const finishTid = setTimeout(() => {
             try { proc.kill('SIGTERM'); } catch(_) {}
             state.currentProc = null;
             state.busy = false;
-            try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07\r\n\x1b[31m✗ Timed out (120 s)\x1b[0m\r\n'); } catch(_) {}
-        }, 120000);
+            try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07\r\n\x1b[31m✗ Timed out (180 s)\x1b[0m\r\n\x1b[2mThis model is too slow. Switch to a faster model (Groq, Gemini Flash) in Settings.\x1b[0m\r\n'); } catch(_) {}
+        }, 180000);
 
         proc.on('close', code => {
             clearTimeout(finishTid);
@@ -3312,9 +3312,9 @@ function openPrintSession() {
                     const errLines = combined.join('\r\n');
                     let hint;
                     if (code === 143) {
-                        hint = '\x1b[31m✗ Request timed out (120 s)\x1b[0m\r\n' +
+                        hint = '\x1b[31m✗ Request timed out (180 s)\x1b[0m\r\n' +
                                '\x1b[2mIf you see 401/auth errors above, check your API key in Settings.\x1b[0m\r\n' +
-                               '\x1b[2mPress Ctrl+C next time to cancel early.\x1b[0m\r\n';
+                               '\x1b[2mSlow model? Switch to Groq or Gemini Flash in Settings.\x1b[0m\r\n';
                     } else {
                         hint = '\x1b[31m[claude exited ' + code + ']\x1b[0m\r\n';
                         if (errLines) hint += '\x1b[2m' + errLines + '\x1b[0m\r\n';
@@ -3447,7 +3447,7 @@ function openPrintSession() {
                     '  \x1b[33m!agentic [on|off]\x1b[0m   Toggle direct agentic loop\r\n' +
                     '  \x1b[33m!undo\x1b[0m               Restore last file written by agentic\r\n' +
                     '  \x1b[33m!undo list\x1b[0m          Show undo snapshot history\r\n' +
-                    '  \x1b[33m!log [n]\x1b[0m            Show last n lines of bridge log (default 40)\r\n' +
+                    '  \x1b[33m!log [n|all]\x1b[0m         Show last n lines of bridge log (default 100); !log all = full log\r\n' +
                     '  \x1b[33m!mcp\x1b[0m                List connected MCP servers and tools\r\n' +
                     '  \x1b[33m!test-cli\x1b[0m           Run module-loader + proxy diagnostics\r\n' +
                     '  \x1b[33m!help\x1b[0m               Show this help\r\n' +
@@ -3457,10 +3457,14 @@ function openPrintSession() {
             }
 
             if (line.startsWith('!log')) {
-                const n = parseInt(line.slice(4).trim()) || 40;
+                const arg = line.slice(4).trim();
+                const showAll = arg === 'all';
+                const n = showAll ? Infinity : (parseInt(arg) || 100);
                 try {
                     const logData = fs.readFileSync(SETUP_LOG, 'utf8');
-                    if (state.socket) state.socket.write(SYS_FENCE + '\x1b[2m' + logData.split('\n').slice(-n).join('\r\n') + '\x1b[0m\r\n');
+                    const lines = logData.split('\n');
+                    const out = (n === Infinity ? lines : lines.slice(-n)).join('\r\n');
+                    if (state.socket) state.socket.write(SYS_FENCE + '\x1b[2m' + out + '\x1b[0m\r\n');
                 } catch(_) { try { if (state.socket) state.socket.write(SYS_FENCE + '[no log]\r\n'); } catch(_) {} }
                 continue;
             }

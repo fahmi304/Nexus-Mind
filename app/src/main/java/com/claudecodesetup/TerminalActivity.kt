@@ -71,9 +71,12 @@ class TerminalActivity : AppCompatActivity() {
     /** Per-session: last message text sent by the user (used for Retry). */
     private val lastSentMessage = mutableMapOf<Int, String>()
 
+    /** Model ID at the time TerminalActivity was last resumed — used to detect model switches. */
+    private var lastKnownModelId = ""
+
     private val statusHandler = Handler(Looper.getMainLooper())
     private var timeoutRunnable: Runnable? = null
-    private val THINKING_TIMEOUT_MS = 15_000L
+    private val THINKING_TIMEOUT_MS = 130_000L
 
     // ─── Service connection ───────────────────────────────────────────────────
 
@@ -152,7 +155,17 @@ class TerminalActivity : AppCompatActivity() {
             claudeService?.sendInput(prompt + "\n")
         }
         // Refresh model name + avatar in case user changed provider in Settings
-        val model = prefs.getModelId().let { m ->
+        val currentModelId = prefs.getModelId()
+        if (lastKnownModelId.isNotEmpty() && lastKnownModelId != currentModelId) {
+            // Model changed while in Settings — kill any pending bridge process so the
+            // new session starts fresh and doesn't inherit the old request's busy state.
+            claudeService?.sendInput("!clear\r")
+            sessionBusy[activeSessionId] = false
+            cancelThinkingTimeout()
+            runOnUiThread { hideStatus() }
+        }
+        lastKnownModelId = currentModelId
+        val model = currentModelId.let { m ->
             when {
                 m.isEmpty() -> "claude"
                 m.contains('/') -> m.substringAfterLast('/').removeSuffix(":free")
@@ -613,7 +626,7 @@ class TerminalActivity : AppCompatActivity() {
         cancelThinkingTimeout()
         timeoutRunnable = Runnable {
             sessionBusy[activeSessionId] = false
-            showStatusError("No response after 15 s — check your connection or tap Retry")
+            showStatusError("No response after 130 s — check your connection or tap Retry")
         }
         statusHandler.postDelayed(timeoutRunnable!!, THINKING_TIMEOUT_MS)
     }
@@ -631,6 +644,9 @@ class TerminalActivity : AppCompatActivity() {
             return
         }
         hideStatus()
+        // Kill any in-flight bridge process before retrying so the retry message
+        // never hits the busy gate.
+        claudeService?.sendInput("!clear\r")
         writeToTerminal("\r\n[32m❯ $text[0m  [33m[retry][0m\r\n")
         claudeService?.sendInput(text + "\r")
         sessionBusy[activeSessionId] = true
