@@ -21,11 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
@@ -244,185 +240,169 @@ fun HomeScreen(
 
 // ── Icon tile composables ──────────────────────────────────────────────────────
 
+// Shared neutral icon container — NexusSurface2 bg + NexusBorder2 border
+@Composable
+private fun IconBox(
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    Box(
+        modifier = modifier
+            .size(56.dp)
+            .background(NexusSurface2, RoundedCornerShape(13.dp))
+            .border(1.dp, NexusBorder2, RoundedCornerShape(13.dp)),
+        contentAlignment = Alignment.Center,
+        content = content
+    )
+}
+
 @Composable
 private fun BoxScope.ChatBoxIcon() {
-    Box(
-        modifier = Modifier
-            .size(56.dp)
-            .drawBehind {
-                // Muted amber gradient — primary action
-                drawRoundRect(
-                    brush = Brush.linearGradient(
-                        listOf(Color(0xFFB05A28), Color(0xFF6B3012))
-                    ),
-                    cornerRadius = CornerRadius(16.dp.toPx())
-                )
-                drawRoundRect(
-                    color = Color(0x10FFFFFF),
-                    topLeft = Offset.Zero,
-                    size = Size(size.width, size.height * 0.42f),
-                    cornerRadius = CornerRadius(16.dp.toPx())
-                )
-                drawRoundRect(
-                    color = Color.White.copy(alpha = 0.88f),
-                    topLeft = Offset(11.dp.toPx(), 9.dp.toPx()),
-                    size = Size(34.dp.toPx(), 22.dp.toPx()),
-                    cornerRadius = CornerRadius(5.dp.toPx())
-                )
-                val path = Path().apply {
-                    moveTo(14.dp.toPx(), 31.dp.toPx())
-                    lineTo(11.dp.toPx(), 38.dp.toPx())
-                    lineTo(22.dp.toPx(), 31.dp.toPx())
-                    close()
-                }
-                drawPath(path, Color.White.copy(alpha = 0.88f))
-                drawCircle(Color(0xFFB05A28), 2.5.dp.toPx(), center = Offset(20.dp.toPx(), 20.dp.toPx()))
-                drawCircle(Color(0xFFB05A28), 2.5.dp.toPx(), center = Offset(28.dp.toPx(), 20.dp.toPx()))
-                drawCircle(Color(0xFFB05A28), 2.5.dp.toPx(), center = Offset(36.dp.toPx(), 20.dp.toPx()))
+    IconBox {
+        androidx.compose.foundation.Canvas(modifier = Modifier.size(22.dp)) {
+            val s = size
+            // Scale factor: icon is drawn on a 17-unit viewBox mapped to s.width
+            val scx = s.width / 17f
+            val scy = s.height / 17f
+            val stroke = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = 1.6f * scx,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round
+            )
+            // Chat bubble outline: M2.5,3 h12 a1,1 0 0 1 1,1 v6.5 a1,1 0 0 1-1,1 H5.5 l-3,2.5 V4 a1,1 0 0 1 1-1 z
+            val bubble = Path().apply {
+                moveTo(2.5f * scx, 3f * scy)
+                lineTo(14.5f * scx, 3f * scy)
+                // top-right rounded corner arc approximated with quadratic
+                quadraticTo(15.5f * scx, 3f * scy, 15.5f * scx, 4f * scy)
+                lineTo(15.5f * scx, 10.5f * scy)
+                quadraticTo(15.5f * scx, 11.5f * scy, 14.5f * scx, 11.5f * scy)
+                lineTo(5.5f * scx, 11.5f * scy)
+                lineTo(2.5f * scx, 14f * scy)
+                lineTo(2.5f * scx, 4f * scy)
+                quadraticTo(2.5f * scx, 3f * scy, 3.5f * scx, 3f * scy)
+                close()
             }
-    )
+            drawPath(bubble, NexusAccent, style = stroke)
+            // Three dots inside: cx=6,7  cx=8.5,7  cx=11,7 — r=1 filled
+            val dotR = 1f * scx
+            drawCircle(NexusAccent, dotR, center = Offset(6f * scx, 7f * scy))
+            drawCircle(NexusAccent, dotR, center = Offset(8.5f * scx, 7f * scy))
+            drawCircle(NexusAccent, dotR, center = Offset(11f * scx, 7f * scy))
+        }
+    }
 }
 
 @Composable
 private fun BoxScope.TestingIcon() {
-    Box(
-        modifier = Modifier
-            .size(56.dp)
-            .drawBehind {
-                // Muted navy gradient — testing/diagnostic
-                drawRoundRect(
-                    brush = Brush.linearGradient(
-                        listOf(Color(0xFF1A4A6E), Color(0xFF0D2C45))
-                    ),
-                    cornerRadius = CornerRadius(16.dp.toPx())
-                )
-                drawRoundRect(
-                    color = Color(0x10FFFFFF),
-                    topLeft = Offset.Zero,
-                    size = Size(size.width, size.height * 0.42f),
-                    cornerRadius = CornerRadius(16.dp.toPx())
-                )
-                // ECG pulse wave
-                val midY = size.height * 0.52f
-                val path = Path().apply {
-                    moveTo(6.dp.toPx(), midY)
-                    lineTo(14.dp.toPx(), midY)
-                    lineTo(18.dp.toPx(), midY - 10.dp.toPx())
-                    lineTo(22.dp.toPx(), midY + 12.dp.toPx())
-                    lineTo(26.dp.toPx(), midY - 16.dp.toPx())
-                    lineTo(30.dp.toPx(), midY + 8.dp.toPx())
-                    lineTo(34.dp.toPx(), midY)
-                    lineTo(50.dp.toPx(), midY)
-                }
-                drawPath(
-                    path = path,
-                    color = Color.White.copy(alpha = 0.92f),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(
-                        width = 2.dp.toPx(),
-                        cap = androidx.compose.ui.graphics.StrokeCap.Round,
-                        join = androidx.compose.ui.graphics.StrokeJoin.Round
-                    )
-                )
-                // End dot with glow circle
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.25f),
-                    radius = 5.dp.toPx(),
-                    center = Offset(50.dp.toPx(), midY)
-                )
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.9f),
-                    radius = 2.5.dp.toPx(),
-                    center = Offset(50.dp.toPx(), midY)
-                )
+    IconBox {
+        androidx.compose.foundation.Canvas(modifier = Modifier.size(22.dp)) {
+            val s = size
+            val scx = s.width / 17f
+            val scy = s.height / 17f
+            val stroke = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = 1.6f * scx,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round
+            )
+            // ECG/pulse: 1,8.5  4,8.5  5.5,5  7,12  9,3  11,14  12.5,8.5  16,8.5
+            val ecg = Path().apply {
+                moveTo(1f * scx, 8.5f * scy)
+                lineTo(4f * scx, 8.5f * scy)
+                lineTo(5.5f * scx, 5f * scy)
+                lineTo(7f * scx, 12f * scy)
+                lineTo(9f * scx, 3f * scy)
+                lineTo(11f * scx, 14f * scy)
+                lineTo(12.5f * scx, 8.5f * scy)
+                lineTo(16f * scx, 8.5f * scy)
             }
-    )
+            drawPath(ecg, NexusText2, style = stroke)
+        }
+    }
 }
 
 @Composable
 private fun BoxScope.SettingsIcon() {
-    Box(
-        modifier = Modifier
-            .size(56.dp)
-            .drawBehind {
-                // Muted deep purple — settings/config
-                drawRoundRect(
-                    brush = Brush.linearGradient(
-                        listOf(Color(0xFF2E1760), Color(0xFF1A0D3A))
-                    ),
-                    cornerRadius = CornerRadius(16.dp.toPx())
-                )
-                drawRoundRect(
-                    color = Color(0x10FFFFFF),
-                    topLeft = Offset.Zero,
-                    size = Size(size.width, size.height * 0.42f),
-                    cornerRadius = CornerRadius(16.dp.toPx())
-                )
-                val trackColor = Color.White.copy(alpha = 0.35f)
-                val thumbColor = Color.White.copy(alpha = 0.95f)
-                val trackH = 2.dp.toPx()
-                val thumbR = 4.dp.toPx()
-                val left = 10.dp.toPx()
-                val right = 46.dp.toPx()
-                // Track 1 (y=16)
-                val y1 = 16.dp.toPx()
-                drawRoundRect(trackColor, topLeft = Offset(left, y1 - trackH / 2), size = Size(right - left, trackH), cornerRadius = CornerRadius(2.dp.toPx()))
-                drawCircle(thumbColor, thumbR, center = Offset(24.dp.toPx(), y1))
-                // Track 2 (y=28)
-                val y2 = 28.dp.toPx()
-                drawRoundRect(trackColor, topLeft = Offset(left, y2 - trackH / 2), size = Size(right - left, trackH), cornerRadius = CornerRadius(2.dp.toPx()))
-                drawCircle(thumbColor, thumbR, center = Offset(36.dp.toPx(), y2))
-                // Track 3 (y=40)
-                val y3 = 40.dp.toPx()
-                drawRoundRect(trackColor, topLeft = Offset(left, y3 - trackH / 2), size = Size(right - left, trackH), cornerRadius = CornerRadius(2.dp.toPx()))
-                drawCircle(thumbColor, thumbR, center = Offset(20.dp.toPx(), y3))
+    IconBox {
+        androidx.compose.foundation.Canvas(modifier = Modifier.size(22.dp)) {
+            val s = size
+            val scx = s.width / 17f
+            val scy = s.height / 17f
+            val lineStroke = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = 1.6f * scx,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round
+            )
+            val circleStroke = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = 1.6f * scx,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round
+            )
+            // Horizontal line 1: x1=2 y1=5 x2=15 y2=5
+            val line1 = Path().apply {
+                moveTo(2f * scx, 5f * scy)
+                lineTo(15f * scx, 5f * scy)
             }
-    )
+            drawPath(line1, NexusText2, style = lineStroke)
+            // Horizontal line 2: x1=2 y1=12 x2=15 y2=12
+            val line2 = Path().apply {
+                moveTo(2f * scx, 12f * scy)
+                lineTo(15f * scx, 12f * scy)
+            }
+            drawPath(line2, NexusText2, style = lineStroke)
+            // Open circle 1: cx=6 cy=5 r=2 (stroke only)
+            drawCircle(NexusText2, 2f * scx, center = Offset(6f * scx, 5f * scy), style = circleStroke)
+            // Open circle 2: cx=11 cy=12 r=2 (stroke only)
+            drawCircle(NexusText2, 2f * scx, center = Offset(11f * scx, 12f * scy), style = circleStroke)
+        }
+    }
 }
 
 @Composable
 private fun BoxScope.ProjectsIcon() {
-    Box(
-        modifier = Modifier
-            .size(56.dp)
-            .drawBehind {
-                // Muted forest green — projects
-                drawRoundRect(
-                    brush = Brush.linearGradient(
-                        listOf(Color(0xFF1B5E35), Color(0xFF0D3A1E))
-                    ),
-                    cornerRadius = CornerRadius(16.dp.toPx())
+    IconBox {
+        androidx.compose.foundation.Canvas(modifier = Modifier.size(22.dp)) {
+            val s = size
+            val scx = s.width / 17f
+            val scy = s.height / 17f
+            val stroke = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = 1.6f * scx,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round
+            )
+            // Folder: M1.5,4.5 C1.5,3.7 2.2,3 3,3 H6.5 L8,4.5 H13 C13.8,4.5 14.5,5.2 14.5,6 V12
+            //         C14.5,12.8 13.8,13.5 13,13.5 H3 C2.2,13.5 1.5,12.8 1.5,12 Z
+            val folder = Path().apply {
+                moveTo(1.5f * scx, 4.5f * scy)
+                cubicTo(
+                    1.5f * scx, 3.7f * scy,
+                    2.2f * scx, 3f * scy,
+                    3f * scx, 3f * scy
                 )
-                drawRoundRect(
-                    color = Color(0x10FFFFFF),
-                    topLeft = Offset.Zero,
-                    size = Size(size.width, size.height * 0.42f),
-                    cornerRadius = CornerRadius(16.dp.toPx())
+                lineTo(6.5f * scx, 3f * scy)
+                lineTo(8f * scx, 4.5f * scy)
+                lineTo(13f * scx, 4.5f * scy)
+                cubicTo(
+                    13.8f * scx, 4.5f * scy,
+                    14.5f * scx, 5.2f * scy,
+                    14.5f * scx, 6f * scy
                 )
-                val bodyColor = Color.White.copy(alpha = 0.88f)
-                val lineColor = Color(0xFF0D3A1E)
-                // Folder tab
-                drawRoundRect(
-                    color = bodyColor,
-                    topLeft = Offset(10.dp.toPx(), 14.dp.toPx()),
-                    size = Size(14.dp.toPx(), 5.dp.toPx()),
-                    cornerRadius = CornerRadius(2.dp.toPx())
+                lineTo(14.5f * scx, 12f * scy)
+                cubicTo(
+                    14.5f * scx, 12.8f * scy,
+                    13.8f * scx, 13.5f * scy,
+                    13f * scx, 13.5f * scy
                 )
-                // Folder body
-                drawRoundRect(
-                    color = bodyColor,
-                    topLeft = Offset(10.dp.toPx(), 18.dp.toPx()),
-                    size = Size(36.dp.toPx(), 24.dp.toPx()),
-                    cornerRadius = CornerRadius(4.dp.toPx())
+                lineTo(3f * scx, 13.5f * scy)
+                cubicTo(
+                    2.2f * scx, 13.5f * scy,
+                    1.5f * scx, 12.8f * scy,
+                    1.5f * scx, 12f * scy
                 )
-                // File lines inside
-                val lineH = 2.dp.toPx()
-                val lineLeft = 16.dp.toPx()
-                val lineRight = 40.dp.toPx()
-                drawRoundRect(lineColor, topLeft = Offset(lineLeft, 25.dp.toPx()), size = Size(lineRight - lineLeft, lineH), cornerRadius = CornerRadius(1.dp.toPx()))
-                drawRoundRect(lineColor, topLeft = Offset(lineLeft, 30.dp.toPx()), size = Size(lineRight - lineLeft, lineH), cornerRadius = CornerRadius(1.dp.toPx()))
-                drawRoundRect(lineColor, topLeft = Offset(lineLeft, 35.dp.toPx()), size = Size((lineRight - lineLeft) * 0.7f, lineH), cornerRadius = CornerRadius(1.dp.toPx()))
+                close()
             }
-    )
+            drawPath(folder, NexusText2, style = stroke)
+        }
+    }
 }
 
 // ── MenuCard ───────────────────────────────────────────────────────────────────

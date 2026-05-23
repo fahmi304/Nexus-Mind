@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,7 +17,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size as GeomSize
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -311,9 +313,12 @@ private fun TabbedModelTestScreen(
             .background(Color(0xFF0C0C0F))
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
+            val activeTestedCount = activeResults.count {
+                it.status !in listOf(TestStatus.PENDING, TestStatus.TESTING)
+            }
             ScreenHeader(
-                title = "Testing Response",
-                subtitle = "Quick API ping (max_tokens=8) — green ≠ fast enough for real use",
+                title = "Model Test",
+                subtitle = "live · free models · $activeTestedCount tested",
                 onBack = onBack,
                 isLoading = activeLoad is ModelLoadState.Loading,
                 isTesting = activeTesting,
@@ -324,37 +329,35 @@ private fun TabbedModelTestScreen(
                 testEnabled = activeLoad is ModelLoadState.Loaded && !activeTesting,
             )
 
-            // Tab bar
-            Row(
+            // Provider tab bar — compact design
+            LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
-                    .padding(bottom = 10.dp)
-                    .background(Color(0x07FFFFFF), RoundedCornerShape(14.dp))
-                    .border(1.dp, NexusBorder, RoundedCornerShape(14.dp))
-                    .padding(5.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    .padding(bottom = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                listOf("OpenRouter", "NVIDIA NIM").forEachIndexed { idx, label ->
+                items(listOf("OpenRouter", "NVIDIA NIM")) { label ->
+                    val idx = listOf("OpenRouter", "NVIDIA NIM").indexOf(label)
                     val isSelected = selectedTab == idx
                     Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .height(36.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .then(
-                                if (isSelected) Modifier.background(
-                                    Brush.linearGradient(listOf(NexusAccent, Color(0xFFC4632A)))
-                                ) else Modifier.background(Color.Transparent)
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(if (isSelected) NexusAccentDim else NexusSurface2)
+                            .border(
+                                1.dp,
+                                if (isSelected) NexusAccent else NexusBorder,
+                                RoundedCornerShape(7.dp)
                             )
-                            .clickable { selectedTab = idx },
+                            .clickable { selectedTab = idx }
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             label,
-                            fontSize = 13.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) NexusText else NexusText3,
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isSelected) NexusAccent else NexusText2,
                             fontFamily = DmSansFamily
                         )
                     }
@@ -420,18 +423,17 @@ private fun ScreenHeader(
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                title,
-                fontSize = 19.sp,
+                "Model Test",
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = NexusText,
-                fontFamily = SyneFamily
+                fontFamily = DmSansFamily
             )
             Text(
-                subtitle.uppercase(),
-                fontSize = 10.sp,
+                subtitle,
+                fontSize = 11.sp,
                 color = NexusText3,
                 fontFamily = JetBrainsMonoFamily,
-                letterSpacing = 1.sp,
             )
         }
 
@@ -455,24 +457,24 @@ private fun ScreenHeader(
             Spacer(Modifier.width(6.dp))
         }
 
-        // Live status pill
+        // Live status pill — green
         Row(
             modifier = Modifier
-                .background(NexusAccentDim, RoundedCornerShape(20.dp))
-                .border(1.dp, Color(0x40E8834A), RoundedCornerShape(20.dp))
+                .background(NexusGreenDim, RoundedCornerShape(20.dp))
+                .border(1.dp, NexusGreen.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
                     .size(5.dp)
-                    .background(NexusAccent.copy(alpha = pulseAlpha), CircleShape)
+                    .background(NexusGreen.copy(alpha = pulseAlpha), CircleShape)
             )
             Spacer(Modifier.width(4.dp))
             Text(
                 "Live",
                 fontSize = 10.sp,
-                color = NexusAccent,
+                color = NexusGreen,
                 fontFamily = JetBrainsMonoFamily,
                 fontWeight = FontWeight.Medium,
             )
@@ -549,11 +551,9 @@ private fun ModelLoadContent(
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                contentPadding = PaddingValues(bottom = 24.dp),
             ) {
                 items(results, key = { it.model.modelId }) { result -> ModelResultRow(result) }
-                item { Spacer(Modifier.height(24.dp)) }
             }
         }
     }
@@ -575,61 +575,74 @@ private fun StatsStrip(results: List<ModelTestResult>) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .padding(bottom = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .background(NexusSurface)
+            .drawBehind {
+                // top border
+                drawRect(color = NexusBorder, size = GeomSize(size.width, 1.dp.toPx()))
+                // bottom border
+                drawRect(
+                    color = NexusBorder,
+                    topLeft = Offset(0f, size.height - 1.dp.toPx()),
+                    size = GeomSize(size.width, 1.dp.toPx())
+                )
+            }
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly
     ) {
-        StatCard(
+        StatCell(
             value = passCount.toString(),
-            label = "Passing",
+            label = "Pass",
             valueColor = NexusGreen,
             modifier = Modifier.weight(1f)
         )
-        StatCard(
+        StatCell(
             value = rateLimitCount.toString(),
-            label = "Rate Ltd",
-            valueColor = Color(0xFFF59E0B),
+            label = "Rate ltd",
+            valueColor = NexusAmber,
             modifier = Modifier.weight(1f)
         )
-        StatCard(
+        StatCell(
             value = failCount.toString(),
             label = "Failed",
-            valueColor = Color(0xFFEF4444),
+            valueColor = NexusRed,
             modifier = Modifier.weight(1f)
         )
-        StatCard(
+        StatCell(
             value = if (avgLatency > 0) "${avgLatency}ms" else "—",
-            label = "Avg. Time",
-            valueColor = NexusAccent,
+            label = "Avg ms",
+            valueColor = NexusBlue,
+            smallFont = avgLatency >= 10_000,
             modifier = Modifier.weight(1f)
         )
     }
 }
 
 @Composable
-private fun StatCard(value: String, label: String, valueColor: Color, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .background(NexusSurface, RoundedCornerShape(12.dp))
-            .border(1.dp, NexusBorder, RoundedCornerShape(12.dp))
-            .padding(vertical = 8.dp, horizontal = 4.dp),
-        contentAlignment = Alignment.Center
+private fun StatCell(
+    value: String,
+    label: String,
+    valueColor: Color,
+    smallFont: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                value,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = valueColor,
-                fontFamily = SyneFamily,
-            )
-            Text(
-                label,
-                fontSize = 9.sp,
-                color = NexusText3,
-                fontFamily = JetBrainsMonoFamily,
-            )
-        }
+        Text(
+            value,
+            fontSize = if (smallFont) 16.sp else 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = valueColor,
+            fontFamily = DmSansFamily,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            label,
+            fontSize = 10.sp,
+            color = NexusText3,
+            fontFamily = JetBrainsMonoFamily,
+        )
     }
 }
 
@@ -736,9 +749,13 @@ private fun SingleProviderTestScreen(
             .background(Color(0xFF0C0C0F))
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
+            val testedCount = results.count {
+                it.status !in listOf(TestStatus.PENDING, TestStatus.TESTING)
+            }
             ScreenHeader(
-                title = "Testing Response",
-                subtitle = "Provider: ${provider?.name ?: providerId}",
+                title = "Model Test",
+                subtitle = if (isLive) "live · free models · $testedCount tested"
+                           else "${provider?.name ?: providerId} · $testedCount tested",
                 onBack = onBack,
                 isLoading = loadState is ModelLoadState.Loading,
                 isTesting = isTesting,
@@ -757,50 +774,25 @@ private fun SingleProviderTestScreen(
 
 @Composable
 private fun ModelResultRow(result: ModelTestResult) {
-    val (bgColor, borderColor, label, labelColor) = when (result.status) {
-        TestStatus.PENDING      -> Quad(Color(0x08FFFFFF), NexusBorder, "—",             NexusText3)
-        TestStatus.TESTING      -> Quad(NexusAccentDim, Color(0x40E8834A), "Testing…",         NexusAccent)
-        TestStatus.PASS         -> Quad(NexusGreenDim, Color(0x253DD68C), "Responds",          NexusGreen)
-        TestStatus.EMPTY        -> Quad(Color(0x0FF59E0B), Color(0x25F59E0B), "Empty",         Color(0xFFF59E0B))
-        TestStatus.RATE_LIMITED -> Quad(Color(0x0FF59E0B), Color(0x25F59E0B), "Rate limit",    Color(0xFFF59E0B))
-        TestStatus.FAIL         -> Quad(Color(0x0FEF4444), Color(0x25EF4444), "Failed",        Color(0xFFEF4444))
-        TestStatus.TIMEOUT      -> Quad(Color(0x0FF59E0B), Color(0x25F59E0B), "Timeout",       Color(0xFFF59E0B))
+    val (dotColor, badgeLabel, badgeFg, badgeBg) = when (result.status) {
+        TestStatus.PENDING      -> Quad(NexusText3,  "—",           NexusText3,  NexusSurface2)
+        TestStatus.TESTING      -> Quad(NexusAccent, "Testing…",    NexusAccent, NexusAccentDim)
+        TestStatus.PASS         -> Quad(NexusGreen,  "Pass",        NexusGreen,  NexusGreenDim)
+        TestStatus.EMPTY        -> Quad(NexusAmber,  "Empty",       NexusAmber,  Color(0x1AFBBF24))
+        TestStatus.RATE_LIMITED -> Quad(NexusAmber,  "Rate-ltd",    NexusAmber,  Color(0x1AFBBF24))
+        TestStatus.FAIL         -> Quad(NexusRed,    "Fail",        NexusRed,    Color(0x1AF87171))
+        TestStatus.TIMEOUT      -> Quad(NexusAmber,  "Timeout",     NexusAmber,  Color(0x1AFBBF24))
     }
 
-    val glowBarColor = when (result.status) {
-        TestStatus.PASS         -> NexusGreen
-        TestStatus.FAIL         -> Color(0xFFEF4444)
-        TestStatus.RATE_LIMITED,
-        TestStatus.TIMEOUT,
-        TestStatus.EMPTY        -> Color(0xFFF59E0B)
-        TestStatus.TESTING      -> NexusAccent
-        TestStatus.PENDING      -> NexusText3
-    }
-
-    val cappedLatency = result.latencyMs.coerceAtMost(10_000L)
-    val latencyFraction = if (cappedLatency > 0) cappedLatency / 10_000f else 0f
-
-    Box(modifier = Modifier.fillMaxWidth()) {
-        // Left glow bar
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .fillMaxHeight()
-                .width(3.dp)
-                .clip(RoundedCornerShape(topEnd = 3.dp, bottomEnd = 3.dp))
-                .background(glowBarColor.copy(alpha = if (result.status == TestStatus.PENDING) 0.2f else 0.6f))
-        )
-
+    Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(bgColor)
-                .border(1.dp, borderColor, RoundedCornerShape(14.dp))
-                .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+                .background(NexusBg)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Status indicator
+            // Status dot (8dp) or spinner
             if (result.status == TestStatus.TESTING) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(16.dp),
@@ -811,18 +803,13 @@ private fun ModelResultRow(result: ModelTestResult) {
                 Box(
                     modifier = Modifier
                         .size(8.dp)
-                        .drawBehind {
-                            // glow
-                            if (result.status != TestStatus.PENDING) {
-                                drawCircle(glowBarColor.copy(alpha = 0.3f), radius = size.minDimension)
-                            }
-                            drawCircle(glowBarColor)
-                        }
+                        .background(dotColor, CircleShape)
                 )
             }
 
             Spacer(Modifier.width(12.dp))
 
+            // Model name + ID
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     result.model.name,
@@ -835,7 +822,7 @@ private fun ModelResultRow(result: ModelTestResult) {
                 )
                 Text(
                     result.model.modelId,
-                    fontSize = 9.5.sp,
+                    fontSize = 10.sp,
                     color = NexusText3,
                     fontFamily = JetBrainsMonoFamily,
                     maxLines = 1,
@@ -845,14 +832,22 @@ private fun ModelResultRow(result: ModelTestResult) {
 
             Spacer(Modifier.width(8.dp))
 
+            // Right: status badge pill + latency
             Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    label,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = labelColor,
-                    fontFamily = SyneFamily,
-                )
+                Box(
+                    modifier = Modifier
+                        .background(badgeBg, RoundedCornerShape(20.dp))
+                        .border(1.dp, badgeFg.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        badgeLabel,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = badgeFg,
+                        fontFamily = DmSansFamily,
+                    )
+                }
                 if (result.status !in listOf(TestStatus.PENDING, TestStatus.TESTING) && result.latencyMs > 0) {
                     Spacer(Modifier.height(3.dp))
                     Text(
@@ -861,24 +856,17 @@ private fun ModelResultRow(result: ModelTestResult) {
                         color = NexusText3,
                         fontFamily = JetBrainsMonoFamily,
                     )
-                    Spacer(Modifier.height(4.dp))
-                    // Mini latency bar
-                    Box(
-                        modifier = Modifier
-                            .width(60.dp)
-                            .height(2.dp)
-                            .background(NexusBorder, RoundedCornerShape(1.dp))
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .fillMaxWidth(fraction = latencyFraction.coerceIn(0f, 1f))
-                                .background(labelColor.copy(alpha = 0.7f), RoundedCornerShape(1.dp))
-                        )
-                    }
                 }
             }
         }
+
+        // Row separator
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(NexusBorder)
+        )
     }
 }
 

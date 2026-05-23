@@ -104,8 +104,9 @@ html, body {
 .ai-avatar {
   background: linear-gradient(135deg, #2A2A30 0%, #1E1E22 100%);
   color: #fff;
-  font-size: 15px;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 /* Provider-specific avatar colours */
 .ai-avatar[data-p="anthropic"]  { background: linear-gradient(135deg,#d97706,#f59e0b); }
@@ -623,9 +624,9 @@ html, body {
 .agent-panel {
   margin: 6px 4px;
   border-radius: 14px;
-  background: rgba(15,8,35,0.92);
-  border: 1px solid rgba(124,58,237,0.35);
-  box-shadow: 0 4px 20px rgba(124,58,237,0.12);
+  background: #151518;
+  border: 1px solid #2A2A30;
+  box-shadow: 0 4px 20px rgba(232,131,74,0.08);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -640,14 +641,14 @@ html, body {
   width: 100%;
 }
 .agent-panel-title {
-  color: #d8b4fe;
+  color: #E8834A;
   font-size: 11px;
   font-family: 'Space Mono','Courier New',monospace;
   font-weight: 600;
   flex: 1;
 }
 .agent-panel-count {
-  color: rgba(196,181,253,0.5);
+  color: rgba(232,131,74,0.5);
   font-size: 9px;
   font-family: 'Space Mono','Courier New',monospace;
 }
@@ -655,7 +656,7 @@ html, body {
   width: 100%;
   font-size: 10px;
   font-family: 'Space Mono','Courier New',monospace;
-  color: rgba(200,180,255,0.5);
+  color: rgba(232,131,74,0.45);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -704,7 +705,7 @@ html, body {
 
 <!-- Thinking bubble (moved into #msgs when active) -->
 <div id="thinking-bubble">
-  <div class="avatar ai-avatar">◎</div>
+  <div class="avatar ai-avatar" id="thinking-avatar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#E8834A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12,1 23,12 12,23 1,12"/><line x1="12" y1="1" x2="12" y2="12"/><line x1="23" y1="12" x2="12" y2="12"/><line x1="12" y1="23" x2="12" y2="12"/><line x1="1" y1="12" x2="12" y2="12"/><circle cx="12" cy="12" r="2.2" fill="#E8834A" stroke="none"/></svg></div>
   <div class="thinking-content">
     <div class="wave-bars">
       <div class="bar"></div><div class="bar"></div><div class="bar"></div>
@@ -732,7 +733,7 @@ html, body {
 
 <!-- Input bar -->
 <div id="input-bar">
-  <button id="btn-mic" style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,rgba(124,58,237,0.35),rgba(76,29,149,0.5));border:1px solid rgba(167,139,250,0.3);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:0;"><svg viewBox="0 0 18 18" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="1" width="6" height="9" rx="3" fill="white" opacity="0.92"/><path d="M4 8 Q4 13 9 13 Q14 13 14 8" stroke="white" stroke-width="1.6" stroke-linecap="round" fill="none" opacity="0.9"/><line x1="9" y1="13" x2="9" y2="16" stroke="white" stroke-width="1.6" stroke-linecap="round"/><line x1="5.5" y1="16" x2="12.5" y2="16" stroke="white" stroke-width="1.6" stroke-linecap="round"/><path d="M12.5 5 Q14.5 9 12.5 13" stroke="white" stroke-width="1.1" stroke-linecap="round" fill="none" opacity="0.35"/></svg></button>
+  <button id="btn-mic" style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,rgba(232,131,74,0.25),rgba(180,80,30,0.4));border:1px solid rgba(232,131,74,0.3);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:0;"><svg viewBox="0 0 18 18" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="1" width="6" height="9" rx="3" fill="white" opacity="0.92"/><path d="M4 8 Q4 13 9 13 Q14 13 14 8" stroke="white" stroke-width="1.6" stroke-linecap="round" fill="none" opacity="0.9"/><line x1="9" y1="13" x2="9" y2="16" stroke="white" stroke-width="1.6" stroke-linecap="round"/><line x1="5.5" y1="16" x2="12.5" y2="16" stroke="white" stroke-width="1.6" stroke-linecap="round"/><path d="M12.5 5 Q14.5 9 12.5 13" stroke="white" stroke-width="1.1" stroke-linecap="round" fill="none" opacity="0.35"/></svg></button>
   <button id="btn-image" style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,rgba(71,85,105,0.45),rgba(30,41,59,0.6));border:1px solid rgba(100,116,139,0.35);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:0;"><svg viewBox="0 0 18 18" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="5.5" width="16" height="11" rx="2.5" fill="white" opacity="0.9"/><rect x="6" y="3" width="6" height="3" rx="1.2" fill="white" opacity="0.9"/><circle cx="9" cy="11" r="3.6" fill="#1e293b" opacity="0.95"/><circle cx="9" cy="11" r="3.6" stroke="white" stroke-width="1.3" opacity="0.55" fill="none"/><circle cx="9" cy="11" r="1.8" fill="#334155"/><circle cx="7.5" cy="9.5" r="0.9" fill="white" opacity="0.65"/><circle cx="14" cy="7.5" r="1" fill="#fbbf24" opacity="0.85"/></svg></button>
   <div id="input-wrap">
     <span id="input-display"></span><span id="cursor"></span>
@@ -771,18 +772,20 @@ const INPUT_BAR_H = 58;   // px
 const TOOLBAR_H   = 44;   // px
 
 // ── Provider avatar config ────────────────────────────────────────────────────
-const PROVIDER_AVATAR = {
-  anthropic:  '◆',
-  gemini:     '✦',
-  openrouter: '⬡',
-  deepseek:   '⚡',
-  kimi:       '◎',
-  nvidia_nim: '⬡',
-  meta_llama: '▲',
-  ollama:     '◎',
-  groq:       '⚡',
-  local_llama:'◎',
+const PROVIDER_AVATAR_SVG = {
+  anthropic:     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 3L19 18H14.5L12 12.5L9.5 18H5Z" fill="#CC785C"/></svg>',
+  anthropic_api: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 3L19 18H14.5L12 12.5L9.5 18H5Z" fill="#CC785C"/></svg>',
+  gemini:        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2C12 2 14 8 20 12C14 16 12 22 12 22C12 22 10 16 4 12C10 8 12 2 12 2Z" fill="url(#gm)"/><defs><linearGradient id="gm" x1="4" y1="2" x2="20" y2="22" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#4285F4"/><stop offset="100%" stop-color="#8AB4F8"/></linearGradient></defs></svg>',
+  openrouter:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7C6AF5" stroke-width="1.8" stroke-linecap="round"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="19" cy="18" r="2.5"/><line x1="7.2" y1="11" x2="17" y2="7.2"/><line x1="7.2" y1="13" x2="17" y2="16.8"/></svg>',
+  deepseek:      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4DB8FF" stroke-width="1.8" stroke-linecap="round"><path d="M4 12Q8 6 12 12Q16 18 20 12"/><path d="M4 15Q8 9 12 15Q16 21 20 15" opacity="0.4"/></svg>',
+  groq:          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8BC34A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L6 13H11L8 21L18 10H13L16 3Z"/></svg>',
+  kimi:          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="1.8" stroke-linecap="round"><path d="M18 4A9 9 0 1 0 18 20A5 5 0 1 1 18 4Z"/></svg>',
+  nvidia_nim:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#76B900" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg>',
+  meta_llama:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#E06030" stroke-width="1.8" stroke-linecap="round"><path d="M7 18C7 12 9 7 12 7C15 7 17 12 17 18"/><path d="M5 14C5 10 8 6 12 6C16 6 19 10 19 14" opacity="0.45"/></svg>',
+  ollama:        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9090A0" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5" fill="#9090A0" stroke="none" opacity="0.5"/><line x1="12" y1="5" x2="12" y2="9"/><line x1="12" y1="15" x2="12" y2="19"/><line x1="5" y1="12" x2="9" y2="12"/><line x1="15" y1="12" x2="19" y2="12"/></svg>',
+  local_llama:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9090A0" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5" fill="#9090A0" stroke="none" opacity="0.5"/><line x1="12" y1="5" x2="12" y2="9"/><line x1="12" y1="15" x2="12" y2="19"/><line x1="5" y1="12" x2="9" y2="12"/><line x1="15" y1="12" x2="19" y2="12"/></svg>',
 };
+const PROVIDER_AVATAR_DEFAULT = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#E8834A" stroke-width="1.8" stroke-linecap="round"><polygon points="12,1 23,12 12,23 1,12"/><line x1="12" y1="1" x2="12" y2="12"/><line x1="23" y1="12" x2="12" y2="12"/><line x1="12" y1="23" x2="12" y2="12"/><line x1="1" y1="12" x2="12" y2="12"/><circle cx="12" cy="12" r="2.2" fill="#E8834A" stroke="none"/></svg>';
 var currentProvider = 'default';
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
@@ -1529,10 +1532,10 @@ function buildAgentSvg(states) {
   var defs=document.createElementNS(ns,'defs');
   // Gradients
   var grads=[
-    {id:'apPG',  c1:'#a78bfa',c2:'#7c3aed'},
-    {id:'apSG1', c1:'#34d399',c2:'#059669'},
-    {id:'apSG2', c1:'#38bdf8',c2:'#0284c7'},
-    {id:'apSG3', c1:'#fb923c',c2:'#c2410c'},
+    {id:'apPG',  c1:'#f0a070',c2:'#E8834A'},
+    {id:'apSGdone',    c1:'#3DD68C',c2:'#15a05a'},
+    {id:'apSGrunning', c1:'#60A5FA',c2:'#2563eb'},
+    {id:'apSGqueued',  c1:'#FBBF24',c2:'#d97706'},
   ];
   grads.forEach(function(g){
     var lg=document.createElementNS(ns,'linearGradient');
@@ -1564,22 +1567,22 @@ function buildAgentSvg(states) {
   // Background
   var bg=document.createElementNS(ns,'rect');
   bg.setAttribute('width','100'); bg.setAttribute('height','100');
-  bg.setAttribute('rx','20'); bg.setAttribute('fill','rgba(13,8,32,0.6)');
+  bg.setAttribute('rx','20'); bg.setAttribute('fill','rgba(21,21,24,0.85)');
   svg.appendChild(bg);
 
   // Sub-agent nodes
-  var colors=['#34d399','#38bdf8','#fb923c'];
-  var gradIds=['apSG1','apSG2','apSG3'];
   for(var i=0;i<visible;i++){
     var pos=AGENT_POS[i];
     var state=states[i]||'running';
-    var col=colors[i];
+    // Color by state: running=blue, done=green, queued=amber
+    var col = state==='done' ? '#3DD68C' : state==='running' ? '#60A5FA' : '#FBBF24';
+    var gradId = state==='done' ? 'apSGdone' : state==='running' ? 'apSGrunning' : 'apSGqueued';
 
     // Connection line orch→node
     var line=document.createElementNS(ns,'line');
     line.setAttribute('x1',orch.cx); line.setAttribute('y1',orch.cy);
     line.setAttribute('x2',pos.cx);  line.setAttribute('y2',pos.cy);
-    line.setAttribute('stroke','#a78bfa'); line.setAttribute('stroke-width','1.2');
+    line.setAttribute('stroke','#E8834A'); line.setAttribute('stroke-width','1.2');
     line.setAttribute('stroke-linecap','round');
     line.setAttribute('filter','url(#apFL)');
     if(state==='done'){
@@ -1644,7 +1647,7 @@ function buildAgentSvg(states) {
     var nc=document.createElementNS(ns,'circle');
     nc.setAttribute('cx',pos.cx); nc.setAttribute('cy',pos.cy);
     nc.setAttribute('r','10');
-    nc.setAttribute('fill','url(#'+gradIds[i]+')');
+    nc.setAttribute('fill','url(#'+gradId+')');
     nc.setAttribute('filter','url(#apFS)');
     nc.setAttribute('opacity','0.95');
     ng.appendChild(nc);
@@ -1736,14 +1739,14 @@ function buildAgentSvg(states) {
   var pr1=document.createElementNS(ns,'circle');
   pr1.setAttribute('cx',orch.cx); pr1.setAttribute('cy',orch.cy);
   pr1.setAttribute('r','13'); pr1.setAttribute('fill','none');
-  pr1.setAttribute('stroke','#7c3aed'); pr1.setAttribute('stroke-width','1.2');
+  pr1.setAttribute('stroke','#E8834A'); pr1.setAttribute('stroke-width','1.2');
   pr1.style.animation='ap-pulse1 2.2s ease-out infinite';
   svg.appendChild(pr1);
 
   var pr2=document.createElementNS(ns,'circle');
   pr2.setAttribute('cx',orch.cx); pr2.setAttribute('cy',orch.cy);
   pr2.setAttribute('r','13'); pr2.setAttribute('fill','none');
-  pr2.setAttribute('stroke','#7c3aed'); pr2.setAttribute('stroke-width','1');
+  pr2.setAttribute('stroke','#E8834A'); pr2.setAttribute('stroke-width','1');
   pr2.style.animation='ap-pulse2 2.2s ease-out 0.75s infinite';
   svg.appendChild(pr2);
 
@@ -1751,7 +1754,7 @@ function buildAgentSvg(states) {
   [0.12,0.1].forEach(function(op,hi){
     var h=document.createElementNS(ns,'circle');
     h.setAttribute('cx',orch.cx); h.setAttribute('cy',orch.cy);
-    h.setAttribute('r',hi===0?'16':'13'); h.setAttribute('fill','#7c3aed');
+    h.setAttribute('r',hi===0?'16':'13'); h.setAttribute('fill','#E8834A');
     h.setAttribute('opacity',String(op));
     svg.appendChild(h);
   });
@@ -1768,7 +1771,7 @@ function buildAgentSvg(states) {
   var ob=document.createElementNS(ns,'circle');
   ob.setAttribute('cx',orch.cx); ob.setAttribute('cy',orch.cy);
   ob.setAttribute('r','11'); ob.setAttribute('fill','none');
-  ob.setAttribute('stroke','#c4b5fd'); ob.setAttribute('stroke-width','1');
+  ob.setAttribute('stroke','#f0a070'); ob.setAttribute('stroke-width','1');
   ob.setAttribute('opacity','0.5');
   og.appendChild(ob);
   // Diamond gem
@@ -1779,7 +1782,7 @@ function buildAgentSvg(states) {
   var gl=document.createElementNS(ns,'line');
   gl.setAttribute('x1',String(orch.cx-5)); gl.setAttribute('y1',String(orch.cy-1));
   gl.setAttribute('x2',String(orch.cx+5)); gl.setAttribute('y2',String(orch.cy-1));
-  gl.setAttribute('stroke','#7c3aed'); gl.setAttribute('stroke-width','1'); gl.setAttribute('opacity','0.5');
+  gl.setAttribute('stroke','#E8834A'); gl.setAttribute('stroke-width','1'); gl.setAttribute('opacity','0.5');
   og.appendChild(gl);
   svg.appendChild(og);
 
@@ -1787,8 +1790,8 @@ function buildAgentSvg(states) {
   var border=document.createElementNS(ns,'rect');
   border.setAttribute('width','100'); border.setAttribute('height','100');
   border.setAttribute('rx','20'); border.setAttribute('fill','none');
-  border.setAttribute('stroke','#7c3aed'); border.setAttribute('stroke-width','1');
-  border.setAttribute('opacity','0.25');
+  border.setAttribute('stroke','#E8834A'); border.setAttribute('stroke-width','1');
+  border.setAttribute('opacity','0.2');
   svg.appendChild(border);
 
   return svg;
@@ -1814,7 +1817,7 @@ function showAgentPanel(perm){
   hdr.className='agent-panel-header';
   var dot=document.createElement('span');
   dot.textContent='⬡';
-  dot.style.cssText='color:#a78bfa;font-size:13px;';
+  dot.style.cssText='color:#E8834A;font-size:13px;';
   var title=document.createElement('span');
   title.className='agent-panel-title';
   title.textContent='Sub-agents running';
@@ -2278,7 +2281,10 @@ window.termSetMeta=function(name,model,providerId){
 
 function applyProviderAvatar(el, provider) {
   el.dataset.p = provider;
-  el.textContent = PROVIDER_AVATAR[provider] || '◎';
+  el.style.display = 'flex';
+  el.style.alignItems = 'center';
+  el.style.justifyContent = 'center';
+  el.innerHTML = PROVIDER_AVATAR_SVG[provider] || PROVIDER_AVATAR_DEFAULT;
 }
 
 // Pre-fill the input buffer (used by shared text and voice input)

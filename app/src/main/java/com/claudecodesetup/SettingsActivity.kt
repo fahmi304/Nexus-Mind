@@ -55,6 +55,18 @@ class SettingsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refreshMcpRows()
+        refreshPreferenceToggles()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun refreshPreferenceToggles() {
+        // Agentic mode: source of truth is the agentic_state file (bridge.js owns it)
+        val agenticFile = File(filesDir, "agentic_state")
+        val agenticOn = agenticFile.exists()
+        prefs.setAgenticMode(agenticOn)
+        binding.switchAgenticMode.isChecked = agenticOn
+        binding.switchResponseNotifications.isChecked = prefs.isResponseNotificationsEnabled()
+        binding.switchAutoStartBoot.isChecked = prefs.isAutoStartOnBoot()
     }
 
     private fun refreshMcpRows() {
@@ -166,7 +178,24 @@ class SettingsActivity : AppCompatActivity() {
         bridgeManager.refreshConfig(prefs)
     }
 
+    @Suppress("DEPRECATION")
     private fun setupActions() {
+        binding.switchAgenticMode.setOnCheckedChangeListener { _, isChecked ->
+            prefs.setAgenticMode(isChecked)
+            // bridge.js checks agentic_state file existence to determine agentic mode
+            val agenticFile = File(filesDir, "agentic_state")
+            try {
+                if (isChecked) agenticFile.writeText("1")
+                else agenticFile.delete()
+            } catch (_: Exception) {}
+        }
+        binding.switchResponseNotifications.setOnCheckedChangeListener { _, isChecked ->
+            prefs.setResponseNotificationsEnabled(isChecked)
+        }
+        binding.switchAutoStartBoot.setOnCheckedChangeListener { _, isChecked ->
+            prefs.setAutoStartOnBoot(isChecked)
+        }
+
         binding.btnChangeProvider.setOnClickListener {
             startActivity(Intent(this, com.claudecodesetup.ui.ComposeActivity::class.java)
                 .putExtra("start_at", "subscription"))

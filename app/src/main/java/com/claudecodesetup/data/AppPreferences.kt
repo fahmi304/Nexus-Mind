@@ -121,6 +121,17 @@ class AppPreferences(context: Context) {
     fun setInstalledClaudeVersion(v: String) =
         prefs.edit().putString(KEY_CLAUDE_VERSION, v).apply()
 
+    // ─── Preferences toggles ─────────────────────────────────────────────────
+
+    fun isAgenticMode(): Boolean = prefs.getBoolean(KEY_AGENTIC_MODE, false)
+    fun setAgenticMode(enabled: Boolean) = prefs.edit().putBoolean(KEY_AGENTIC_MODE, enabled).apply()
+
+    fun isResponseNotificationsEnabled(): Boolean = prefs.getBoolean(KEY_RESPONSE_NOTIFICATIONS, true)
+    fun setResponseNotificationsEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_RESPONSE_NOTIFICATIONS, enabled).apply()
+
+    fun isAutoStartOnBoot(): Boolean = prefs.getBoolean(KEY_AUTO_START_BOOT, false)
+    fun setAutoStartOnBoot(enabled: Boolean) = prefs.edit().putBoolean(KEY_AUTO_START_BOOT, enabled).apply()
+
     // ─── Scheduled prompts ───────────────────────────────────────────────────
 
     fun getScheduledPromptsJson(): String = prefs.getString(KEY_SCHEDULED_PROMPTS, "[]") ?: "[]"
@@ -163,6 +174,9 @@ class AppPreferences(context: Context) {
         private const val KEY_TTS_ENABLED          = "tts_enabled"
         private const val KEY_PROVIDER_REMOTE_URL  = "provider_remote_url"
         private const val KEY_SCHEDULED_PROMPTS    = "scheduled_prompts_json"
+        private const val KEY_AGENTIC_MODE          = "agentic_mode"
+        private const val KEY_RESPONSE_NOTIFICATIONS = "response_notifications"
+        private const val KEY_AUTO_START_BOOT       = "auto_start_boot"
 
         const val MODE_SUBSCRIPTION = "subscription"
         const val MODE_PROXY        = "proxy"
