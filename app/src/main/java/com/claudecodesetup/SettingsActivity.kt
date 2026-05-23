@@ -157,13 +157,16 @@ class SettingsActivity : AppCompatActivity() {
         val model      = prefs.getModelId()
 
         binding.tvCurrentProvider.text = when (mode) {
-            AppPreferences.MODE_SUBSCRIPTION -> "Claude Subscription"
-            else -> "${provider?.name ?: "Unknown"} — $model"
+            AppPreferences.MODE_SUBSCRIPTION -> "Claude (subscription)"
+            else -> provider?.name ?: "Unknown"
+        }
+        binding.tvCurrentModel.text = when (mode) {
+            AppPreferences.MODE_SUBSCRIPTION -> model.ifEmpty { "claude-sonnet-4-6" }
+            else -> model.ifEmpty { "—" }
         }
 
-        // Show "Change model" for any provider with multiple models
-        binding.btnChangeModel.visibility =
-            if ((provider?.models?.size ?: 0) > 1) View.VISIBLE else View.GONE
+        // Always show Change model (visibility controlled by XML, not code)
+        binding.btnChangeModel.visibility = View.VISIBLE
 
         val installedVersion = prefs.getInstalledClaudeVersion()
             .ifEmpty { com.claudecodesetup.managers.DownloadManager.PINNED_CLAUDE_VERSION }

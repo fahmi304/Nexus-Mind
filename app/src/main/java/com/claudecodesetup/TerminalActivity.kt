@@ -625,6 +625,9 @@ class TerminalActivity : AppCompatActivity() {
     private fun startThinkingTimeout() {
         cancelThinkingTimeout()
         timeoutRunnable = Runnable {
+            // Reset both Kotlin and bridge busy state so the next user message
+            // goes straight through instead of hitting the bridge busy gate.
+            claudeService?.sendInput("!clear\r")
             sessionBusy[activeSessionId] = false
             showStatusError("No response after 130 s — check your connection or tap Retry")
         }

@@ -610,6 +610,7 @@ private fun ModelCard(display: ModelDisplay, isSelected: Boolean, onSelect: () -
             .background(cardBg, RoundedCornerShape(12.dp))
             .border(1.dp, cardBorderColor, RoundedCornerShape(12.dp))
             .clickable(interactionSource = interaction, indication = null) { onSelect() }
+            .heightIn(min = 90.dp)
             .padding(12.dp)
     ) {
         Column(
