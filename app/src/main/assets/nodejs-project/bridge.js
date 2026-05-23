@@ -625,23 +625,28 @@ function callProxyStreaming(socket, messages, tools, onThinkingDone) {
             system: systemPrompt,
             stream: true
         });
-        const apiKey = cfg.mode === 'subscription'
-            ? (cfg.apiKey || 'sk-ant-key')
-            : 'sk-ant-proxy000';
+        const isSubscription = cfg.mode === 'subscription';
+        const apiKey = isSubscription ? (cfg.apiKey || '') : 'sk-ant-proxy000';
+        // Subscription: call Anthropic directly (providerUrl is empty in subscription config).
+        // Proxy mode: route through local proxy which converts Anthropic → OAI format.
+        const reqHost    = isSubscription ? 'api.anthropic.com' : HOST;
+        const reqPort    = isSubscription ? 443 : PROXY_PORT;
+        const reqLib     = isSubscription ? https : http;
+        const reqPath    = '/v1/messages';
         let localToken = '';
         try { localToken = fs.readFileSync(path.join(FILES_DIR, 'local_token'), 'utf8').trim().slice(0, 200); } catch(_) {}
+        const reqHeaders = isSubscription
+            ? { 'Content-Type': 'application/json', 'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01', 'Content-Length': Buffer.byteLength(body) }
+            : { 'Content-Type': 'application/json', 'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01', 'Content-Length': Buffer.byteLength(body),
+                'x-local-token': localToken };
         // M21: hoisted at Promise scope so req.on('error'/'close') can clear it too
         let idleTimer = null;
-        const req = http.request({
-            hostname: HOST, port: PROXY_PORT,
-            path: '/v1/messages', method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': apiKey,
-                'anthropic-version': '2023-06-01',
-                'Content-Length': Buffer.byteLength(body),
-                'x-local-token': localToken
-            }
+        const req = reqLib.request({
+            hostname: reqHost, port: reqPort,
+            path: reqPath, method: 'POST',
+            headers: reqHeaders
         }, res => {
             let buf = '';
             const textBlocks = {}, toolBlocks = {};
@@ -3315,12 +3320,17 @@ function openPrintSession() {
 
         proc.on('close', code => {
             clearTimeout(finishTid);
-            state.currentProc = null;
-            state.busy = false;
-            state.thinkingDone = false;
-            // Always send second thinking-done — closes/finalizes the AI bubble
-            try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
-            if (proc._manualKill) return; // killed by !clear — suppress error message
+            // Only update state if this proc is still the active one.
+            // Ctrl+C clears state.currentProc immediately so a new message can start
+            // without waiting for this close event — guard against clobbering the new proc.
+            const isActiveProc = state.currentProc === proc;
+            if (isActiveProc) {
+                state.currentProc = null;
+                state.busy = false;
+                state.thinkingDone = false;
+                try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
+            }
+            if (proc._manualKill || proc._ctrlCKill) return; // intentional kill — suppress error
             if (code !== 0 && !firstContent) {
                 const rateLimited = (Date.now() - lastRateLimitMs) < 30000;
                 if (rateLimited) {
@@ -3363,7 +3373,15 @@ function openPrintSession() {
         const raw = d.toString();
         if (raw.includes('\x03')) {
             if (state.busy && state.currentProc) {
-                try { state.currentProc.kill('SIGTERM'); } catch(_) {}
+                const dyingProc = state.currentProc;
+                dyingProc._ctrlCKill = true;
+                try { dyingProc.kill('SIGTERM'); } catch(_) {}
+                // Clear immediately so the close event (which fires async) doesn't
+                // overwrite a new proc that may have been spawned in the meantime.
+                state.currentProc = null;
+                state.busy = false;
+                state.thinkingDone = false;
+                try { if (state.socket) state.socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
                 try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[33m^C — interrupted\x1b[0m\r\n'); } catch(_) {}
             }
             state.inputBuf = '';
