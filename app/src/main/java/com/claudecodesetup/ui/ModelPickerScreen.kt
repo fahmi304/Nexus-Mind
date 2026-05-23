@@ -636,8 +636,9 @@ private fun ModelCard(display: ModelDisplay, isSelected: Boolean, onSelect: () -
             )
             // Capability chips
             if (display.effectiveCaps.isNotEmpty()) {
-                Row(
+                FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
                     modifier = Modifier.padding(top = 2.dp)
                 ) {
                     CAP_PILL_ORDER.forEach { (cap, label) ->
