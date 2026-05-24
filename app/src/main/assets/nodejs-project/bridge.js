@@ -1604,7 +1604,10 @@ function handleProxyRequest(anthReq, res) {
     const key   = cfg.apiKey || '';
     const stream = !!anthReq.stream;
 
-    log('[proxy] request: model=' + (anthReq.model||'?') + ' stream=' + stream + ' url=' + (pUrl||'MISSING') + '\n');
+    const baseModel = cfg.modelId || anthReq.model || '';
+    log('[proxy] request: model=' + (anthReq.model||'?') +
+        (baseModel && baseModel !== anthReq.model ? ' → oai:' + baseModel : '') +
+        ' stream=' + stream + ' url=' + (pUrl||'MISSING') + '\n');
 
     if (!pUrl) return proxyError(res, 500, 'No provider URL in config — check app settings');
 
@@ -1612,8 +1615,6 @@ function handleProxyRequest(anthReq, res) {
     if (pUrl.includes('api.anthropic.com')) {
         return sendToAnthropicDirect(pUrl, key, anthReq, stream, res);
     }
-
-    const baseModel = cfg.modelId || anthReq.model || '';
     const modelList = Array.isArray(cfg.modelList) ? cfg.modelList : [];
     const oaiBase   = anthToOai(anthReq, baseModel);
     const hasTools  = !!(oaiBase.tools && oaiBase.tools.length);
@@ -3590,21 +3591,25 @@ function openPrintSession() {
 
                 function runEvalStep2(label, evalCode2, cb) {
                     let out = '', err = '';
+                    let cbCalled = false;
+                    function onceCb() { if (!cbCalled) { cbCalled = true; cb(); } }
                     let ch;
                     try { ch = spawn(LAUNCHER, ['-e', evalCode2], { env: env2, cwd: FILES_DIR }); ch.stdin.end(); }
-                    catch(e) { try { if (sock2) sock2.write(SYS_FENCE + '\x1b[31m  ' + label + ': spawn-err ' + e.message + '\x1b[0m\r\n'); } catch(_) {} cb(); return; }
+                    catch(e) { try { if (sock2) sock2.write(SYS_FENCE + '\x1b[31m  ' + label + ': spawn-err ' + e.message + '\x1b[0m\r\n'); } catch(_) {} onceCb(); return; }
                     ch.stdout.on('data', d => { out += d.toString(); });
                     ch.stderr.on('data', d => { err += d.toString(); });
-                    const tid = setTimeout(() => { try { ch.kill(); } catch(_) {} try { if (sock2) sock2.write(SYS_FENCE + '\x1b[31m  ' + label + ': TIMEOUT\x1b[0m\r\n'); } catch(_) {} cb(); }, 30000);
+                    const tid = setTimeout(() => { try { ch.kill(); } catch(_) {} try { if (sock2) sock2.write(SYS_FENCE + '\x1b[31m  ' + label + ': TIMEOUT\x1b[0m\r\n'); } catch(_) {} onceCb(); }, 30000);
                     ch.on('close', code => {
                         clearTimeout(tid);
                         log('[test-cli] ' + label + ' exit=' + code + ' out=' + JSON.stringify(out.slice(0,200)) + ' err=' + JSON.stringify(err.slice(0,300)) + '\n');
-                        const mark = code === 0 ? '\x1b[32m✓' : '\x1b[31m✗';
-                        let msg2 = mark + ' ' + label + ' exit=' + code + '\x1b[0m';
-                        if (out.trim()) msg2 += '  out:' + out.trim().slice(0,80);
-                        if (err.trim()) msg2 += '\r\n    \x1b[31merr:' + err.trim().slice(0,200) + '\x1b[0m';
-                        try { if (sock2) sock2.write(SYS_FENCE + '  ' + msg2 + '\r\n'); } catch(_) {}
-                        cb();
+                        if (!cbCalled) {
+                            const mark = code === 0 ? '\x1b[32m✓' : '\x1b[31m✗';
+                            let msg2 = mark + ' ' + label + ' exit=' + code + '\x1b[0m';
+                            if (out.trim()) msg2 += '  out:' + out.trim().slice(0,80);
+                            if (err.trim()) msg2 += '\r\n    \x1b[31merr:' + err.trim().slice(0,200) + '\x1b[0m';
+                            try { if (sock2) sock2.write(SYS_FENCE + '  ' + msg2 + '\r\n'); } catch(_) {}
+                        }
+                        onceCb();
                     });
                 }
 
