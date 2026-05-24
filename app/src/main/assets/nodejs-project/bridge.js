@@ -3239,11 +3239,11 @@ function openPrintSession() {
             try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[31m[spawn error] ' + e.message + '\x1b[0m\r\n'); } catch(_) {}
             return;
         }
-        // Write 'y\n' several times — satisfies the API key approval prompt and pre-approves
-        // up to 4 tool permission reads as a fallback alongside permissions.allow:['*'].
-        try { proc.stdin.write('y\ny\ny\ny\ny\n'); } catch(_) {}
-        // Keep stdin open — needed so !perm-* handlers can still write y/n on demand.
-        // claude-code --print exits after the response; stdin EOF not required.
+        // Close stdin immediately — claude-code --print reads from stdin when it is a pipe
+        // and blocks waiting for EOF if stdin stays open. Closing it tells claude-code stdin
+        // is empty so it uses the argv message. Tool approval is handled by
+        // permissions.allow:['*'] in settings.json; no y/n stdin input is needed.
+        try { proc.stdin.end(); } catch(_) {}
         state.currentProc = proc;
         state.busy = true;
         state.thinkingDone = false;
@@ -3598,7 +3598,7 @@ function openPrintSession() {
                         '.catch(function(e){process.stderr.write("ERR:"+String(e)+"\\n");process.exit(1);});';
                     try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[33m!test-msg: spawning with patchSettings+stdin (30s timeout)…\x1b[0m\r\n'); } catch(_) {}
                     const tch = spawn(LAUNCHER, ['-e', tEval], { env: tEnv, cwd: FILES_DIR });
-                    try { tch.stdin.write('y\ny\ny\ny\ny\n'); } catch(_) {}
+                    try { tch.stdin.end(); } catch(_) {}
                     let tOut = '', tErr = '', tDone = false;
                     tch.stdout.on('data', d => { tOut += d.toString(); });
                     tch.stderr.on('data', d => { tErr += d.toString(); });
