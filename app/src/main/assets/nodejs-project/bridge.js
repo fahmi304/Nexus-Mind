@@ -3040,6 +3040,7 @@ function openPrintSession() {
                 s.customApiKeyResponses.rejected.filter(k => k !== 'sk-ant-proxy000');
             s.theme = 'dark'; s.hasCompletedOnboarding = true;
             s.hasShownWelcome = true; s.skipWelcome = true;
+            s.dangerouslySkipPermissions = true;
             // Inject always-allow/always-deny lists so those tools never prompt
             const approveList = loadApproveList();
             if (approveList.allow.length > 0 || (approveList.deny && approveList.deny.length > 0)) {
@@ -3206,9 +3207,6 @@ function openPrintSession() {
             argvCode += 'process.argv[' + argvLen + ']=' + JSON.stringify(MCP_CONFIG_FILE) + ';';
             argvLen++;
         }
-        argvCode +=
-            'process.argv[' + argvLen + ']="--dangerously-skip-permissions";';
-        argvLen++;
         if (state.hasHistory) {
             argvCode += 'process.argv[' + argvLen + ']="--continue";';
             argvLen++;
