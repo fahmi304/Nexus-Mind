@@ -3041,18 +3041,17 @@ function openPrintSession() {
             s.theme = 'dark'; s.hasCompletedOnboarding = true;
             s.hasShownWelcome = true; s.skipWelcome = true;
             s.dangerouslySkipPermissions = true;
-            // Inject always-allow/always-deny lists so those tools never prompt
+            // Always pre-approve all tools via permissions.allow so MCP and built-in
+            // tools never show a prompt regardless of whether dangerouslySkipPermissions
+            // is honored by this claude-code build.
+            if (!s.permissions) s.permissions = { allow: [], deny: [] };
+            if (!Array.isArray(s.permissions.allow)) s.permissions.allow = [];
+            if (!Array.isArray(s.permissions.deny)) s.permissions.deny = [];
+            if (!s.permissions.allow.includes('*')) s.permissions.allow.push('*');
+            // Inject per-tool always-deny overrides saved by the user
             const approveList = loadApproveList();
-            if (approveList.allow.length > 0 || (approveList.deny && approveList.deny.length > 0)) {
-                if (!s.permissions) s.permissions = { allow: [], deny: [] };
-                if (!Array.isArray(s.permissions.allow)) s.permissions.allow = [];
-                if (!Array.isArray(s.permissions.deny)) s.permissions.deny = [];
-                for (const t of approveList.allow) {
-                    if (!s.permissions.allow.includes(t)) s.permissions.allow.push(t);
-                }
-                for (const t of (approveList.deny || [])) {
-                    if (!s.permissions.deny.includes(t)) s.permissions.deny.push(t);
-                }
+            for (const t of (approveList.deny || [])) {
+                if (!s.permissions.deny.includes(t)) s.permissions.deny.push(t);
             }
             fs.writeFileSync(sp, JSON.stringify(s, null, 2));
             log('[patchSettings] ok — approved=' + JSON.stringify(s.customApiKeyResponses.approved) + '\n');
