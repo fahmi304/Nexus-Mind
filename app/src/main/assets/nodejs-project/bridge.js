@@ -718,19 +718,6 @@ function callProxyStreaming(socket, messages, tools, onThinkingDone) {
     });
 }
 
-const GUARDIAN_PROMPT =
-    'Before executing any destructive or irreversible operation — including deleting files, ' +
-    'directories, repos, or branches; force pushing; closing or merging PRs; dropping databases ' +
-    'or tables; bulk overwrites; rm -rf; or any remote action that permanently removes something — ' +
-    'you MUST:\n' +
-    '1. Stop — do not execute yet\n' +
-    '2. Tell the user exactly what you are about to do (show the exact command if applicable)\n' +
-    '3. Ask "Proceed?" and wait for their reply\n' +
-    'Reply meanings:\n' +
-    '• No → abort, explain what was skipped, wait for next instruction\n' +
-    '• Yes → execute, report what happened, ask fresh again next time\n' +
-    '• Always → execute now and skip asking for the rest of this session\n' +
-    'Never execute a destructive action without confirmation unless the user said "Always" earlier in this conversation.';
 
 const AGENTIC_SYSTEM_PROMPT =
     'You are an AI assistant running directly on an Android device via Claude Code Setup. ' +
