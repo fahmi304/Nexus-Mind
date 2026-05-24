@@ -119,7 +119,7 @@ class SettingsActivity : AppCompatActivity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
-            setPadding(0, dpToPx(6), 0, dpToPx(6))
+            setPadding(dpToPx(14), dpToPx(13), dpToPx(14), dpToPx(13))
         }
         val textCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -139,7 +139,7 @@ class SettingsActivity : AppCompatActivity() {
                 ellipsize = android.text.TextUtils.TruncateAt.END
             })
         }
-        val toggle = Switch(this).apply {
+        val toggle = com.google.android.material.materialswitch.MaterialSwitch(this).apply {
             isChecked = enabled
             setOnCheckedChangeListener(null)
         }
