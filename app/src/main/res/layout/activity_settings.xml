@@ -110,8 +110,7 @@
                     android:orientation="horizontal"
                     android:paddingHorizontal="14dp"
                     android:paddingVertical="10dp"
-                    android:gravity="center_vertical"
-                    android:gap="8dp">
+                    android:gravity="center_vertical">
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnChangeProvider"
@@ -135,6 +134,7 @@
                         android:layout_width="0dp"
                         android:layout_height="36dp"
                         android:layout_weight="1"
+                        android:layout_marginStart="8dp"
                         android:text="Change model"
                         android:textSize="12sp"
                         android:textColor="@color/accent_orange"
