@@ -3067,6 +3067,30 @@ function openPrintSession() {
             for (const t of (approveList.deny || [])) {
                 if (!s.permissions.deny.includes(t)) s.permissions.deny.push(t);
             }
+            // Inject stdio MCP servers into settings.json so claude-code can use them in
+            // print mode. HTTP/SSE servers are excluded — connecting to remote endpoints
+            // during spawn causes the same hang as --mcp-config (see CLAUDE.md item 5a).
+            try {
+                if (fs.existsSync(MCP_CONFIG_FILE)) {
+                    const mcpCfg = JSON.parse(fs.readFileSync(MCP_CONFIG_FILE, 'utf8'));
+                    if (mcpCfg && mcpCfg.mcpServers) {
+                        const stdioOnly = {};
+                        for (const [name, srv] of Object.entries(mcpCfg.mcpServers)) {
+                            if (srv.type === 'stdio') stdioOnly[name] = srv;
+                        }
+                        if (Object.keys(stdioOnly).length > 0) {
+                            s.mcpServers = stdioOnly;
+                            log('[patchSettings] injected stdio mcpServers: ' + Object.keys(stdioOnly).join(', ') + '\n');
+                        } else {
+                            delete s.mcpServers;
+                        }
+                    } else {
+                        delete s.mcpServers;
+                    }
+                } else {
+                    delete s.mcpServers;
+                }
+            } catch(e2) { log('[patchSettings] mcpServers inject error: ' + e2.message + '\n'); }
             fs.writeFileSync(sp, JSON.stringify(s, null, 2));
             log('[patchSettings] ok — approved=' + JSON.stringify(s.customApiKeyResponses.approved) + '\n');
         } catch(e) { log('[patchSettings] ERROR: ' + e.message + '\n'); }

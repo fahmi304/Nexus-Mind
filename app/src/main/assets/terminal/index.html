@@ -2621,8 +2621,9 @@ document.getElementById('mcp-chip').addEventListener('click',function(){
   if(!data.length){html+='<div style="color:rgba(200,200,200,0.4);">None</div>';}
   for(var i=0;i<data.length;i++){
     var srv=data[i];
+    var typeLabel=srv.type==='stdio'?'chat + agentic':'agentic only';
     html+='<div class="mcp-server-hd">● '+srv.name
-      +' <span style="color:rgba(200,200,200,0.35);font-size:8px;">('+srv.type+')</span></div>';
+      +' <span style="color:rgba(200,200,200,0.35);font-size:8px;">('+typeLabel+')</span></div>';
     if(srv.tools&&srv.tools.length){
       for(var j=0;j<srv.tools.length;j++){
         html+='<div class="mcp-tool-row">· '+srv.tools[j].name+'</div>';

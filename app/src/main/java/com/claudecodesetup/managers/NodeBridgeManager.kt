@@ -131,6 +131,7 @@ class NodeBridgeManager(private val context: Context) {
             }
 
             // stdio servers
+            val stdioEntries = org.json.JSONArray()
             val stdioArr = org.json.JSONArray(prefs.getMcpStdioServersJson())
             for (i in 0 until stdioArr.length()) {
                 val server  = stdioArr.getJSONObject(i)
@@ -146,12 +147,20 @@ class NodeBridgeManager(private val context: Context) {
                         put("command", command)
                         put("args", argsArr)
                     })
+                    // bridge.js format: { name, command, args[] }
+                    stdioEntries.put(org.json.JSONObject().apply {
+                        put("name", name)
+                        put("command", command)
+                        put("args", argsArr)
+                    })
                 }
             }
 
+            val mcpStdioFile = File(context.filesDir, "mcp_stdio.json")
             if (mcpServers.length() == 0) {
                 mcpFile.delete()
                 mcpHttpFile.delete()
+                mcpStdioFile.delete()
                 return
             }
             val mcpTmpFile = File(context.filesDir, "mcp_config.json.tmp")
@@ -162,6 +171,11 @@ class NodeBridgeManager(private val context: Context) {
                 mcpHttpTmpFile.writeText(httpEntries.toString())
                 mcpHttpTmpFile.renameTo(mcpHttpFile)
             } else mcpHttpFile.delete()
+            if (stdioEntries.length() > 0) {
+                val mcpStdioTmpFile = File(context.filesDir, "mcp_stdio.json.tmp")
+                mcpStdioTmpFile.writeText(stdioEntries.toString())
+                mcpStdioTmpFile.renameTo(mcpStdioFile)
+            } else mcpStdioFile.delete()
         } catch (e: Exception) {
             Log.e(TAG, "Could not write MCP config", e)
         }
