@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Key bow (circle) -->
+    <path
+        android:pathData="M7,12 m-4.5,0 a4.5,4.5 0 1,0 9,0 a4.5,4.5 0 1,0 -9,0"
+        android:strokeColor="#E8834A"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
+
+    <!-- Key shaft -->
+    <path
+        android:pathData="M11.5,12 L22,12"
+        android:strokeColor="#E8834A"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
+
+    <!-- Bit 1 -->
+    <path
+        android:pathData="M17,12 L17,15"
+        android:strokeColor="#E8834A"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
+
+    <!-- Bit 2 -->
+    <path
+        android:pathData="M20,12 L20,14"
+        android:strokeColor="#E8834A"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
+
+</vector>

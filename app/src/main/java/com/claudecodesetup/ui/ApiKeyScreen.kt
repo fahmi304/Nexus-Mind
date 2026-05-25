@@ -35,6 +35,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.Icon
+import androidx.compose.ui.res.painterResource
+import com.claudecodesetup.R
 import com.claudecodesetup.data.AppPreferences
 import com.claudecodesetup.data.Provider
 import kotlinx.coroutines.Dispatchers
@@ -194,10 +197,10 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
         KeyStatus.SUCCESS -> successScale
         else -> 1f
     }
-    val iconEmoji = when (status) {
-        KeyStatus.SUCCESS -> "✅"
-        KeyStatus.ERROR   -> "🔐"
-        else              -> "🔑"
+    val iconRes = when (status) {
+        KeyStatus.SUCCESS -> R.drawable.ic_status_success
+        KeyStatus.ERROR   -> R.drawable.ic_status_error
+        else              -> R.drawable.ic_status_key
     }
 
     val buttonInteraction = remember { MutableInteractionSource() }
@@ -296,7 +299,12 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
                                     .border(1.dp, accentColor.copy(alpha = 0.4f), RoundedCornerShape(18.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(iconEmoji, fontSize = 26.sp)
+                                Icon(
+                                    painter = painterResource(iconRes),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(28.dp),
+                                    tint = Color.Unspecified
+                                )
                             }
                             Text(
                                 provider.name.uppercase(),
@@ -419,7 +427,15 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
                                         onClick = { passwordVisible = !passwordVisible },
                                         modifier = Modifier.size(40.dp)
                                     ) {
-                                        Text(if (passwordVisible) "👁" else "🙈", fontSize = 15.sp)
+                                        Icon(
+                                            painter = painterResource(
+                                                if (passwordVisible) R.drawable.ic_eye
+                                                else R.drawable.ic_eye_off
+                                            ),
+                                            contentDescription = if (passwordVisible) "Hide" else "Show",
+                                            modifier = Modifier.size(20.dp),
+                                            tint = Color(0xFF9090A0)
+                                        )
                                     }
                                 }
                                 AnimatedVisibility(
