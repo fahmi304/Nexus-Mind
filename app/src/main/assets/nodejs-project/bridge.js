@@ -3078,8 +3078,14 @@ function openPrintSession() {
             for (const p of TOOL_ALLOW) {
                 if (!s.permissions.allow.includes(p)) s.permissions.allow.push(p);
             }
-            // Inject per-tool always-deny overrides saved by the user
+            // Inject per-tool always-allow and always-deny overrides saved by the user.
+            // allow entries are added as both bare name and ToolName(*) so v2.1.112 matches them.
             const approveList = loadApproveList();
+            for (const t of (approveList.allow || [])) {
+                if (!s.permissions.allow.includes(t)) s.permissions.allow.push(t);
+                const pat = t + '(*)';
+                if (!s.permissions.allow.includes(pat)) s.permissions.allow.push(pat);
+            }
             for (const t of (approveList.deny || [])) {
                 if (!s.permissions.deny.includes(t)) s.permissions.deny.push(t);
             }
@@ -3172,12 +3178,14 @@ function openPrintSession() {
                 if (suggestions.length >= 4) break;
             }
             const permId = evt.id || (Date.now() + '-' + Math.random().toString(36).slice(2));
+            // Always write y\n immediately — the tool runs regardless of whether dialog shows.
+            try { if (proc && proc.stdin && !proc.stdin.destroyed) proc.stdin.write('y\n'); } catch(_) {}
+            // Skip the dialog entirely if the user has already said Always Allow for this tool.
+            const savedApprove = loadApproveList();
+            const alreadyAllowed = (savedApprove.allow || []).includes(toolName);
+            if (alreadyAllowed) return;
             const perm = { toolName, toolInput, id: permId, suggestions, autoApproved: true };
             state.pendingPerm = perm;
-            // Write y\n to stdin immediately to beat claude-code's 3-second approval
-            // timeout. The dialog is shown as informational only — buttons configure
-            // future spawns via auto_approve.json, not the current call.
-            try { if (proc && proc.stdin && !proc.stdin.destroyed) proc.stdin.write('y\n'); } catch(_) {}
             const permB64 = Buffer.from(JSON.stringify(perm)).toString('base64');
             try { if (state.socket) state.socket.write('\x1b]9;permission:' + permB64 + '\x07'); } catch(_) {}
             return;
@@ -3209,9 +3217,12 @@ function openPrintSession() {
         // Extract tool name heuristically
         const toolMatch = line.match(/\b(?:run|execute|use|allow)\s+(\w[\w-]*)/i);
         const toolName  = toolMatch ? toolMatch[1] : 'tool';
+        try { if (proc && proc.stdin && !proc.stdin.destroyed) proc.stdin.write('y\n'); } catch(_) {}
+        // Skip dialog if user already said Always Allow for this tool
+        const savedApprove = loadApproveList();
+        if ((savedApprove.allow || []).includes(toolName)) return;
         const perm = { toolName, toolInput: { prompt: line }, id: Date.now() + '-txt', autoApproved: true };
         state.pendingPerm = perm;
-        try { if (proc && proc.stdin && !proc.stdin.destroyed) proc.stdin.write('y\n'); } catch(_) {}
         const permB64 = Buffer.from(JSON.stringify(perm)).toString('base64');
         try { if (state.socket) state.socket.write('\x1b]9;permission:' + permB64 + '\x07'); } catch(_) {}
     }
