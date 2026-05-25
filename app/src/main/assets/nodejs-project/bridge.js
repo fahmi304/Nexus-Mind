@@ -1488,6 +1488,13 @@ function sendMockStream(text, model, res) {
  * short-circuited (it contains words like "concise" and "title" too).
  */
 function tryOptimize(anthReq) {
+    // Any haiku-model request is a claude-code internal housekeeping call.
+    // In proxy mode the user-facing model is always claude-3-5-sonnet-20241022,
+    // so claude-code only picks haiku for title generation / follow-up probes.
+    // Short-circuit with empty text so it never reaches the real provider and
+    // never produces a confusing AI bubble as the first response in a new session.
+    if ((anthReq.model || '').startsWith('claude-haiku')) return '';
+
     const sys = getSystemText(anthReq).toLowerCase();
 
     // Guard: never short-circuit a long system prompt — that's the real user message.
