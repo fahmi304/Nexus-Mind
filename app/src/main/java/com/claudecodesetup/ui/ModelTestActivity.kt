@@ -12,22 +12,28 @@ class ModelTestActivity : ComponentActivity() {
         val prefs = AppPreferences(this)
         val currentProviderId = prefs.getProviderId()
         val currentKey = prefs.getApiKey()
-        // Fall back to current key if the provider was configured before per-provider storage was added
-        val orKey = prefs.getApiKeyForProvider("openrouter")
-            .ifEmpty { if (currentProviderId == "openrouter") currentKey else "" }
-        val nvKey = prefs.getApiKeyForProvider("nvidia_nim")
-            .ifEmpty { if (currentProviderId == "nvidia_nim") currentKey else "" }
-        val groqKey = prefs.getApiKeyForProvider("groq")
-            .ifEmpty { if (currentProviderId == "groq") currentKey else "" }
+        val currentUrl = prefs.getBaseUrl()
+
+        // Collect keys + URLs for all live-fetch providers that have a key configured.
+        // Fall back to the current key when the provider was set before per-provider key
+        // storage was added.
+        val keys = mutableMapOf<String, String>()
+        val urls = mutableMapOf<String, String>()
+        for (provider in Providers.ALL.filter { it.supportsLiveFetch }) {
+            val key = prefs.getApiKeyForProvider(provider.id)
+                .ifEmpty { if (currentProviderId == provider.id) currentKey else "" }
+            if (key.isNotEmpty()) {
+                keys[provider.id] = key
+                urls[provider.id] = if (currentProviderId == provider.id) currentUrl else provider.baseUrl
+            }
+        }
+
         setContent {
             ModelTestScreen(
-                apiKey      = currentKey,
-                orApiKey    = orKey,
-                nvApiKey    = nvKey,
-                groqApiKey  = groqKey,
-                providerId  = currentProviderId,
-                providerUrl = prefs.getBaseUrl(),
-                onBack      = { finish() }
+                keys               = keys,
+                urls               = urls,
+                currentProviderId  = currentProviderId,
+                onBack             = { finish() }
             )
         }
     }
