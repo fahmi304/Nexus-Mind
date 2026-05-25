@@ -1624,7 +1624,7 @@ function handleProxyRequest(anthReq, res) {
             const plain = Object.assign({}, oaiReq);
             delete plain.tools;
             delete plain.tool_choice;
-            sendToProvider(pUrl, key, plain, stream, res, null, on429);
+            sendToProvider(pUrl, key, plain, stream, res, null, on429, on402);
         }
 
         function on429() {
@@ -1647,7 +1647,19 @@ function handleProxyRequest(anthReq, res) {
             }
         }
 
-        sendToProvider(pUrl, key, oaiReq, stream, res, hasTools ? retryWithoutTools : null, on429);
+        // 402 = insufficient credits for this model — skip directly to next fallback (no retries)
+        function on402() {
+            const idx  = modelList.indexOf(modelId);
+            const next = modelList[idx + 1];
+            if (next && next !== modelId) {
+                log('[proxy] 402 insufficient credits — switching to ' + next + '\n');
+                attempt(next, 2, 2);
+            } else {
+                proxyError(res, 402, 'Insufficient credits for this model. Switch to a free model or add credits at openrouter.ai/credits');
+            }
+        }
+
+        sendToProvider(pUrl, key, oaiReq, stream, res, hasTools ? retryWithoutTools : null, on429, on402);
     }
 
     attempt(baseModel, 3, 2);
@@ -1781,7 +1793,7 @@ function oaiToAnth(oai, model) {
     };
 }
 
-function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on429) {
+function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on429, on402) {
     let targetUrl;
     try {
         const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
@@ -1834,8 +1846,10 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on42
                                 if (innerMsg) errMsg = innerMsg;
                             }
                         } catch (_) {}
-                        if (provRes.statusCode === 402)
-                            errMsg += ' — switch model or add credits at openrouter.ai/credits';
+                        if (provRes.statusCode === 402) {
+                            if (on402) return on402();
+                            errMsg += ' — switch to a free model or add credits at openrouter.ai/credits';
+                        }
                         return proxyError(res, provRes.statusCode, errMsg);
                     }
                     if (parsed.error) {
@@ -1881,8 +1895,10 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on42
                         } catch (_) {}
                         if (detail) msg += ': ' + detail;
                     } catch (_) {}
-                    if (provRes.statusCode === 402)
-                        msg += ' — switch to a different model or add credits at openrouter.ai/credits';
+                    if (provRes.statusCode === 402) {
+                        if (on402) return on402();
+                        msg += ' — switch to a free model or add credits at openrouter.ai/credits';
+                    }
                     log('Provider error: ' + msg + '\n');
                     proxyError(res, provRes.statusCode, msg);
                 });
@@ -3447,10 +3463,11 @@ function openPrintSession() {
             let line = state.inputBuf.slice(0, nl)
                 .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '')
                 .replace(/！/g, '!')
-                // Strip invisible/format Unicode that Android IME may prepend, causing
-                // line.startsWith('!') to return false and commands to hit the busy gate.
-                // Covers the same ranges as JS submitLine() + sendRawInput() normalisation.
-                .replace(/[\u0080-\u009f\u00ad\u200b-\u200f\u2028-\u202f\u2060-\u206f\ufeff]/g, '')
+                // Strip invisible/format Unicode that Android IME may prepend or embed,
+                // causing startsWith("!") failures and encoding noise reaching claude-code.
+                // C1 controls, soft-hyphen, zero-width, line/para seps, format ops, BOM,
+                // Mongolian FVS (180B-180F), variation selectors (FE00-FE0F), ORC/FFFD.
+                .replace(/[\u0080-\u009f\u00ad\u180b-\u180f\u200b-\u200f\u2028-\u202f\u2060-\u206f\ufe00-\ufe0f\ufeff\ufff0-\uffff]/g, '')
                 .trim();
             state.inputBuf = state.inputBuf.slice(nl + 1);
             if (!line) continue;
