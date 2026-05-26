@@ -58,19 +58,26 @@ private val httpClient by lazy {
 }
 
 private suspend fun validateKey(provider: Provider, key: String, serverUrl: String = ""): String? {
-    // For URL-configurable providers with no API key, test that the server is reachable
+    // For URL-configurable providers, test that the server is reachable (with optional Bearer auth)
     if (!provider.requiresApiKey && provider.isUrlConfigurable && serverUrl.isNotEmpty()) {
         return withContext(Dispatchers.IO) {
             try {
                 val testUrl = serverUrl.trimEnd('/') + "/models"
                 val client = OkHttpClient.Builder()
-                    .connectTimeout(3, TimeUnit.SECONDS)
-                    .readTimeout(3, TimeUnit.SECONDS)
+                    .connectTimeout(5, TimeUnit.SECONDS)
+                    .readTimeout(5, TimeUnit.SECONDS)
                     .build()
-                val resp = client.newCall(Request.Builder().url(testUrl).build()).execute()
+                val reqBuilder = Request.Builder().url(testUrl)
+                if (key.isNotEmpty()) reqBuilder.header("Authorization", "Bearer $key")
+                val resp = client.newCall(reqBuilder.build()).execute()
                 val code = resp.code
                 resp.body?.close()
-                if (code in 200..499) null else "Server returned HTTP $code — check URL"
+                when {
+                    code in 200..299 -> null
+                    code == 401 || code == 403 -> "Invalid token — check your HuggingFace token"
+                    code in 200..499 -> null
+                    else -> "Server returned HTTP $code — check URL or token"
+                }
             } catch (e: Exception) {
                 "Cannot reach server — check the URL and ensure it is running"
             }
@@ -145,6 +152,11 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
             if (provider.isUrlConfigurable)
                 prefs.getCustomBaseUrlForProvider(provider.id).ifEmpty { provider.baseUrl }
             else ""
+        )
+    }
+    var remoteApiKey by remember {
+        mutableStateOf(
+            if (provider.isUrlConfigurable) prefs.getApiKeyForProvider(provider.id) else ""
         )
     }
     var status by remember { mutableStateOf(KeyStatus.IDLE) }
@@ -230,12 +242,12 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
         }
         status = KeyStatus.LOADING
         scope.launch {
-            val trimmedKey = apiKey.trim()
-            val error = validateKey(provider, trimmedKey, serverUrl.trim())
+            val effectiveKey = if (provider.isUrlConfigurable) remoteApiKey.trim() else apiKey.trim()
+            val error = validateKey(provider, effectiveKey, serverUrl.trim())
             if (error == null) {
                 status = KeyStatus.SUCCESS
                 delay(700)
-                onSuccess(trimmedKey)
+                onSuccess(effectiveKey)
             } else {
                 status = KeyStatus.ERROR
                 errorMessage = error
@@ -380,6 +392,55 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
                                         )
                                     }
                                 }
+                            }
+                            // Optional API token for remote servers (HuggingFace, etc.)
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    "API Token (optional)", fontFamily = DmSansFamily,
+                                    fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                                    color = NexusText2
+                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(NexusSurface, RoundedCornerShape(12.dp))
+                                        .border(1.dp, NexusBorder, RoundedCornerShape(12.dp))
+                                        .padding(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    BasicTextField(
+                                        value = remoteApiKey,
+                                        onValueChange = {
+                                            remoteApiKey = it
+                                            if (status == KeyStatus.ERROR) status = KeyStatus.IDLE
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        textStyle = TextStyle(
+                                            fontFamily = SpaceMonoFamily, fontSize = 12.sp,
+                                            color = Color.White
+                                        ),
+                                        visualTransformation = PasswordVisualTransformation(),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrect = false),
+                                        singleLine = true,
+                                        decorationBox = { inner ->
+                                            Box(contentAlignment = Alignment.CenterStart) {
+                                                if (remoteApiKey.isEmpty()) {
+                                                    Text(
+                                                        "hf_… leave blank for local Ollama",
+                                                        fontFamily = SpaceMonoFamily, fontSize = 12.sp,
+                                                        color = Color(0x55FFFFFF)
+                                                    )
+                                                }
+                                                inner()
+                                            }
+                                        }
+                                    )
+                                }
+                                Text(
+                                    "Required for HuggingFace and other remote servers",
+                                    fontFamily = DmSansFamily, fontSize = 10.sp,
+                                    color = NexusText3
+                                )
                             }
                         }
 
