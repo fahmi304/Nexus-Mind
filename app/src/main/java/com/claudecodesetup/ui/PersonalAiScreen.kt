@@ -127,7 +127,7 @@ private val amber  = Color(0xFFF59E0B)
 @Composable
 fun LocalModelsScreen(
     onModelSelected: (modelId: String) -> Unit,
-    onRemoteServer: (url: String) -> Unit,
+    onRemoteServer: (url: String, apiKey: String) -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -155,6 +155,7 @@ fun LocalModelsScreen(
 
     var tab by remember { mutableStateOf(0) }
     var remoteUrl by remember { mutableStateOf(prefs.getCustomBaseUrlForProvider("ollama").ifBlank { "" }) }
+    var remoteApiKey by remember { mutableStateOf(prefs.getApiKeyForProvider("ollama").ifBlank { "" }) }
 
     val downloadClient = remember {
         OkHttpClient.Builder()
@@ -335,12 +336,46 @@ fun LocalModelsScreen(
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Uri,
+                                imeAction = ImeAction.Next
+                            ),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = blue.copy(alpha = 0.6f),
+                                unfocusedBorderColor = NexusBorder,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                cursorColor = blue
+                            ),
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                fontFamily = DmSansFamily, fontSize = 13.sp
+                            )
+                        )
+                        OutlinedTextField(
+                            value = remoteApiKey,
+                            onValueChange = { remoteApiKey = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = {
+                                Text(
+                                    "API Token (optional)",
+                                    fontFamily = DmSansFamily, fontSize = 11.sp,
+                                    color = NexusText3
+                                )
+                            },
+                            placeholder = {
+                                Text(
+                                    "hf_… or leave blank for local Ollama",
+                                    fontFamily = DmSansFamily, fontSize = 12.sp,
+                                    color = NexusText3
+                                )
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Password,
                                 imeAction = ImeAction.Done
                             ),
                             keyboardActions = KeyboardActions(
                                 onDone = {
                                     val url = remoteUrl.trim()
-                                    if (url.isNotEmpty()) onRemoteServer(url)
+                                    if (url.isNotEmpty()) onRemoteServer(url, remoteApiKey.trim())
                                 }
                             ),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -359,7 +394,7 @@ fun LocalModelsScreen(
                             color = blue,
                             onClick = {
                                 val url = remoteUrl.trim()
-                                if (url.isNotEmpty()) onRemoteServer(url)
+                                if (url.isNotEmpty()) onRemoteServer(url, remoteApiKey.trim())
                             }
                         )
                     }

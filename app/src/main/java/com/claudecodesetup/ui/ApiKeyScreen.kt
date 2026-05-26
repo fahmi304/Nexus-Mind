@@ -147,18 +147,6 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
     val prefs = remember { AppPreferences(context) }
     val scope = rememberCoroutineScope()
     var apiKey by remember { mutableStateOf("") }
-    var serverUrl by remember {
-        mutableStateOf(
-            if (provider.isUrlConfigurable)
-                prefs.getCustomBaseUrlForProvider(provider.id).ifEmpty { provider.baseUrl }
-            else ""
-        )
-    }
-    var remoteApiKey by remember {
-        mutableStateOf(
-            if (provider.isUrlConfigurable) prefs.getApiKeyForProvider(provider.id) else ""
-        )
-    }
     var status by remember { mutableStateOf(KeyStatus.IDLE) }
     var errorMessage by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -231,19 +219,10 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
             errorMessage = "Please enter your API key"
             return
         }
-        if (provider.isUrlConfigurable && serverUrl.isBlank()) {
-            status = KeyStatus.ERROR
-            errorMessage = "Please enter the server URL"
-            return
-        }
-        if (provider.isUrlConfigurable) {
-            prefs.setCustomBaseUrlForProvider(provider.id, serverUrl.trim())
-            prefs.setBaseUrl(serverUrl.trim())
-        }
         status = KeyStatus.LOADING
         scope.launch {
-            val effectiveKey = if (provider.isUrlConfigurable) remoteApiKey.trim() else apiKey.trim()
-            val error = validateKey(provider, effectiveKey, serverUrl.trim())
+            val effectiveKey = apiKey.trim()
+            val error = validateKey(provider, effectiveKey)
             if (error == null) {
                 status = KeyStatus.SUCCESS
                 delay(700)
@@ -335,113 +314,6 @@ fun ApiKeyScreen(provider: Provider, onSuccess: (String) -> Unit, onBack: () -> 
                                 fontFamily = DmSansFamily, fontSize = 12.sp,
                                 color = NexusText3, textAlign = TextAlign.Center
                             )
-                        }
-
-                        if (provider.isUrlConfigurable) {
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(
-                                    "Server URL", fontFamily = DmSansFamily,
-                                    fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                                    color = NexusText2
-                                )
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(NexusSurface, RoundedCornerShape(12.dp))
-                                        .border(1.dp,
-                                            if (status == KeyStatus.ERROR) Color(0xFFEF4444) else NexusBorder,
-                                            RoundedCornerShape(12.dp))
-                                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    BasicTextField(
-                                        value = serverUrl,
-                                        onValueChange = {
-                                            serverUrl = it
-                                            if (status == KeyStatus.ERROR) status = KeyStatus.IDLE
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        textStyle = TextStyle(
-                                            fontFamily = SpaceMonoFamily, fontSize = 12.sp,
-                                            color = Color.White
-                                        ),
-                                        singleLine = true,
-                                        decorationBox = { inner ->
-                                            Box(contentAlignment = Alignment.CenterStart) {
-                                                if (serverUrl.isEmpty()) {
-                                                    Text(
-                                                        "http://your-server:11434/v1",
-                                                        fontFamily = SpaceMonoFamily, fontSize = 12.sp,
-                                                        color = Color(0x55FFFFFF)
-                                                    )
-                                                }
-                                                inner()
-                                            }
-                                        }
-                                    )
-                                }
-                                if (!provider.requiresApiKey) {
-                                    AnimatedVisibility(
-                                        visible = status == KeyStatus.ERROR,
-                                        enter = fadeIn(tween(200)),
-                                        exit = fadeOut(tween(200))
-                                    ) {
-                                        Text(
-                                            errorMessage, fontFamily = DmSansFamily,
-                                            fontSize = 11.sp, color = Color(0xFFEF4444)
-                                        )
-                                    }
-                                }
-                            }
-                            // Optional API token for remote servers (HuggingFace, etc.)
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(
-                                    "API Token (optional)", fontFamily = DmSansFamily,
-                                    fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                                    color = NexusText2
-                                )
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(NexusSurface, RoundedCornerShape(12.dp))
-                                        .border(1.dp, NexusBorder, RoundedCornerShape(12.dp))
-                                        .padding(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    BasicTextField(
-                                        value = remoteApiKey,
-                                        onValueChange = {
-                                            remoteApiKey = it
-                                            if (status == KeyStatus.ERROR) status = KeyStatus.IDLE
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        textStyle = TextStyle(
-                                            fontFamily = SpaceMonoFamily, fontSize = 12.sp,
-                                            color = Color.White
-                                        ),
-                                        visualTransformation = PasswordVisualTransformation(),
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrect = false),
-                                        singleLine = true,
-                                        decorationBox = { inner ->
-                                            Box(contentAlignment = Alignment.CenterStart) {
-                                                if (remoteApiKey.isEmpty()) {
-                                                    Text(
-                                                        "hf_… leave blank for local Ollama",
-                                                        fontFamily = SpaceMonoFamily, fontSize = 12.sp,
-                                                        color = Color(0x55FFFFFF)
-                                                    )
-                                                }
-                                                inner()
-                                            }
-                                        }
-                                    )
-                                }
-                                Text(
-                                    "Required for HuggingFace and other remote servers",
-                                    fontFamily = DmSansFamily, fontSize = 10.sp,
-                                    color = NexusText3
-                                )
-                            }
                         }
 
                         if (provider.requiresApiKey) {

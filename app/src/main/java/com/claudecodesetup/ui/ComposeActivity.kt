@@ -115,13 +115,17 @@ private fun AppRoot(
                 val model = AiModel(modelId, modelId, emptySet(), "")
                 onComplete(Providers.LOCAL_LLAMA, "", model)
             },
-            onRemoteServer = { url ->
-                // User entered a remote server URL inline — save it and go straight to model picker
+            onRemoteServer = { url, apiKey ->
+                // User entered a remote server URL — save it and go to model picker
                 val normalized = if (!url.contains("/v1")) url.trimEnd('/') + "/v1" else url
                 prefs.setCustomBaseUrlForProvider("ollama", normalized)
                 prefs.setBaseUrl(normalized)
+                if (apiKey.isNotBlank()) {
+                    prefs.setApiKey(apiKey)
+                    prefs.setApiKeyForProvider("ollama", apiKey)
+                }
                 selectedProvider = Providers.OLLAMA
-                storedKey = ""
+                storedKey = apiKey
                 screen = "picker"
             },
             onBack = { screen = "providers" }
@@ -140,17 +144,28 @@ private fun AppRoot(
                 }
             }
         )
-        "picker" -> ModelPickerScreen(
-            provider = selectedProvider ?: Providers.GEMINI,
-            apiKey = storedKey,
-            onConfirm = { model ->
-                onComplete(selectedProvider ?: Providers.GEMINI, storedKey, model)
-            },
-            onBack = {
-                if (startAt == "picker") (context as? android.app.Activity)?.finish()
-                else screen = if (startAt == "providers") "providers" else "key"
-            }
-        )
+        "picker" -> {
+            val baseProvider = selectedProvider ?: Providers.GEMINI
+            val effectiveProvider = if (baseProvider.isUrlConfigurable) {
+                val customUrl = prefs.getCustomBaseUrlForProvider(baseProvider.id)
+                if (customUrl.isNotBlank()) baseProvider.copy(baseUrl = customUrl) else baseProvider
+            } else baseProvider
+            ModelPickerScreen(
+                provider = effectiveProvider,
+                apiKey = storedKey,
+                onConfirm = { model ->
+                    onComplete(effectiveProvider, storedKey, model)
+                },
+                onBack = {
+                    if (startAt == "picker") (context as? android.app.Activity)?.finish()
+                    else screen = when {
+                        startAt == "providers" -> "providers"
+                        selectedProvider?.id == "ollama" -> "local_models"
+                        else -> "key"
+                    }
+                }
+            )
+        }
     }
 }
 

@@ -227,9 +227,11 @@ object ProvidersRepository {
     suspend fun fetchOllamaModels(baseUrl: String, apiKey: String): List<AiModel> =
         withContext(Dispatchers.IO) {
             val normalized = baseUrl.trimEnd('/')
+            // Strip trailing /v1 to get the server root for path construction
+            val root = if (normalized.endsWith("/v1")) normalized.dropLast(3) else normalized
             // Try Ollama native /api/tags
             try {
-                val req = Request.Builder().url("$normalized/api/tags")
+                val req = Request.Builder().url("$root/api/tags")
                     .apply { if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey") }
                     .build()
                 val body = http.newCall(req).execute().use { resp ->
@@ -244,7 +246,7 @@ object ProvidersRepository {
                 }.sortedBy { it.modelId }
             } catch (_: Exception) {}
             // Fallback: OpenAI-compat /v1/models
-            val req = Request.Builder().url("$normalized/v1/models")
+            val req = Request.Builder().url("$root/v1/models")
                 .apply { if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey") }
                 .build()
             val body = http.newCall(req).execute().use { resp ->
