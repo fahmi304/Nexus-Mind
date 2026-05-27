@@ -730,8 +730,8 @@ html, body {
 
 <!-- Keyboard toolbar -->
 <div id="toolbar">
-  <button class="tb-btn tb-accent" id="btn-yes">Yes</button>
-  <button class="tb-btn tb-accent" id="btn-no">No</button>
+  <button class="tb-btn tb-accent" id="btn-yes" style="display:none">Yes</button>
+  <button class="tb-btn tb-accent" id="btn-no" style="display:none">No</button>
   <button class="tb-btn tb-accent" id="btn-shell">$ </button>
   <button class="tb-btn" id="btn-ctrl">Ctrl</button>
   <button class="tb-btn" id="btn-tab">Tab</button>
@@ -1135,6 +1135,9 @@ function resetToIdle(){
   chatState='IDLE';
   // Complete any active agent panel — all sub-agents finished
   completeAgentPanel();
+  // Show Yes/No toolbar buttons after AI responds in case it asked a question
+  document.getElementById('btn-yes').style.display='';
+  document.getElementById('btn-no').style.display='';
 }
 
 function handleOSC(content){
@@ -1383,7 +1386,10 @@ function showConfirmDialog(id, desc){
     btn.style.cssText='background:'+c.bg+';border:1px solid '+c.border+';border-radius:16px;color:'+c.color+';font-size:12px;font-family:Space Mono,monospace;padding:6px 14px;cursor:pointer;';
     btn.addEventListener('click',function(){
       wrap.remove();
-      if(typeof Android!=='undefined') Android.sendConfirm(id,c.choice);
+      if(typeof Android!=='undefined'){
+        Android.sendInput('\r'); // flush any residual inputBuf garbage
+        Android.sendConfirm(id,c.choice);
+      }
     });
     row.appendChild(btn);
   });
@@ -1479,7 +1485,8 @@ function showPermissionDialog(perm){
     btn.addEventListener('click',function(){
       wrap.style.opacity='0.5';
       wrap.style.pointerEvents='none';
-      if(typeof Android!=='undefined') Android.sendInput(b.cmd+'\r');
+      // Leading \r flushes any residual chars in bridge.js inputBuf before the command
+      if(typeof Android!=='undefined') Android.sendInput('\r'+b.cmd+'\r');
     });
     btnRow.appendChild(btn);
   });
@@ -2359,6 +2366,9 @@ function submitLine(text){
   historyIdx=-1;
   savedInput='';
   updateInputDisp();
+  // Hide Yes/No toolbar buttons — user is sending a new message
+  document.getElementById('btn-yes').style.display='none';
+  document.getElementById('btn-no').style.display='none';
   if(!msg && !pendingImageAttached) return;
   // Local bridge commands (!log, !help, !clear, $ cmd, etc.): show a terminal
   // command bubble so the user sees what was typed, then send as raw input.
@@ -2443,6 +2453,8 @@ function sendRawInput(){
   const text=inputBuffer.replace(/[\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u206f\ufeff\u00ad]/g,'').trim();
   inputBuffer='';ghost.value='';historyIdx=-1;savedInput='';
   updateInputDisp();
+  document.getElementById('btn-yes').style.display='none';
+  document.getElementById('btn-no').style.display='none';
   if(text.length>0){
     if(inputHistory[inputHistory.length-1]!==text){
       inputHistory.push(text);if(inputHistory.length>50)inputHistory.shift();
@@ -2524,8 +2536,16 @@ function tbRaw(key){
   if(typeof Android!=='undefined') Android.sendInput(key);
   ghost.focus();
 }
-document.getElementById('btn-yes').addEventListener('click',function(){tbRaw('y\r');ghost.focus();});
-document.getElementById('btn-no').addEventListener('click',function(){tbRaw('n\r');ghost.focus();});
+document.getElementById('btn-yes').addEventListener('click',function(){
+  document.getElementById('btn-yes').style.display='none';
+  document.getElementById('btn-no').style.display='none';
+  tbRaw('y\r');ghost.focus();
+});
+document.getElementById('btn-no').addEventListener('click',function(){
+  document.getElementById('btn-yes').style.display='none';
+  document.getElementById('btn-no').style.display='none';
+  tbRaw('n\r');ghost.focus();
+});
 document.getElementById('btn-shell').addEventListener('click',function(){
   if(!inputBuffer.startsWith('$ ')){inputBuffer='$ '+inputBuffer;}
   ghost.value=inputBuffer;updateInputDisp();ghost.focus();

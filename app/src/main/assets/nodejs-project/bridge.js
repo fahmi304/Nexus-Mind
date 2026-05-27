@@ -1425,8 +1425,10 @@ function startProxyServer(onReady) {
 
 function proxyError(res, code, msg) {
     log('[proxy-error] ' + code + ' — ' + msg + '\n');
+    // Return 400 for all 5xx so claude-code doesn't retry provider errors indefinitely
+    const httpCode = (code >= 500 && code < 600) ? 400 : code;
     try {
-        res.writeHead(code, { 'Content-Type': 'application/json' });
+        res.writeHead(httpCode, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ type: 'error', error: { type: 'api_error', message: msg } }));
     } catch (_) {}
 }
@@ -1609,14 +1611,17 @@ function handleProxyRequest(anthReq, res) {
     if (pUrl.includes('api.anthropic.com')) {
         return sendToAnthropicDirect(pUrl, key, anthReq, stream, res);
     }
-    const modelList = Array.isArray(cfg.modelList) ? cfg.modelList : [];
-    const oaiBase   = anthToOai(anthReq, baseModel);
-    const hasTools  = !!(oaiBase.tools && oaiBase.tools.length);
+    const modelList  = Array.isArray(cfg.modelList) ? cfg.modelList : [];
+    const oaiBase    = anthToOai(anthReq, baseModel);
+    const hasTools   = !!(oaiBase.tools && oaiBase.tools.length);
+    const isHfSpace  = pUrl.includes('.hf.space');
 
-    // attempt(modelId, retriesLeft, delayMs)
+    // attempt(modelId, retriesLeft, delayMs, hfRetried)
     // Retries the same model up to 3x with exponential backoff on 429,
     // then falls through to the next model in modelList.
-    function attempt(modelId, retriesLeft, delayMs) {
+    // hfRetried: HF Space cold-start retry count (max 1, only for .hf.space URLs).
+    function attempt(modelId, retriesLeft, delayMs, hfRetried) {
+        hfRetried = hfRetried || 0;
         const oaiReq = Object.assign({}, oaiBase, { model: modelId });
 
         function retryWithoutTools() {
@@ -1624,7 +1629,7 @@ function handleProxyRequest(anthReq, res) {
             const plain = Object.assign({}, oaiReq);
             delete plain.tools;
             delete plain.tool_choice;
-            sendToProvider(pUrl, key, plain, stream, res, null, on429, on402);
+            sendToProvider(pUrl, key, plain, stream, res, null, on429, on402, on5xx);
         }
 
         function on429() {
@@ -1633,14 +1638,14 @@ function handleProxyRequest(anthReq, res) {
                 log('[proxy] 429 — retrying ' + modelId + ' in ' + delayMs + 's (' + retriesLeft + ' left)\n');
                 // Notify active socket of countdown so the thinking timer shows it
                 try { if (on429CountdownNotify) on429CountdownNotify(delayMs); } catch(_) {}
-                setTimeout(() => attempt(modelId, retriesLeft - 1, delayMs * 2), delayMs * 1000);
+                setTimeout(() => attempt(modelId, retriesLeft - 1, delayMs * 2, hfRetried), delayMs * 1000);
             } else {
                 const idx  = modelList.indexOf(modelId);
                 const next = modelList[idx + 1];
                 if (next && next !== modelId) {
                     log('[proxy] 429 exhausted — switching to ' + next + '\n');
                     // M8: reset delayMs to initial value when switching models
-                    attempt(next, 2, 2);
+                    attempt(next, 2, 2, hfRetried);
                 } else {
                     proxyError(res, 429, 'Rate limited. All fallback models exhausted — switch provider in Settings.');
                 }
@@ -1653,16 +1658,26 @@ function handleProxyRequest(anthReq, res) {
             const next = modelList[idx + 1];
             if (next && next !== modelId) {
                 log('[proxy] 402 insufficient credits — switching to ' + next + '\n');
-                attempt(next, 2, 2);
+                attempt(next, 2, 2, hfRetried);
             } else {
                 proxyError(res, 402, 'Insufficient credits for this model. Switch to a free model or add credits at openrouter.ai/credits');
             }
         }
 
-        sendToProvider(pUrl, key, oaiReq, stream, res, hasTools ? retryWithoutTools : null, on429, on402);
+        // HF Space cold-start: on 500/503, notify user and retry once after 15s.
+        // Only fires for .hf.space URLs and only retries once (hfRetried < 1).
+        const on5xx = (isHfSpace && hfRetried < 1) ? function() {
+            log('[hf-space] 500/503 — Space may be sleeping, retrying in 15s\n');
+            for (const s of activeSessions.values()) {
+                try { if (s.socket) s.socket.write(SYS_FENCE + '\x1b[33m[HuggingFace Space waking up — retrying in 15s…]\x1b[0m\r\n'); } catch(_) {}
+            }
+            setTimeout(() => attempt(modelId, retriesLeft, delayMs, hfRetried + 1), 15000);
+        } : null;
+
+        sendToProvider(pUrl, key, oaiReq, stream, res, hasTools ? retryWithoutTools : null, on429, on402, on5xx);
     }
 
-    attempt(baseModel, 3, 2);
+    attempt(baseModel, 3, 2, 0);
 }
 
 // Convert Anthropic Messages request → OpenAI Chat Completions request
@@ -1793,7 +1808,7 @@ function oaiToAnth(oai, model) {
     };
 }
 
-function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on429, on402) {
+function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on429, on402, on5xx) {
     let targetUrl;
     try {
         const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
@@ -1850,6 +1865,7 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on42
                             if (on402) return on402();
                             errMsg += ' — switch to a free model or add credits at openrouter.ai/credits';
                         }
+                        if ((provRes.statusCode === 500 || provRes.statusCode === 503) && on5xx) return on5xx();
                         return proxyError(res, provRes.statusCode, errMsg);
                     }
                     if (parsed.error) {
@@ -1894,11 +1910,16 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on42
                             }
                         } catch (_) {}
                         if (detail) msg += ': ' + detail;
-                    } catch (_) {}
+                    } catch (_) {
+                        // Non-JSON body (e.g. HTML error page from HF Spaces) — log raw excerpt
+                        const raw = errBody.replace(/[\r\n]+/g, ' ').replace(/<[^>]+>/g, '').trim().slice(0, 200);
+                        if (raw) log('[provider-raw] ' + raw + '\n');
+                    }
                     if (provRes.statusCode === 402) {
                         if (on402) return on402();
                         msg += ' — switch to a free model or add credits at openrouter.ai/credits';
                     }
+                    if ((provRes.statusCode === 500 || provRes.statusCode === 503) && on5xx) return on5xx();
                     log('Provider error: ' + msg + '\n');
                     proxyError(res, provRes.statusCode, msg);
                 });
@@ -3477,19 +3498,21 @@ function openPrintSession() {
                 // Strip invisible/format Unicode that Android IME may prepend or embed,
                 // causing startsWith("!") failures and encoding noise reaching claude-code.
                 // C1 controls, soft-hyphen, zero-width, line/para seps, format ops, BOM,
-                // Mongolian FVS (180B-180F), variation selectors (FE00-FE0F), ORC/FFFD.
-                .replace(/[\u0080-\u009f\u00ad\u180b-\u180f\u200b-\u200f\u2028-\u202f\u2060-\u206f\ufe00-\ufe0f\ufeff\ufff0-\uffff]/g, '')
+                // Mongolian FVS (180B-180F), variation selectors (FE00-FE0F), ORC/FFFD,
+                // CGJ (034F), Arabic LM (061C), Hangul fillers (115F-1160, 3164, FFA0),
+                // Khmer inherent vowels (17B4-17B5).
+                .replace(/[\u0080-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202f\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff]/g, '')
                 .trim();
             state.inputBuf = state.inputBuf.slice(nl + 1);
             if (!line) continue;
 
-            // Secondary guard: if non-printable chars precede a '!' or '$', strip them.
-            // Catches any bytes the regex above misses (e.g. U+3002) so !perm-* and
-            // !confirm: always reach their handlers instead of hitting the busy gate.
+            // Secondary guard: if only non-word chars precede a '!' or '$', strip them.
+            // Uses !\w so it catches ASCII punctuation/garbage too, but preserves real
+            // words before !/$  (e.g. "what does ! mean" is left intact).
             {
                 const fi = line.indexOf('!'), fd = line.indexOf('$');
                 const fc = fi === -1 ? fd : (fd === -1 ? fi : Math.min(fi, fd));
-                if (fc > 0 && /[^\x20-\x7e]/.test(line.slice(0, fc))) line = line.slice(fc);
+                if (fc > 0 && !/\w/.test(line.slice(0, fc))) line = line.slice(fc);
             }
 
             // Normalize "! cmd" / "!  cmd" → "!cmd" (autocorrect adds space(s) after !)

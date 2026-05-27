@@ -157,9 +157,11 @@ class TerminalActivity : AppCompatActivity() {
         // Refresh model name + avatar in case user changed provider in Settings
         val currentModelId = prefs.getModelId()
         if (lastKnownModelId.isNotEmpty() && lastKnownModelId != currentModelId) {
-            // Model changed while in Settings — kill any pending bridge process so the
-            // new session starts fresh and doesn't inherit the old request's busy state.
+            // Model changed while in Settings — kill any pending bridge process, clear
+            // the terminal display and replay buffer so old provider errors don't carry over.
             claudeService?.sendInput("!clear\r")
+            claudeService?.getSession(activeSessionId)?.clearOutput()
+            clearTerminal()
             sessionBusy[activeSessionId] = false
             cancelThinkingTimeout()
             runOnUiThread { hideStatus() }
