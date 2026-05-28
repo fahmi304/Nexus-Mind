@@ -1504,28 +1504,67 @@ function showBashCard(perm){
   meta.appendChild(statusEl);
   wrap.appendChild(meta);
 
-  // Buttons row — same protocol as showPermissionDialog
-  var btnRow = document.createElement('div');
-  btnRow.style.cssText = 'display:flex;gap:0;border-top:1px solid #2A2A30;';
-  var buttons = [
-    {label:'Block future', cmd:'!perm-deny',   color:'#F87171', bg:'rgba(248,113,113,0.08)'},
-    {label:'Dismiss',      cmd:'!perm-allow',  color:'#9090A0', bg:'transparent'},
-    {label:'Always allow', cmd:'!perm-always', color:'#3DD68C', bg:'rgba(61,214,140,0.08)'},
-  ];
-  buttons.forEach(function(b, i){
-    var btn = document.createElement('button');
-    btn.textContent = b.label;
-    var borderLeft = i > 0 ? 'border-left:1px solid #2A2A30;' : '';
-    btn.style.cssText = 'flex:1;background:'+b.bg+';border:none;'+borderLeft+'color:'+b.color+';font-size:12px;font-family:Space Mono,monospace;padding:10px 4px;cursor:pointer;letter-spacing:0.03em;';
+  // Buttons — two rows for T2 pattern-based Always Allow.
+  // Row 1: Block future / Dismiss
+  // Row 2 (only when we have a command): Allow exact / Allow prefix-glob
+  function truncLabel(s, n){ return s.length > n ? s.slice(0, n-1) + '…' : s; }
+  var trimmedCmd = cmd.trim();
+  var firstWord  = trimmedCmd.split(/\s+/)[0] || '';
+  var allowExactCmd  = trimmedCmd ? '!perm-always:Bash(' + trimmedCmd + ')'   : '!perm-always';
+  var allowPrefixCmd = firstWord  ? '!perm-always:Bash(' + firstWord + ' *)'  : '!perm-always';
+
+  function wireBtn(btn, cmdStr, container){
     btn.addEventListener('click', function(){
       wrap.style.opacity = '0.65';
-      // Don't disable pointer events — let user still see card if they tap dismiss
-      btnRow.style.pointerEvents = 'none';
-      if(typeof Android !== 'undefined') Android.sendInput('\r'+b.cmd+'\r');
+      if(container) container.style.pointerEvents = 'none';
+      if(typeof Android !== 'undefined') Android.sendInput('\r' + cmdStr + '\r');
     });
-    btnRow.appendChild(btn);
+  }
+  function mkBtn(label, cmdStr, color, bg, borderLeft, container){
+    var btn = document.createElement('button');
+    btn.textContent = label;
+    btn.style.cssText = 'flex:1;background:'+bg+';border:none;'+(borderLeft?'border-left:1px solid #2A2A30;':'')+'color:'+color+';font-size:12px;font-family:Space Mono,monospace;padding:10px 4px;cursor:pointer;letter-spacing:0.03em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    wireBtn(btn, cmdStr, container);
+    return btn;
+  }
+
+  var btnRow1 = document.createElement('div');
+  btnRow1.style.cssText = 'display:flex;gap:0;border-top:1px solid #2A2A30;';
+  btnRow1.appendChild(mkBtn('Block future', '!perm-deny',  '#F87171', 'rgba(248,113,113,0.08)', false, null));
+  btnRow1.appendChild(mkBtn('Dismiss',      '!perm-allow', '#9090A0', 'transparent',            true,  null));
+  // Disable both rows on any click — track via shared closure
+  var allRows = [];
+  function disableAllRows(){ allRows.forEach(function(r){ r.style.pointerEvents='none'; }); }
+  // Re-wire row1 with shared disable
+  btnRow1.querySelectorAll('button').forEach(function(b){
+    b.addEventListener('click', disableAllRows);
   });
-  wrap.appendChild(btnRow);
+  wrap.appendChild(btnRow1);
+  allRows.push(btnRow1);
+
+  if(trimmedCmd){
+    var btnRow2 = document.createElement('div');
+    btnRow2.style.cssText = 'display:flex;gap:0;border-top:1px solid #2A2A30;';
+    btnRow2.appendChild(mkBtn('Allow `'+truncLabel(trimmedCmd,22)+'`', allowExactCmd,  '#3DD68C', 'rgba(61,214,140,0.08)', false, null));
+    if(firstWord && firstWord !== trimmedCmd){
+      btnRow2.appendChild(mkBtn('Allow `'+firstWord+' *`',             allowPrefixCmd, '#3DD68C', 'rgba(61,214,140,0.12)', true,  null));
+    }
+    btnRow2.querySelectorAll('button').forEach(function(b){
+      b.addEventListener('click', disableAllRows);
+    });
+    wrap.appendChild(btnRow2);
+    allRows.push(btnRow2);
+  } else {
+    // Empty command (rare) — single tool-wide Always allow
+    var btnRow2 = document.createElement('div');
+    btnRow2.style.cssText = 'display:flex;gap:0;border-top:1px solid #2A2A30;';
+    btnRow2.appendChild(mkBtn('Always allow Bash', '!perm-always', '#3DD68C', 'rgba(61,214,140,0.08)', false, null));
+    btnRow2.querySelectorAll('button').forEach(function(b){
+      b.addEventListener('click', disableAllRows);
+    });
+    wrap.appendChild(btnRow2);
+    allRows.push(btnRow2);
+  }
 
   msgs.appendChild(wrap);
   scrollToBottom();

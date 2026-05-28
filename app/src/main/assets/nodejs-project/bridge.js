@@ -3066,6 +3066,29 @@ function openPrintSession() {
         } catch(_) {}
     }
 
+    // T2: simple glob (* only) → regex pattern match for Bash command auto-approve.
+    // Entries in approveList.allow may be bare tool names ('Bash') OR
+    // 'ToolName(pattern)' (e.g. 'Bash(git *)'). Pattern only supports '*' wildcard.
+    function patternMatchesCmd(pat, cmd) {
+        try {
+            const escaped = pat.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+            return new RegExp('^' + escaped + '$').test(cmd);
+        } catch(_) { return false; }
+    }
+    function isToolAlreadyAllowed(toolName, toolInput, allowList) {
+        if ((allowList || []).includes(toolName)) return true;
+        if (toolName === 'Bash') {
+            const cmd = ((toolInput && toolInput.command) || '').toString().trim();
+            if (cmd) {
+                for (const entry of (allowList || [])) {
+                    const m = /^Bash\((.*)\)$/.exec(entry);
+                    if (m && patternMatchesCmd(m[1], cmd)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
     // ── Patch settings.json ───────────────────────────────────────────────────
     function patchSettings(cfg) {
         if (cfg.mode !== 'subscription') {
@@ -3101,12 +3124,15 @@ function openPrintSession() {
                 if (!s.permissions.allow.includes(p)) s.permissions.allow.push(p);
             }
             // Inject per-tool always-allow and always-deny overrides saved by the user.
-            // allow entries are added as both bare name and ToolName(*) so v2.1.112 matches them.
+            // Bare names (e.g. 'Bash') get both 'Bash' and 'Bash(*)' so v2.1.112 matches them.
+            // Pattern entries (e.g. 'Bash(git *)') already self-describe — inject as-is, no suffix.
             const approveList = loadApproveList();
             for (const t of (approveList.allow || [])) {
                 if (!s.permissions.allow.includes(t)) s.permissions.allow.push(t);
-                const pat = t + '(*)';
-                if (!s.permissions.allow.includes(pat)) s.permissions.allow.push(pat);
+                if (!/[()]/.test(t)) {
+                    const pat = t + '(*)';
+                    if (!s.permissions.allow.includes(pat)) s.permissions.allow.push(pat);
+                }
             }
             for (const t of (approveList.deny || [])) {
                 if (!s.permissions.deny.includes(t)) s.permissions.deny.push(t);
@@ -3202,10 +3228,10 @@ function openPrintSession() {
             const permId = evt.id || (Date.now() + '-' + Math.random().toString(36).slice(2));
             // Always write y\n immediately — the tool runs regardless of whether dialog shows.
             try { if (proc && proc.stdin && !proc.stdin.destroyed) proc.stdin.write('y\n'); } catch(_) {}
-            // Skip the dialog entirely if the user has already said Always Allow for this tool.
+            // Skip the dialog entirely if the user has already said Always Allow for this tool
+            // (or a matching Bash pattern, e.g. saved 'Bash(git *)' covers a new 'git push').
             const savedApprove = loadApproveList();
-            const alreadyAllowed = (savedApprove.allow || []).includes(toolName);
-            if (alreadyAllowed) return;
+            if (isToolAlreadyAllowed(toolName, toolInput, savedApprove.allow)) return;
             const perm = { toolName, toolInput, id: permId, suggestions, autoApproved: true };
             state.pendingPerm = perm;
             const permB64 = Buffer.from(JSON.stringify(perm)).toString('base64');
@@ -3240,9 +3266,9 @@ function openPrintSession() {
         const toolMatch = line.match(/\b(?:run|execute|use|allow)\s+(\w[\w-]*)/i);
         const toolName  = toolMatch ? toolMatch[1] : 'tool';
         try { if (proc && proc.stdin && !proc.stdin.destroyed) proc.stdin.write('y\n'); } catch(_) {}
-        // Skip dialog if user already said Always Allow for this tool
+        // Skip dialog if user already said Always Allow for this tool (incl. Bash patterns)
         const savedApprove = loadApproveList();
-        if ((savedApprove.allow || []).includes(toolName)) return;
+        if (isToolAlreadyAllowed(toolName, { prompt: line }, savedApprove.allow)) return;
         const perm = { toolName, toolInput: { prompt: line }, id: Date.now() + '-txt', autoApproved: true };
         state.pendingPerm = perm;
         const permB64 = Buffer.from(JSON.stringify(perm)).toString('base64');
@@ -3564,8 +3590,16 @@ function openPrintSession() {
                 if (!perm) continue;
                 if (line.startsWith('!perm-always')) {
                     const list = loadApproveList();
-                    if (!list.allow.includes(perm.toolName)) {
-                        list.allow.push(perm.toolName);
+                    // T2: optional ':<pattern>' suffix saves a pattern entry like 'Bash(git *)'.
+                    // No suffix → legacy behavior: save the bare tool name.
+                    let entry = perm.toolName;
+                    const colonIdx = line.indexOf(':');
+                    if (colonIdx > -1) {
+                        const pat = line.slice(colonIdx + 1).trim();
+                        if (pat) entry = pat;
+                    }
+                    if (!list.allow.includes(entry)) {
+                        list.allow.push(entry);
                         saveApproveList(list);
                     }
                 } else if (line.startsWith('!perm-deny')) {
