@@ -2473,9 +2473,11 @@ async function startMcpStdioServer(entry) {
             _mcpTool: t.name
         }));
         log('[mcp-stdio:' + entry.name + '] ready, ' + srv.tools.length + ' tools\n');
+        mcpFailed.delete(entry.name); // MCP-4
     } catch(e) {
         log('[mcp-stdio:' + entry.name + '] start failed: ' + e.message + '\n');
         mcpStdioServers.delete(entry.name);
+        mcpFailed.set(entry.name, { type: 'stdio', error: e.message || String(e) }); // MCP-4
     }
 }
 
@@ -2521,15 +2523,20 @@ async function loadMcpStdioServers() {
 
 const MCP_HTTP_CONFIG = path.join(FILES_DIR, 'mcp_http.json');
 const mcpHttpServers  = new Map(); // name → { url, sessionId, tools }
+const mcpFailed       = new Map(); // MCP-4: name → { type: 'http'|'stdio', error: string }
 let mcpReadyInfo = null; // cached MCP status broadcast to sessions on attach
 
 function buildMcpPayload() {
     const servers = [];
     for (const [name, srv] of mcpHttpServers.entries()) {
-        servers.push({ name, type: 'http', tools: srv.tools.map(t => ({ name: t._mcpTool, description: (t.description || '').split(' [MCP:')[0] })) });
+        servers.push({ name, type: 'http', status: 'connected', tools: srv.tools.map(t => ({ name: t._mcpTool, description: (t.description || '').split(' [MCP:')[0] })) });
     }
     for (const [name, srv] of mcpStdioServers.entries()) {
-        servers.push({ name, type: 'stdio', tools: srv.tools.map(t => ({ name: t._mcpTool, description: (t.description || '').split(' [MCP:')[0] })) });
+        servers.push({ name, type: 'stdio', status: 'connected', tools: srv.tools.map(t => ({ name: t._mcpTool, description: (t.description || '').split(' [MCP:')[0] })) });
+    }
+    // MCP-4: include configured-but-failed servers so the chip can show N/M.
+    for (const [name, info] of mcpFailed.entries()) {
+        servers.push({ name, type: info.type, status: 'failed', error: info.error, tools: [] });
     }
     return servers;
 }
@@ -2636,8 +2643,10 @@ async function startMcpHttpServer(entry) {
         }));
         mcpHttpServers.set(entry.name, srv);
         log('[mcp-http:' + entry.name + '] ready, ' + srv.tools.length + ' tools\n');
+        mcpFailed.delete(entry.name); // MCP-4
     } catch(e) {
         log('[mcp-http:' + entry.name + '] start failed: ' + e.message + '\n');
+        mcpFailed.set(entry.name, { type: 'http', error: e.message || String(e) }); // MCP-4
     }
 }
 

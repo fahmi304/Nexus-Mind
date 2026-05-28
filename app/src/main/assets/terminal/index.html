@@ -542,6 +542,20 @@ html, body {
 }
 .mcp-server-hd { color:rgba(134,239,172,0.9); font-weight:bold; margin-top:4px; }
 .mcp-tool-row  { color:rgba(148,197,234,0.75); padding-left:8px; font-size:9px; line-height:1.7; }
+/* MCP-4 — failed-server styling inside popover */
+.mcp-server-hd.failed { color:rgba(248,113,113,0.95); }
+.mcp-fail-row { color:rgba(248,113,113,0.7); padding-left:8px; font-size:9px; line-height:1.7; }
+/* MCP-4 — chip color variants for partial/all-failed states */
+#mcp-chip.warn {
+  background: rgba(251,191,36,0.12);
+  border-color: rgba(251,191,36,0.4);
+  color: rgba(252,211,77,0.95);
+}
+#mcp-chip.fail {
+  background: rgba(248,113,113,0.12);
+  border-color: rgba(248,113,113,0.4);
+  color: rgba(252,165,165,0.95);
+}
 
 /* ── Mermaid diagrams ─────────────────────────────────────────────────────── */
 .md-mermaid {
@@ -1235,11 +1249,17 @@ function handleOSC(content){
   } else if(content.startsWith('9;mcp-ready:')){
     try{
       var mcpServers=JSON.parse(atob(content.slice(12)));
-      var mcpTotal=mcpServers.reduce(function(s,srv){return s+(srv.tools?srv.tools.length:0);},0);
+      // MCP-4: show "N/M" (connected / total configured). Color amber if any
+      // failed, red if all failed, green if all connected.
+      var mcpConnected=mcpServers.filter(function(s){return s.status!=='failed';}).length;
+      var mcpTotalSrv=mcpServers.length;
       var mcpChip=document.getElementById('mcp-chip');
       if(mcpChip){
-        mcpChip.textContent='MCP ● '+mcpTotal;
-        mcpChip.style.display=mcpTotal>0?'block':'none';
+        mcpChip.textContent='MCP ● '+mcpConnected+'/'+mcpTotalSrv;
+        mcpChip.style.display=mcpTotalSrv>0?'block':'none';
+        mcpChip.classList.remove('warn','fail');
+        if(mcpConnected===0&&mcpTotalSrv>0) mcpChip.classList.add('fail');
+        else if(mcpConnected<mcpTotalSrv)  mcpChip.classList.add('warn');
         mcpChip._mcpData=mcpServers;
       }
     }catch(_){}
@@ -2900,14 +2920,23 @@ document.getElementById('mcp-chip').addEventListener('click',function(){
   if(!pop) return;
   if(pop.style.display==='block'){pop.style.display='none';return;}
   var data=this._mcpData||[];
-  var html='<div style="font-size:9px;color:rgba(0,200,100,0.6);letter-spacing:1px;margin-bottom:6px;">CONNECTED MCP SERVERS</div>';
+  // MCP-4: header now reflects connected/total counts
+  var ok=data.filter(function(s){return s.status!=='failed';}).length;
+  var html='<div style="font-size:9px;color:rgba(0,200,100,0.6);letter-spacing:1px;margin-bottom:6px;">MCP SERVERS — '+ok+'/'+data.length+' CONNECTED</div>';
   if(!data.length){html+='<div style="color:rgba(200,200,200,0.4);">None</div>';}
   for(var i=0;i<data.length;i++){
     var srv=data[i];
-    var typeLabel=srv.type==='stdio'?'chat + agentic':'agentic only';
-    html+='<div class="mcp-server-hd">● '+srv.name
+    // MCP-1 made HTTP work in both modes via the stdio shim, so both types
+    // are "chat + agentic" now — the old "agentic only" label is stale.
+    var typeLabel=srv.type||'http';
+    var failed=srv.status==='failed';
+    var bullet=failed?'✗':'●';
+    html+='<div class="mcp-server-hd'+(failed?' failed':'')+'">'+bullet+' '+srv.name
       +' <span style="color:rgba(200,200,200,0.35);font-size:8px;">('+typeLabel+')</span></div>';
-    if(srv.tools&&srv.tools.length){
+    if(failed){
+      var err=(srv.error||'connection failed').toString().slice(0,160);
+      html+='<div class="mcp-fail-row">'+err.replace(/[<>&]/g,function(c){return c==='<'?'&lt;':c==='>'?'&gt;':'&amp;';})+'</div>';
+    } else if(srv.tools&&srv.tools.length){
       for(var j=0;j<srv.tools.length;j++){
         html+='<div class="mcp-tool-row">· '+srv.tools[j].name+'</div>';
       }
