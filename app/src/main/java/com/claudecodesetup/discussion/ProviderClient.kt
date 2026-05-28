@@ -116,7 +116,10 @@ object ProviderClient {
     private fun streamAnthropic(speaker: Speaker, messages: List<ChatMessage>): Flow<ChatChunk> = flow {
         val system = messages.filter { it.role == "system" }.joinToString("\n\n") { it.content }
         val convo = messages.filter { it.role != "system" }
-        val url = speaker.baseUrl.trimEnd('/') + "/messages"
+        // Anthropic baseUrl is just the host ("https://api.anthropic.com") with no
+        // /v1 suffix, unlike the OAI providers whose baseUrl already includes /v1.
+        // Without this, we'd POST to /messages and Anthropic returns 404.
+        val url = speaker.baseUrl.trimEnd('/') + "/v1/messages"
         val body = JSONObject().apply {
             put("model", speaker.model.modelId)
             put("stream", true)
