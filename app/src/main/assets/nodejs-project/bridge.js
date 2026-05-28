@@ -3421,6 +3421,7 @@ function openPrintSession() {
                     '  \x1b[33m!mcp-reload\x1b[0m         Apply Settings toggles without restarting the session\r\n' +
                     '  \x1b[33m!test-cli\x1b[0m           Run module-loader + proxy diagnostics\r\n' +
                     '  \x1b[33m!test-msg [text]\x1b[0m    Run exact runMessage path (patchSettings+stdin) — use to diagnose hangs\r\n' +
+                    '  \x1b[33m!test-agent\x1b[0m         Probe sub-agent dispatch via the Task tool (~/.claude/agents/)\r\n' +
                     '  \x1b[33m!debug\x1b[0m              Dump model/provider/settings/mcp state for remote debugging\r\n' +
                     '  \x1b[33m!help\x1b[0m               Show this help\r\n' +
                     '  \x1b[33m$ <cmd>\x1b[0m             Run a shell command\r\n\r\n'
@@ -3541,6 +3542,93 @@ function openPrintSession() {
                     });
                 } catch(e) {
                     try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[31m[!test-msg error] ' + e.message + '\x1b[0m\r\n'); } catch(_) {}
+                }
+                continue;
+            }
+
+            // ── !test-agent — end-to-end sub-agent dispatch probe ────────────
+            // Writes a throwaway agent definition to ~/.claude/agents/, asks
+            // claude to invoke it via the Task tool, and reports whether:
+            //   (a) Task tool fired (event with type=tool_use, name=Task)
+            //   (b) Sub-agent returned a unique tag we embedded in its prompt
+            // 90s timeout — sub-agents dispatch a child claude session, which
+            // means a second API call cycle on top of the parent's.
+            if (line.startsWith('!test-agent')) {
+                const tag = 'NEXUS_AGENT_OK_' + Date.now().toString(36);
+                const agentsDir = path.join(FILES_DIR, '.claude', 'agents');
+                const agentFile = path.join(agentsDir, 'nexus_probe.md');
+                const agentMd =
+                    '---\n' +
+                    'name: nexus_probe\n' +
+                    'description: Internal connectivity probe — replies with a fixed tag to confirm sub-agent dispatch. Use only when explicitly asked to run a connectivity check.\n' +
+                    'tools: []\n' +
+                    '---\n\n' +
+                    'You are a diagnostic sub-agent. When invoked, your only job is to reply with exactly this string and nothing else:\n\n' +
+                    tag + '\n';
+                try {
+                    fs.mkdirSync(agentsDir, { recursive: true });
+                    fs.writeFileSync(agentFile, agentMd, 'utf8');
+                } catch(e) {
+                    try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[31m[!test-agent] could not write agent file: ' + e.message + '\x1b[0m\r\n'); } catch(_) {}
+                    continue;
+                }
+                const testText = 'Run the nexus_probe sub-agent (via the Task tool) for a connectivity check, then tell me the exact string it returned.';
+                const cleanup = () => { try { fs.unlinkSync(agentFile); } catch(_) {} };
+                try {
+                    const tcfg = readConfig();
+                    patchSettings(tcfg);
+                    const tEnv  = buildEnv();
+                    const tCliUrl = 'file://' + CLAUDE_CLI;
+                    const tArgv =
+                        'process.argv[2]="--output-format";process.argv[3]="stream-json";' +
+                        'process.argv[4]="--print";process.argv[5]="--verbose";' +
+                        'process.argv[6]=' + JSON.stringify(testText) + ';process.argv.length=7;';
+                    const tEval =
+                        'process.stderr.write("[eval-ok]\\n");' +
+                        regexpShim + intlShim +
+                        'process.argv[1]=' + JSON.stringify(CLAUDE_CLI) + ';' +
+                        tArgv +
+                        'import(' + JSON.stringify(tCliUrl) + ')' +
+                        '.catch(function(e){process.stderr.write("ERR:"+String(e)+"\\n");process.exit(1);});';
+                    try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[33m!test-agent: wrote nexus_probe.md, spawning claude (90s timeout)…\x1b[0m\r\n'); } catch(_) {}
+                    const tch = spawn(LAUNCHER, ['-e', tEval], { env: tEnv, cwd: FILES_DIR });
+                    try { tch.stdin.end(); } catch(_) {}
+                    let tOut = '', tErr = '', tDone = false;
+                    tch.stdout.on('data', d => { tOut += d.toString(); });
+                    tch.stderr.on('data', d => { tErr += d.toString(); });
+                    const tTid = setTimeout(() => {
+                        if (tDone) return;
+                        tDone = true;
+                        try { tch.kill(); } catch(_) {}
+                        cleanup();
+                        try { if (state.socket) state.socket.write(SYS_FENCE +
+                            '\x1b[31m✗ !test-agent: TIMEOUT 90s\x1b[0m\r\n' +
+                            '\x1b[2mstdout (first 400): ' + tOut.slice(0, 400) + '\x1b[0m\r\n' +
+                            '\x1b[2mstderr (first 200): ' + tErr.slice(0, 200) + '\x1b[0m\r\n'); } catch(_) {}
+                    }, 90000);
+                    tch.on('close', code => {
+                        if (tDone) return;
+                        tDone = true;
+                        clearTimeout(tTid);
+                        cleanup();
+                        // Probe markers: did Task fire? did the unique tag come back?
+                        const taskFired = /"type"\s*:\s*"tool_use"[^}]*"name"\s*:\s*"Task"/.test(tOut);
+                        const tagSeen   = tOut.includes(tag);
+                        const gotResult = tOut.includes('"type":"result"');
+                        const mark = (taskFired && tagSeen) ? '\x1b[32m✓' : (taskFired ? '\x1b[33m~' : '\x1b[31m✗');
+                        let report = mark + ' !test-agent exit=' + code + '\x1b[0m\r\n';
+                        report += '  Task tool fired:    ' + (taskFired ? '\x1b[32myes\x1b[0m' : '\x1b[31mno\x1b[0m') + '\r\n';
+                        report += '  Sub-agent tag seen: ' + (tagSeen   ? '\x1b[32myes (' + tag + ')\x1b[0m' : '\x1b[31mno\x1b[0m') + '\r\n';
+                        report += '  Got final result:   ' + (gotResult ? '\x1b[32myes\x1b[0m' : '\x1b[31mno\x1b[0m') + '\r\n';
+                        if (!taskFired || !tagSeen) {
+                            report += '\x1b[2mstdout (last 400): ' + tOut.slice(-400) + '\x1b[0m\r\n';
+                            if (tErr) report += '\x1b[2mstderr (first 200): ' + tErr.slice(0, 200) + '\x1b[0m\r\n';
+                        }
+                        try { if (state.socket) state.socket.write(SYS_FENCE + report); } catch(_) {}
+                    });
+                } catch(e) {
+                    cleanup();
+                    try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[31m[!test-agent error] ' + e.message + '\x1b[0m\r\n'); } catch(_) {}
                 }
                 continue;
             }
