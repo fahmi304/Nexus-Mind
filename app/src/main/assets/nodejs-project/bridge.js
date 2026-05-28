@@ -43,9 +43,7 @@ const SETUP_DONE    = path.join(FILES_DIR, 'setup_done');
 const SETUP_FAILED  = path.join(FILES_DIR, 'setup_failed');
 const SESSION_FILE  = path.join(FILES_DIR, 'last_session.json');
 const SESSIONS_DIR  = path.join(FILES_DIR, 'sessions');
-const AGENTIC_FILE  = path.join(FILES_DIR, 'agentic_state');
 const CWD_FILE      = path.join(FILES_DIR, 'last_cwd');
-const UNDO_DIR      = path.join(FILES_DIR, '.undo');
 const BIN_DIR       = path.join(FILES_DIR, 'bin');
 const CONFIRM_FILE  = path.join(FILES_DIR, 'auto_approve.json');
 
@@ -241,249 +239,12 @@ function log(msg) {
     process.stdout.write(line);
 }
 
-// ─── Agentic mode ─────────────────────────────────────────────────────────────
-// When enabled, user messages go through a direct tool-calling loop instead of
-// claude --print. Tools: bash, read_file, write_file, list_dir.
 
-let agenticEnabled = (() => { try { return fs.existsSync(AGENTIC_FILE); } catch (_) { return false; } })();
-
-// ─── Install confirmation ──────────────────────────────────────────────────────
-// When the agentic AI tries to run an install command, we pause and ask the user.
-// "Yes, don't ask again" saves the package-manager key to disk.
-function loadAutoApprove() {
-    try {
-        const data = JSON.parse(fs.readFileSync(CONFIRM_FILE, 'utf8'));
-        if (Array.isArray(data)) return new Set(data);
-        if (Array.isArray(data.allow)) return new Set(data.allow);
-    } catch(_) {}
-    return new Set();
-}
-let autoApprove = loadAutoApprove();
-const pendingConfirms = new Map(); // confirmId -> resolve fn
-let confirmIdSeq = 0;
-
-function saveAutoApprove() {
-    try {
-        let existing = { allow: [], deny: [] };
-        try { const d = JSON.parse(fs.readFileSync(CONFIRM_FILE, 'utf8')); if (d && Array.isArray(d.allow)) existing = d; } catch(_) {}
-        existing.allow = [...autoApprove];
-        fs.writeFileSync(CONFIRM_FILE, JSON.stringify(existing, null, 2));
-        try { fs.chmodSync(CONFIRM_FILE, 0o600); } catch(_) {}
-    } catch(_) {}
-}
-
-// Regex: package-manager install commands that should prompt for confirmation
-const INSTALL_CMD_RE = /\b(apt(-get)?|pip[23]?|gem|cargo|brew)\s+install\b|\bnpm\s+(install|i)\s+(--global|-g)\b/i;
-
-function installKeyFromCmd(cmd) {
-    const m = cmd.match(/\b(apt(-get)?|pip[23]?|gem|cargo|brew|npm)\b/i);
-    return m ? m[1].toLowerCase().replace('apt-get', 'apt') : 'install';
-}
-
-function waitForConfirm(socket, id, description) {
-    return new Promise(resolve => {
-        pendingConfirms.set(id, resolve);
-        try { socket.write('\x1b]9;confirm:' + id + ':' + description + '\x07'); } catch(_) {
-            pendingConfirms.delete(id);
-            resolve('yes');
-        }
-        // Auto-cancel after 2 minutes if user doesn't respond
-        setTimeout(() => {
-            if (pendingConfirms.has(id)) { pendingConfirms.delete(id); resolve('no'); }
-        }, 120000);
-    });
-}
-
-const AGENTIC_TOOLS = [
-    {
-        name: 'bash',
-        description: 'Run a shell command on the Android device. Use for file ops, git, npm, etc.',
-        input_schema: {
-            type: 'object',
-            properties: {
-                command: { type: 'string', description: 'Shell command to execute' },
-                cwd: { type: 'string', description: 'Working directory (optional)' }
-            },
-            required: ['command']
-        }
-    },
-    {
-        name: 'read_file',
-        description: 'Read the contents of a file on the device',
-        input_schema: {
-            type: 'object',
-            properties: { path: { type: 'string', description: 'File path (absolute or relative to cwd)' } },
-            required: ['path']
-        }
-    },
-    {
-        name: 'write_file',
-        description: 'Write content to a file (creates or overwrites)',
-        input_schema: {
-            type: 'object',
-            properties: {
-                path: { type: 'string', description: 'File path' },
-                content: { type: 'string', description: 'Content to write' }
-            },
-            required: ['path', 'content']
-        }
-    },
-    {
-        name: 'list_dir',
-        description: 'List files and folders in a directory',
-        input_schema: {
-            type: 'object',
-            properties: { path: { type: 'string', description: 'Directory path' } },
-            required: ['path']
-        }
-    },
-    {
-        name: 'web_search',
-        description: 'Search the web and return results. Use for current events, facts, documentation, prices, etc.',
-        input_schema: {
-            type: 'object',
-            properties: {
-                query: { type: 'string', description: 'Search query' },
-                max_results: { type: 'number', description: 'Max results to return (default 5)' }
-            },
-            required: ['query']
-        }
-    },
-    {
-        name: 'device_control',
-        description: 'Control the Android device: read screen content, tap, type text, open apps, take screenshot.',
-        input_schema: {
-            type: 'object',
-            properties: {
-                action: {
-                    type: 'string',
-                    enum: ['read_screen', 'tap', 'type_text', 'open_app', 'screenshot'],
-                    description: 'Action to perform'
-                },
-                x: { type: 'number', description: 'X coordinate for tap' },
-                y: { type: 'number', description: 'Y coordinate for tap' },
-                text: { type: 'string', description: 'Text to type' },
-                package: { type: 'string', description: 'App package name to open (e.g. com.discord)' }
-            },
-            required: ['action']
-        }
-    }
-];
-
-// executeTool returns { content, isError, newCwd }
-// newCwd is set when the bash command changes the working directory.
-async function executeTool(name, input, cwd, socket) {
-    const env = buildEnv();
-
-    if (name === 'bash') {
-        const cmd = input.command || '';
-
-        // Confirm with user before running install commands
-        if (socket && INSTALL_CMD_RE.test(cmd)) {
-            const key = installKeyFromCmd(cmd);
-            if (!autoApprove.has(key)) {
-                const confirmId = 'c' + (++confirmIdSeq);
-                const choice = await waitForConfirm(socket, confirmId, cmd.slice(0, 120));
-                if (choice === 'always') {
-                    autoApprove.add(key);
-                    saveAutoApprove();
-                } else if (choice === 'no') {
-                    return { content: 'Installation cancelled by user.', isError: false, newCwd: cwd };
-                }
-                // 'yes' or 'always' → fall through and execute
-            }
-        }
-
-        return new Promise(resolve => {
-            const workDir = input.cwd ? path.resolve(cwd, input.cwd) : cwd;
-            let out = '', err = '';
-            let child;
-            const wrappedCmd = cmd + '\n__exit=$?\npwd\nexit $__exit';
-            try { child = spawn('/system/bin/sh', ['-c', wrappedCmd], { env, cwd: workDir }); }
-            catch(e) { resolve({ content: 'spawn error: ' + e.message, isError: true, newCwd: cwd }); return; }
-            const tid = setTimeout(() => {
-                try { child.kill(); } catch(_) {}
-                resolve({ content: (out + err).trim() + '\n[timeout 30s]', isError: true, newCwd: cwd });
-            }, 30000);
-            child.stdout.on('data', d => { out += d.toString(); });
-            child.stderr.on('data', d => { err += d.toString(); });
-            child.on('close', code => {
-                clearTimeout(tid);
-                const lines = out.trimEnd().split('\n');
-                let newCwd = cwd;
-                const lastLine = lines[lines.length - 1] || '';
-                if (lastLine.startsWith('/') && fs.existsSync(lastLine.trim())) {
-                    newCwd = lastLine.trim();
-                    out = lines.slice(0, -1).join('\n');
-                }
-                const combined = (out + (err ? '\nstderr:\n' + err : '')).trim();
-                resolve({ content: combined || '[exit ' + code + ']', isError: code !== 0, newCwd });
-            });
-        });
-
-    } else if (name === 'read_file') {
-        try {
-            const fp = path.resolve(cwd, input.path);
-            const content = fs.readFileSync(fp, 'utf8');
-            return { content: content.slice(0, 50000), isError: false, newCwd: cwd };
-        } catch(e) { return { content: 'Error: ' + e.message, isError: true, newCwd: cwd }; }
-
-    } else if (name === 'write_file') {
-        try {
-            const fp = path.resolve(cwd, input.path);
-            let diffText = null;
-            if (fs.existsSync(fp)) {
-                try {
-                    const oldContent = fs.readFileSync(fp, 'utf8');
-                    diffText = lineDiff(oldContent, input.content);
-                    fs.mkdirSync(UNDO_DIR, { recursive: true });
-                    const safeName = path.basename(fp).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80);
-                    const snap = path.join(UNDO_DIR, Date.now() + '_' + safeName);
-                    fs.copyFileSync(fp, snap);
-                    const snaps = fs.readdirSync(UNDO_DIR).sort();
-                    if (snaps.length > 20) {
-                        for (const old of snaps.slice(0, snaps.length - 20)) {
-                            try { fs.unlinkSync(path.join(UNDO_DIR, old)); } catch(_) {}
-                        }
-                    }
-                } catch(_) {}
-            }
-            fs.mkdirSync(path.dirname(fp), { recursive: true });
-            fs.writeFileSync(fp, input.content, 'utf8');
-            return { content: 'Wrote ' + fp, isError: false, newCwd: cwd, diff: diffText };
-        } catch(e) { return { content: 'Error: ' + e.message, isError: true, newCwd: cwd }; }
-
-    } else if (name === 'list_dir') {
-        try {
-            const dp = path.resolve(cwd, input.path);
-            const entries = fs.readdirSync(dp, { withFileTypes: true });
-            const lines = entries.map(e => (e.isDirectory() ? 'd ' : 'f ') + e.name).join('\n');
-            return { content: lines || '(empty)', isError: false, newCwd: cwd };
-        } catch(e) { return { content: 'Error: ' + e.message, isError: true, newCwd: cwd }; }
-
-    } else if (name === 'web_search') {
-        return webSearch(input.query || '', input.max_results || 5, cwd);
-
-    } else if (name === 'device_control') {
-        return deviceControlTool(input, cwd);
-
-    } else if (name.startsWith('mcp_')) {
-        try {
-            // Try stdio first, then HTTP
-            const stdioResult = await callMcpStdioTool(name, input);
-            if (!stdioResult.startsWith('MCP tool not found:')) {
-                return { content: stdioResult || '(no output)', isError: false, newCwd: cwd };
-            }
-            const httpResult = await callMcpHttpTool(name, input);
-            return { content: httpResult || '(no output)', isError: false, newCwd: cwd };
-        } catch(e) { return { content: 'MCP error: ' + e.message, isError: true, newCwd: cwd }; }
-
-    } else {
-        return { content: 'Unknown tool: ' + name, isError: true, newCwd: cwd };
-    }
-}
-
-// ─── Web Search via DuckDuckGo ────────────────────────────────────────────────
+// ─── Web search helper ───────────────────────────────────────────────────────
+// Used by the OpenAI→Anthropic proxy's WebSearch interception: when claude-code
+// emits a tool_call for WebSearch / web_search, the proxy runs a local
+// DuckDuckGo lookup and injects the result instead of forwarding the tool_use.
+// Returns { content, isError, newCwd }.
 function webSearch(query, maxResults, cwd) {
     return new Promise(resolve => {
         if (!query) {
@@ -491,7 +252,6 @@ function webSearch(query, maxResults, cwd) {
             return;
         }
         const encoded = encodeURIComponent(query);
-        // DuckDuckGo Instant Answer API — no API key required
         const req = https.get(
             'https://api.duckduckgo.com/?q=' + encoded + '&format=json&no_redirect=1&no_html=1&skip_disambig=1',
             { headers: { 'User-Agent': 'ClaudeCodeSetup/1.0 (Android)' } },
@@ -510,15 +270,9 @@ function webSearch(query, maxResults, cwd) {
                             .slice(0, maxResults)
                             .map(t => '• ' + t.Text + (t.FirstURL ? '\n  ' + t.FirstURL : ''));
                         if (topics.length) parts.push('Related:\n' + topics.join('\n'));
-                        if (!parts.length) {
-                            // Fall back to DuckDuckGo HTML search scraping
-                            fetchDdgHtml(query, maxResults, cwd, resolve);
-                            return;
-                        }
+                        if (!parts.length) { fetchDdgHtml(query, maxResults, cwd, resolve); return; }
                         resolve({ content: parts.join('\n\n'), isError: false, newCwd: cwd });
-                    } catch(_) {
-                        fetchDdgHtml(query, maxResults, cwd, resolve);
-                    }
+                    } catch(_) { fetchDdgHtml(query, maxResults, cwd, resolve); }
                 });
                 res.on('error', () => fetchDdgHtml(query, maxResults, cwd, resolve));
             }
@@ -538,9 +292,8 @@ function fetchDdgHtml(query, maxResults, cwd, resolve) {
             res.setEncoding('utf8');
             res.on('data', c => { if (body.length < 200000) body += c; });
             res.on('end', () => {
-                // Extract result snippets from HTML using simple regex
                 const results = [];
-                const titleRe  = /<a[^>]+class="result__a"[^>]*>([^<]+)<\/a>/g;
+                const titleRe   = /<a[^>]+class="result__a"[^>]*>([^<]+)<\/a>/g;
                 const snippetRe = /<a[^>]+class="result__snippet"[^>]*>([^<]+)<\/a>/g;
                 const urlRe     = /<a[^>]+class="result__url"[^>]*>([^<]+)<\/a>/g;
                 let tm, sm, um;
@@ -553,297 +306,14 @@ function fetchDdgHtml(query, maxResults, cwd, resolve) {
                         (urls[i] ? '\n' + urls[i] : '') +
                         (snippets[i] ? '\n' + snippets[i] : ''));
                 }
-                if (!results.length) {
-                    resolve({ content: 'No results found for: ' + query, isError: false, newCwd: cwd });
-                } else {
-                    resolve({ content: 'Search results for "' + query + '":\n\n' + results.join('\n\n'), isError: false, newCwd: cwd });
-                }
+                if (!results.length) resolve({ content: 'No results found for: ' + query, isError: false, newCwd: cwd });
+                else resolve({ content: 'Search results for "' + query + '":\n\n' + results.join('\n\n'), isError: false, newCwd: cwd });
             });
             res.on('error', e => resolve({ content: 'Search failed: ' + e.message, isError: true, newCwd: cwd }));
         }
     );
     req.on('error', e => resolve({ content: 'Search failed: ' + e.message, isError: true, newCwd: cwd }));
     req.setTimeout(12000, () => { req.destroy(); resolve({ content: 'Search timed out', isError: true, newCwd: cwd }); });
-}
-
-// ─── Device Control via HTTP (port 8081) ─────────────────────────────────────
-function deviceControlTool(input, cwd) {
-    return new Promise(resolve => {
-        const body = JSON.stringify(input);
-        let localToken = '';
-        try { localToken = fs.readFileSync(path.join(FILES_DIR, 'local_token'), 'utf8').trim().slice(0, 200); } catch(_) {}
-        const req = http.request({
-            hostname: HOST, port: DEVICE_CONTROL_PORT,
-            path: '/device', method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(body),
-                'x-local-token': localToken
-            }
-        }, res => {
-            let data = '';
-            res.on('data', d => { data += d; });
-            res.on('end', () => {
-                try {
-                    const r = JSON.parse(data);
-                    resolve({ content: String(r.result || ''), isError: !!r.error, newCwd: cwd });
-                } catch(_) {
-                    resolve({ content: data || '(empty response)', isError: false, newCwd: cwd });
-                }
-            });
-        });
-        req.on('error', e => {
-            resolve({
-                content: 'Device Control not available: ' + e.message +
-                    '\nTo enable: Android Settings → Accessibility → Claude Screen & Device Control → ON',
-                isError: true, newCwd: cwd
-            });
-        });
-        req.setTimeout(15000, () => {
-            req.destroy();
-            resolve({ content: 'Device control request timed out', isError: true, newCwd: cwd });
-        });
-        req.write(body);
-        req.end();
-    });
-}
-
-// Streaming proxy call — writes text_delta chunks to socket as they arrive.
-// Resolves with { content, stop_reason } in Anthropic format after stream ends.
-function callProxyStreaming(socket, messages, tools, onThinkingDone) {
-    return new Promise((resolve, reject) => {
-        const cfg  = readConfig();
-        const customPrompt = (cfg.customSystemPrompt || '').trim();
-        const systemPrompt = customPrompt
-            ? AGENTIC_SYSTEM_PROMPT + '\n\n[Custom Instructions]\n' + customPrompt
-            : AGENTIC_SYSTEM_PROMPT;
-        const body = JSON.stringify({
-            model: cfg.modelId || 'claude-3-5-sonnet-20241022',
-            max_tokens: 4096,
-            messages,
-            tools,
-            system: systemPrompt,
-            stream: true
-        });
-        const isSubscription = cfg.mode === 'subscription';
-        const apiKey = isSubscription ? (cfg.apiKey || '') : 'sk-ant-proxy000';
-        // Subscription: call Anthropic directly (providerUrl is empty in subscription config).
-        // Proxy mode: route through local proxy which converts Anthropic → OAI format.
-        const reqHost    = isSubscription ? 'api.anthropic.com' : HOST;
-        const reqPort    = isSubscription ? 443 : PROXY_PORT;
-        const reqLib     = isSubscription ? https : http;
-        const reqPath    = '/v1/messages';
-        let localToken = '';
-        try { localToken = fs.readFileSync(path.join(FILES_DIR, 'local_token'), 'utf8').trim().slice(0, 200); } catch(_) {}
-        const reqHeaders = isSubscription
-            ? { 'Content-Type': 'application/json', 'x-api-key': apiKey,
-                'anthropic-version': '2023-06-01', 'Content-Length': Buffer.byteLength(body) }
-            : { 'Content-Type': 'application/json', 'x-api-key': apiKey,
-                'anthropic-version': '2023-06-01', 'Content-Length': Buffer.byteLength(body),
-                'x-local-token': localToken };
-        // M21: hoisted at Promise scope so req.on('error'/'close') can clear it too
-        let idleTimer = null;
-        const req = reqLib.request({
-            hostname: reqHost, port: reqPort,
-            path: reqPath, method: 'POST',
-            headers: reqHeaders
-        }, res => {
-            let buf = '';
-            const textBlocks = {}, toolBlocks = {};
-            let stopReason = 'end_turn';
-            let thinkingSignalled = false;
-
-            function resetIdleTimer() {
-                clearTimeout(idleTimer);
-                idleTimer = setTimeout(() => { req.destroy(new Error('stream idle timeout')); }, 30000);
-            }
-            // Start the idle timer as soon as the response headers arrive
-            resetIdleTimer();
-
-            res.on('data', chunk => {
-                resetIdleTimer();
-                buf += chunk.toString();
-                const lines = buf.split('\n');
-                buf = lines.pop();
-                for (const line of lines) {
-                    if (!line.startsWith('data: ')) continue;
-                    const raw = line.slice(6).trim();
-                    if (raw === '[DONE]') continue;
-                    let evt; try { evt = JSON.parse(raw); } catch(_) { continue; }
-
-                    if (evt.type === 'content_block_start') {
-                        const cb = evt.content_block;
-                        if (cb.type === 'text')     textBlocks[evt.index] = '';
-                        if (cb.type === 'tool_use') toolBlocks[evt.index] = { id: cb.id, name: cb.name, input_json: '' };
-                    } else if (evt.type === 'content_block_delta') {
-                        const d = evt.delta;
-                        if (d.type === 'text_delta' && d.text) {
-                            textBlocks[evt.index] = (textBlocks[evt.index] || '') + d.text;
-                            if (!thinkingSignalled) {
-                                thinkingSignalled = true;
-                                if (onThinkingDone) onThinkingDone();
-                            }
-                            try { socket.write(d.text); } catch(_) {}
-                        } else if (d.type === 'input_json_delta' && toolBlocks[evt.index]) {
-                            toolBlocks[evt.index].input_json += d.partial_json || '';
-                        }
-                    } else if (evt.type === 'message_delta' && evt.delta.stop_reason) {
-                        stopReason = evt.delta.stop_reason;
-                    }
-                }
-            });
-
-            res.on('end', () => {
-                clearTimeout(idleTimer);
-                // Rebuild content array in block-index order
-                const content = [];
-                const allIdx = new Set([...Object.keys(textBlocks), ...Object.keys(toolBlocks)].map(Number));
-                for (const idx of Array.from(allIdx).sort((a, b) => a - b)) {
-                    if (textBlocks[idx] !== undefined) content.push({ type: 'text', text: textBlocks[idx] });
-                    if (toolBlocks[idx]) {
-                        let input = {};
-                        try { input = JSON.parse(toolBlocks[idx].input_json || '{}'); } catch(_) {}
-                        content.push({ type: 'tool_use', id: toolBlocks[idx].id, name: toolBlocks[idx].name, input });
-                    }
-                }
-                resolve({ content, stop_reason: stopReason });
-            });
-            res.on('error', e => { clearTimeout(idleTimer); reject(e); });
-        });
-
-        const tid = setTimeout(() => { req.destroy(); reject(new Error('Proxy stream timeout')); }, 120000);
-        req.on('error', e => { clearTimeout(tid); clearTimeout(idleTimer); reject(e); });
-        req.on('close', () => { clearTimeout(tid); clearTimeout(idleTimer); });
-        req.write(body); req.end();
-    });
-}
-
-
-const AGENTIC_SYSTEM_PROMPT =
-    'You are an AI assistant running directly on an Android device via Claude Code Setup. ' +
-    'You have the following tools available — use them proactively to complete tasks:\n' +
-    '• bash(command, cwd?) — run any shell command (git, npm, node, cat, ls, curl, etc.)\n' +
-    '• read_file(path) — read a file\'s contents\n' +
-    '• write_file(path, content) — create or overwrite a file\n' +
-    '• list_dir(path) — list directory contents\n\n' +
-    'Working directory: /data/data/com.claudecodesetup/files\n' +
-    'git is available via isomorphic-git if !install-git has been run.\n\n' +
-    '## IMPORTANT — How to handle requests\n\n' +
-    '**Before starting any non-trivial task:**\n' +
-    '1. If the request is ambiguous or has important unknowns (language, framework, target platform, ' +
-    'existing setup), ask 1–3 focused clarifying questions FIRST. Do not assume and proceed blindly.\n' +
-    '2. Use bash to check whether required tools/packages are installed before trying to use them ' +
-    '(e.g. `which node`, `which git`, `node -v`, `npm list <pkg>`, `ls /path/to/tool`). ' +
-    'If a tool is missing, tell the user what is missing and ask if they want you to install it.\n' +
-    '3. For build/project tasks: confirm the language and framework before generating files.\n\n' +
-    '**Examples of questions to ask:**\n' +
-    '- "What language/framework would you like? (e.g. Node.js, Python, Kotlin)"\n' +
-    '- "Do you have X installed? I can check with `which X` or install it for you."\n' +
-    '- "Should I create this in your current project folder or a new subfolder?"\n' +
-    '- "Do you want me to initialize a git repo for this project?"\n\n' +
-    'When editing code, read the file first, make targeted changes, then write it back. ' +
-    'Always use tools to do real work rather than just describing steps.';
-
-// runAgentic — streaming agentic loop. Returns final assistant text for history.
-// Also returns updated shellCwd (may change if AI ran cd commands).
-async function runAgentic(socket, userMessage, history, shellCwd, pendingImage) {
-    const MAX_TURNS = 12;
-    const messages = history.map(h => ({ role: h.role, content: h.content }));
-    // If image is attached, build a multimodal user message
-    if (pendingImage) {
-        const userContent = [
-            { type: 'image', source: { type: 'base64', media_type: pendingImage.mime, data: pendingImage.b64 } },
-            { type: 'text', text: userMessage || 'What do you see in this image?' }
-        ];
-        messages.push({ role: 'user', content: userContent });
-    } else {
-        messages.push({ role: 'user', content: userMessage });
-    }
-
-    try { socket.write('\x1b]9;thinking-start\x07'); } catch(_) {}
-    let thinkingDone = false;
-    const signalThinkingDone = () => {
-        if (!thinkingDone) {
-            thinkingDone = true;
-            try { socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
-        }
-    };
-
-    let assistantText = '';
-    let currentCwd = shellCwd;
-
-    try {
-        const allTools = [...AGENTIC_TOOLS, ...getMcpStdioTools(), ...getMcpHttpTools()];
-        for (let turn = 0; turn < MAX_TURNS; turn++) {
-            const resp = await callProxyStreaming(socket, messages, allTools, signalThinkingDone);
-            if (!resp || !resp.content) throw new Error('Empty response from proxy');
-
-            // Collect this turn's text separately so we can inspect it for questions
-            let turnText = '';
-            for (const b of resp.content) {
-                if (b.type === 'text') { turnText += b.text; assistantText += b.text; }
-            }
-
-            messages.push({ role: 'assistant', content: resp.content });
-
-            // If Claude ended with a question or is asking for confirmation, stop the
-            // tool loop so the user can answer before the AI proceeds further.
-            const trimmed = turnText.trim();
-            const isAskingQuestion =
-                /[?？]\s*$/.test(trimmed) ||
-                /\b(would you (like|prefer|want)|do you (want|have|need|already)|should i (proceed|install|create|use|go ahead)|what (language|framework|tech|stack|do you|would you|type of)|which (one|option|do you|would you|framework|language)|please (confirm|let me know|clarify)|before i (proceed|start|continue|go ahead)|can you (confirm|clarify|share|tell me|let me know)|are you (using|sure|ok with)|have you (installed|set up|already)|shall i|want me to)\b/i.test(trimmed);
-
-            if (isAskingQuestion) {
-                log('[agentic] pausing loop — Claude asked a question\n');
-                break;
-            }
-
-            if (resp.stop_reason === 'end_turn' || resp.stop_reason === 'stop_sequence') break;
-
-            const toolUses = resp.content.filter(b => b.type === 'tool_use');
-            if (!toolUses.length) break;
-
-            // Tools run after streaming — show indicator and execute
-            signalThinkingDone();
-            const toolResults = [];
-            for (const tu of toolUses) {
-                try { socket.write('\r\n\x1b[36m▶ ' + tu.name + '  ' + JSON.stringify(tu.input) + '\x1b[0m\r\n'); } catch(_) {}
-                const result = await executeTool(tu.name, tu.input, currentCwd, socket);
-                // Update cwd if bash command changed directory
-                if (result.newCwd && result.newCwd !== currentCwd) {
-                    currentCwd = result.newCwd;
-                    try { socket.write('\x1b[2mcwd: ' + currentCwd + '\x1b[0m\r\n'); } catch(_) {}
-                }
-                const preview = result.content.slice(0, 2000);
-                try { socket.write('\x1b[2m' + preview + (result.content.length > 2000 ? '\n…(truncated)' : '') + '\x1b[0m\r\n'); } catch(_) {}
-                // Show code diff for file writes
-                if (result.diff && result.diff.trim()) {
-                    const diffDisplay = result.diff.split('\n').map(l =>
-                        l.startsWith('+') ? '\x1b[32m' + l + '\x1b[0m' :
-                        l.startsWith('-') ? '\x1b[31m' + l + '\x1b[0m' : l
-                    ).join('\r\n');
-                    try { socket.write('\x1b[2m── diff ──\x1b[0m\r\n' + diffDisplay + '\r\n\x1b[2m──────────\x1b[0m\r\n'); } catch(_) {}
-                }
-                log('[agentic] tool=' + tu.name + ' cwd=' + currentCwd + ' isError=' + result.isError + '\n');
-                toolResults.push({
-                    type: 'tool_result', tool_use_id: tu.id,
-                    content: result.content.slice(0, 8000),
-                    is_error: result.isError
-                });
-            }
-            messages.push({ role: 'user', content: toolResults });
-            // Show thinking again between tool rounds
-            try { socket.write('\x1b]9;thinking-start\x07'); } catch(_) {}
-            thinkingDone = false;
-        }
-    } catch(e) {
-        signalThinkingDone();
-        log('[agentic] error: ' + e.message + '\n');
-        try { socket.write('\r\n\x1b[31m[agentic error] ' + e.message + '\x1b[0m\r\n'); } catch(_) {}
-    }
-
-    signalThinkingDone();
-    return { text: assistantText, cwd: currentCwd };
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -3821,19 +3291,6 @@ function openPrintSession() {
                 line = (sp === -1 ? line : line.slice(0, sp)).toLowerCase() + (sp === -1 ? '' : line.slice(sp));
             }
 
-            // ── Confirm responses (agentic install confirmation) ──────────────────
-            if (line.startsWith('!confirm:')) {
-                const parts = line.slice(9).split(':');
-                const confirmId = parts[0];
-                const choice = parts.slice(1).join(':');
-                const resolve = pendingConfirms.get(confirmId);
-                if (resolve) {
-                    pendingConfirms.delete(confirmId);
-                    resolve(choice);
-                }
-                continue;
-            }
-
             // ── Permission responses — bypass busy guard ──────────────────────────
             // Tool already ran (auto-approved on detection to beat claude-code's 3s
             // stdin timeout). These buttons configure FUTURE spawns only.
@@ -3880,7 +3337,6 @@ function openPrintSession() {
                 state.contextBlock  = '';
                 state.pendingAttach = null;
                 state.sessionTokens = 0;
-                state.agHistory     = [];
                 state.pendingPerm   = null;
                 clearSessionState(state.sid);
                 clearClaudeSessionFiles();
@@ -3902,9 +3358,6 @@ function openPrintSession() {
                     '  \x1b[33m!attach <file>\x1b[0m      Attach file to next message\r\n' +
                     '  \x1b[33m!install [pkg]\x1b[0m      Install binary/npm (no arg = list available)\r\n' +
                     '  \x1b[33m!pty <cmd>\x1b[0m          Run interactive program (bash, python3…)\r\n' +
-                    '  \x1b[33m!agentic [on|off]\x1b[0m   Toggle direct agentic loop\r\n' +
-                    '  \x1b[33m!undo\x1b[0m               Restore last file written by agentic\r\n' +
-                    '  \x1b[33m!undo list\x1b[0m          Show undo snapshot history\r\n' +
                     '  \x1b[33m!log [n|all]\x1b[0m         Show last n lines of bridge log (default 100); !log all = full log\r\n' +
                     '  \x1b[33m!mcp\x1b[0m                List connected (and failed) MCP servers and tools\r\n' +
                     '  \x1b[33m!mcp-log [name|all]\x1b[0m Show captured stderr from stdio MCP servers (default 50 lines)\r\n' +
@@ -4206,13 +3659,11 @@ function openPrintSession() {
             }
 
             // ── ! commands ────────────────────────────────────────────────────────
+            // F1: !agentic was removed — the standalone agentic loop is gone.
+            // Show a one-line note so users with muscle memory know the deal.
             if (line.startsWith('!agentic')) {
-                const arg = line.slice(8).trim();
-                const on  = arg === 'on' ? true : arg === 'off' ? false : !fs.existsSync(AGENTIC_FILE);
-                if (on) { try { fs.writeFileSync(AGENTIC_FILE, '1'); } catch(_) {} }
-                else    { try { fs.unlinkSync(AGENTIC_FILE); } catch(_) {} }
-                try { if (state.socket) state.socket.write('\x1b]9;agentic:' + (on ? 'on' : 'off') + '\x07'); } catch(_) {}
-                try { if (state.socket) state.socket.write(SYS_FENCE + (on ? '\x1b[35m[AGENTIC ON]\x1b[0m' : '\x1b[2m[AGENTIC OFF]\x1b[0m') + '\r\n'); } catch(_) {}
+                try { if (state.socket) state.socket.write(SYS_FENCE +
+                    '\x1b[33m[!agentic removed — use the terminal as normal; claude-code handles tools natively]\x1b[0m\r\n'); } catch(_) {}
                 continue;
             }
 
@@ -4234,47 +3685,6 @@ function openPrintSession() {
                     state.pendingAttach = '[Attached: ' + p + ']\n' + fs.readFileSync(p, 'utf8').slice(0, 30000);
                     try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[33m[attached: ' + p + ']\x1b[0m\r\n'); } catch(_) {}
                 } catch(e) { try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[31m[!attach: ' + e.message + ']\x1b[0m\r\n'); } catch(_) {} }
-                continue;
-            }
-
-            // !undo / !undo list — unified handler (exact-match on "list" arg, case-insensitive)
-            if (line === '!undo' || line.startsWith('!undo ')) {
-                const undoArg = line.slice(5).trim().toLowerCase();
-                if (undoArg === 'list') {
-                    try {
-                        if (!fs.existsSync(UNDO_DIR)) { try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[2m[no snapshots]\x1b[0m\r\n'); } catch(_) {} continue; }
-                        const snaps = fs.readdirSync(UNDO_DIR).sort().reverse().slice(0, 10);
-                        if (!snaps.length) { try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[2m[no snapshots]\x1b[0m\r\n'); } catch(_) {} continue; }
-                        const list = snaps.map((s, i) => {
-                            const ts = parseInt(s) || 0;
-                            const age = ts ? Math.round((Date.now() - ts) / 60000) + 'm ago' : '';
-                            return '  ' + (i === 0 ? '→ ' : '  ') + s.replace(/^\d+_/, '') + (age ? ' (' + age + ')' : '');
-                        }).join('\r\n');
-                        try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[2mUndo snapshots (newest first):\x1b[0m\r\n' + list + '\r\n'); } catch(_) {}
-                    } catch(e) { try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[31m[!undo list: ' + e.message + ']\x1b[0m\r\n'); } catch(_) {} }
-                } else {
-                    try {
-                        if (!fs.existsSync(UNDO_DIR)) {
-                            try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[33m[no undo snapshots]\x1b[0m\r\n'); } catch(_) {}
-                            continue;
-                        }
-                        const snaps = fs.readdirSync(UNDO_DIR).sort();
-                        if (!snaps.length) {
-                            try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[33m[no undo snapshots]\x1b[0m\r\n'); } catch(_) {}
-                            continue;
-                        }
-                        const latest = snaps[snaps.length - 1];
-                        const snapPath = path.join(UNDO_DIR, latest);
-                        const origName = latest.replace(/^\d+_/, '');
-                        const targetPath = path.resolve(state.cwd, origName);
-                        fs.copyFileSync(snapPath, targetPath);
-                        fs.unlinkSync(snapPath);
-                        try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[32m✓ Restored: ' + targetPath + '\x1b[0m\r\n'); } catch(_) {}
-                        log('[undo] restored ' + targetPath + ' from ' + snapPath + '\n');
-                    } catch(e) {
-                        try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[31m[!undo: ' + e.message + ']\x1b[0m\r\n'); } catch(_) {}
-                    }
-                }
                 continue;
             }
 
@@ -4342,86 +3752,16 @@ function openPrintSession() {
                 continue;
             }
 
-            // ── Forward everything else to claude or the agentic loop ──────────
+            // ── Forward everything else to claude-code (print mode) ──────────────
+            // F1: the standalone agentic loop and its image-attach detour are
+            // gone. Image attach is a follow-up — see f1.md. For now, any
+            // pending_image.* files are deleted so they don't pile up.
             let msg = line;
             if (state.contextBlock)  { msg = state.contextBlock  + '\n\n' + msg; state.contextBlock  = ''; }
             if (state.pendingAttach) { msg = state.pendingAttach + '\n\n' + msg; state.pendingAttach = null; }
-
-            if (fs.existsSync(AGENTIC_FILE)) {
-                state.busy = true;
-                if (!state.agHistory) state.agHistory = [];
-                state.agHistory.push({ role: 'user', content: msg });
-                let pendingImg = null;
-                const imgB64Path = path.join(FILES_DIR, 'pending_image.b64');
-                const imgMimePath = path.join(FILES_DIR, 'pending_image.mime');
-                if (fs.existsSync(imgB64Path) && fs.existsSync(imgMimePath)) {
-                    try {
-                        pendingImg = {
-                            b64: fs.readFileSync(imgB64Path, 'utf8').trim(),
-                            mime: fs.readFileSync(imgMimePath, 'utf8').trim() || 'image/jpeg'
-                        };
-                        // M7: delete AFTER runAgentic completes (in finally block below)
-                    } catch(_) {}
-                }
-                runAgentic(state.socket, msg, state.agHistory.slice(0, -1), state.cwd, pendingImg)
-                    .then(result => {
-                        if (result.text) state.agHistory.push({ role: 'assistant', content: result.text });
-                        if (state.agHistory.length > 40) state.agHistory = state.agHistory.slice(-40);
-                        if (result.cwd && result.cwd !== state.cwd) {
-                            state.cwd = result.cwd;
-                            try { if (state.socket) state.socket.write('\x1b]9;cwd:' + state.cwd + '\x07'); } catch(_) {}
-                        }
-                        state.busy = false;
-                    })
-                    .catch(e => {
-                        log('[agentic] unhandled: ' + e.message + '\n');
-                        state.busy = false;
-                    })
-                    .finally(() => {
-                        // M7: delete pending image files after runAgentic completes
-                        try { fs.unlinkSync(imgB64Path); } catch(_) {}
-                        try { fs.unlinkSync(imgMimePath); } catch(_) {}
-                    });
-            } else {
-                // Image attached in print mode — route through runAgentic which builds
-                // the multimodal content block for the API (proxy or Anthropic direct).
-                const imgB64Path  = path.join(FILES_DIR, 'pending_image.b64');
-                const imgMimePath = path.join(FILES_DIR, 'pending_image.mime');
-                if (fs.existsSync(imgB64Path) && fs.existsSync(imgMimePath)) {
-                    let pendingImg = null;
-                    try {
-                        pendingImg = {
-                            b64:  fs.readFileSync(imgB64Path,  'utf8').trim(),
-                            mime: fs.readFileSync(imgMimePath, 'utf8').trim() || 'image/jpeg'
-                        };
-                        // M7: delete AFTER runAgentic completes (in finally block below)
-                    } catch(_) {}
-                    state.busy = true;
-                    if (!state.agHistory) state.agHistory = [];
-                    state.agHistory.push({ role: 'user', content: msg });
-                    runAgentic(state.socket, msg, state.agHistory.slice(0, -1), state.cwd, pendingImg)
-                        .then(result => {
-                            if (result.text) state.agHistory.push({ role: 'assistant', content: result.text });
-                            if (state.agHistory.length > 40) state.agHistory = state.agHistory.slice(-40);
-                            if (result.cwd && result.cwd !== state.cwd) {
-                                state.cwd = result.cwd;
-                                try { if (state.socket) state.socket.write('\x1b]9;cwd:' + state.cwd + '\x07'); } catch(_) {}
-                            }
-                            state.busy = false;
-                        })
-                        .catch(e => {
-                            log('[image-agentic] unhandled: ' + e.message + '\n');
-                            state.busy = false;
-                        })
-                        .finally(() => {
-                            // M7: delete pending image files after runAgentic completes
-                            try { fs.unlinkSync(imgB64Path); } catch(_) {}
-                            try { fs.unlinkSync(imgMimePath); } catch(_) {}
-                        });
-                } else {
-                    runMessage(msg, state);
-                }
-            }
+            try { fs.unlinkSync(path.join(FILES_DIR, 'pending_image.b64')); }  catch(_) {}
+            try { fs.unlinkSync(path.join(FILES_DIR, 'pending_image.mime')); } catch(_) {}
+            runMessage(msg, state);
         }
     }
 
@@ -4462,8 +3802,6 @@ function openPrintSession() {
 
         state.socket = socket;
 
-        const agOn = fs.existsSync(AGENTIC_FILE);
-        try { socket.write('\x1b]9;agentic:' + (agOn ? 'on' : 'off') + '\x07'); } catch(_) {}
         try { socket.write('\x1b]9;cwd:' + state.cwd + '\x07'); } catch(_) {}
         try { socket.write('\x1b]9;tokens:' + state.sessionTokens + '\x07'); } catch(_) {}
         try { socket.write('\x1b]9;thinking-done\x07'); } catch(_) {}
