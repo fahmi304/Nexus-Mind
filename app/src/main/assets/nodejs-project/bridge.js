@@ -2401,6 +2401,37 @@ function lineDiff(oldText, newText) {
 const MCP_STDIO_CONFIG  = path.join(FILES_DIR, 'mcp_stdio.json');
 const MCP_CONFIG_FILE   = path.join(FILES_DIR, 'mcp_config.json');
 const mcpStdioServers = new Map(); // name → { proc, tools, pendingCbs, msgId, buf }
+// MCP-7: per-server restart counters for crash auto-reconnect. Cleared after
+// 5 min of stable uptime (see setTimeout in startMcpStdioServer success path).
+const mcpStdioRestartAttempts = new Map(); // name → integer
+const MCP_MAX_RESTARTS = 5;
+
+function scheduleMcpStdioRestart(entry) {
+    const attempts = (mcpStdioRestartAttempts.get(entry.name) || 0) + 1;
+    mcpStdioRestartAttempts.set(entry.name, attempts);
+    if (attempts > MCP_MAX_RESTARTS) {
+        log('[mcp-stdio:' + entry.name + '] giving up after ' + MCP_MAX_RESTARTS + ' restart attempts\n');
+        mcpFailed.set(entry.name, { type: 'stdio', error: 'crashed ' + MCP_MAX_RESTARTS + 'x — auto-restart abandoned' });
+        broadcastMcpReady();
+        return;
+    }
+    const delayMs = Math.min(30000, 1000 * Math.pow(2, attempts - 1)); // 1s,2s,4s,8s,16s
+    log('[mcp-stdio:' + entry.name + '] restart attempt ' + attempts + '/' + MCP_MAX_RESTARTS + ' in ' + delayMs + 'ms\n');
+    setTimeout(() => {
+        // Skip if the entry was removed in the meantime by a reload.
+        let entries = [];
+        try { if (fs.existsSync(MCP_STDIO_CONFIG)) entries = JSON.parse(fs.readFileSync(MCP_STDIO_CONFIG, 'utf8')) || []; } catch (_) {}
+        const stillWanted = Array.isArray(entries) && entries.some(e => e && e.name === entry.name);
+        if (!stillWanted) {
+            log('[mcp-stdio:' + entry.name + '] no longer in config, skipping restart\n');
+            mcpStdioRestartAttempts.delete(entry.name);
+            return;
+        }
+        startMcpStdioServer(entry)
+            .then(() => broadcastMcpReady())
+            .catch(e => log('[mcp-stdio:' + entry.name + '] restart error: ' + e.message + '\n'));
+    }, delayMs);
+}
 
 function mcpSend(srv, method, params) {
     return new Promise((resolve, reject) => {
@@ -2468,6 +2499,12 @@ async function startMcpStdioServer(entry) {
         srv.proc.on('exit', code => {
             log('[mcp-stdio:' + entry.name + '] exited code=' + code + '\n');
             mcpStdioServers.delete(entry.name);
+            // MCP-7: auto-reconnect on unexpected exit. Skip when reload/stop
+            // marked the kill as intentional, or when the initial spawn failed
+            // (the catch block below handles that path separately).
+            if (!srv._intentionalKill && srv._startedAt) {
+                scheduleMcpStdioRestart(entry);
+            }
         });
         mcpStdioServers.set(entry.name, srv);
         // MCP handshake
@@ -2487,7 +2524,13 @@ async function startMcpStdioServer(entry) {
             _mcpTool: t.name
         }));
         log('[mcp-stdio:' + entry.name + '] ready, ' + srv.tools.length + ' tools\n');
+        srv._startedAt = Date.now(); // MCP-7: marker for "actually came up", gates restart
         mcpFailed.delete(entry.name); // MCP-4
+        // MCP-7: reset restart counter after 5 min of stable uptime.
+        setTimeout(() => {
+            const cur = mcpStdioServers.get(entry.name);
+            if (cur && cur._startedAt === srv._startedAt) mcpStdioRestartAttempts.delete(entry.name);
+        }, 5 * 60 * 1000);
     } catch(e) {
         log('[mcp-stdio:' + entry.name + '] start failed: ' + e.message + '\n');
         mcpStdioServers.delete(entry.name);
@@ -2721,9 +2764,11 @@ async function reloadMcpServers() {
     // Stop stdio servers no longer wanted
     for (const [name, srv] of [...mcpStdioServers.entries()]) {
         if (!wantStdio.has(name)) {
+            srv._intentionalKill = true; // MCP-7: tell exit handler not to auto-restart
             try { srv.proc && srv.proc.kill('SIGTERM'); } catch (_) {}
             mcpStdioServers.delete(name);
             mcpFailed.delete(name);
+            mcpStdioRestartAttempts.delete(name); // MCP-7
             summary.stoppedStdio++;
             log('[mcp-reload] stopped stdio:' + name + '\n');
         }
