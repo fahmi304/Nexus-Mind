@@ -118,14 +118,19 @@ class NodeBridgeManager(private val context: Context) {
                 val url  = server.optString("url")
                 if (!server.optBoolean("enabled", true)) continue
                 if (name.isNotEmpty() && url.isNotEmpty()) {
+                    // MCP-2: optional headers (auth bearer / API key / etc.). Stored
+                    // as a nested JSON object in the per-server config.
+                    val headers = server.optJSONObject("headers")
                     mcpServers.put(name, org.json.JSONObject().apply {
                         put("type", server.optString("transport", "sse"))
                         put("url", url)
                     })
-                    // Also add to mcp_http.json for bridge.js agentic client
+                    // mcp_http.json — read by bridge.js for both the agentic client
+                    // (callMcpHttpTool) AND the MCP-1 stdio-proxy shim (via env var).
                     httpEntries.put(org.json.JSONObject().apply {
                         put("name", name)
                         put("url", url)
+                        if (headers != null && headers.length() > 0) put("headers", headers)
                     })
                 }
             }

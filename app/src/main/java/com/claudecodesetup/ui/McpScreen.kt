@@ -28,7 +28,10 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-data class McpServer(val name: String, val url: String)
+// MCP-2: headers is a JSON object string (e.g. {"Authorization":"Bearer …"}) so
+// it round-trips losslessly with the rest of the server config. Empty string
+// (or "{}") means no extra headers — backward compatible with old saved configs.
+data class McpServer(val name: String, val url: String, val headers: String = "{}")
 data class McpStdioServer(val name: String, val command: String, val args: String)
 
 enum class PingStatus { CHECKING, OK, ERROR }
@@ -214,6 +217,7 @@ fun McpScreen(
             var isStdio by remember { mutableStateOf(false) }
             var newName by remember { mutableStateOf("") }
             var newUrl by remember { mutableStateOf("") }
+            var newHeaders by remember { mutableStateOf("") }  // MCP-2: HTTP auth/headers
             var newCommand by remember { mutableStateOf("node") }
             var newArgs by remember { mutableStateOf("") }
             AlertDialog(
@@ -269,6 +273,18 @@ fun McpScreen(
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
+                            // MCP-2: optional headers — one "Key: Value" per line.
+                            OutlinedTextField(
+                                value = newHeaders, onValueChange = { newHeaders = it },
+                                label = { Text("Headers (optional, one per line)") },
+                                placeholder = { Text("Authorization: Bearer xxx\nX-Custom: value") },
+                                singleLine = false, minLines = 2, maxLines = 4,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                "For bearer tokens, API keys, or custom headers. Parsed as 'Key: Value' lines.",
+                                fontFamily = DmSansFamily, fontSize = 11.sp, color = NexusText3
+                            )
                         } else {
                             OutlinedTextField(
                                 value = newCommand, onValueChange = { newCommand = it },
@@ -291,7 +307,9 @@ fun McpScreen(
                     TextButton(onClick = {
                         if (newName.isNotBlank()) {
                             if (!isStdio && newUrl.isNotBlank()) {
-                                val updated = servers + McpServer(newName.trim(), newUrl.trim())
+                                // MCP-2: parse headers input into compact JSON for storage.
+                                val hdrsJson = parseHeadersInput(newHeaders).toString()
+                                val updated = servers + McpServer(newName.trim(), newUrl.trim(), hdrsJson)
                                 saveMcpServers(prefs, updated)
                                 servers = updated
                                 showAddDialog = false
@@ -447,7 +465,11 @@ private fun loadMcpServers(prefs: AppPreferences): List<McpServer> {
         val arr = JSONArray(prefs.getMcpServersJson())
         (0 until arr.length()).map {
             val o = arr.getJSONObject(it)
-            McpServer(o.optString("name"), o.optString("url"))
+            // MCP-2: headers stored as nested object in JSON; serialize back to a
+            // compact string for the data class. Old saved configs without the
+            // field default to "{}" (no extra headers).
+            val headersStr = o.optJSONObject("headers")?.toString() ?: "{}"
+            McpServer(o.optString("name"), o.optString("url"), headersStr)
         }
     } catch (_: Exception) { emptyList() }
 }
@@ -457,9 +479,43 @@ private fun saveMcpServers(prefs: AppPreferences, list: List<McpServer>) {
     list.forEach { s ->
         arr.put(JSONObject().apply {
             put("name", s.name); put("url", s.url)
+            // MCP-2: persist headers as a nested JSON object (or omit if empty).
+            try {
+                val hdrs = JSONObject(s.headers.ifBlank { "{}" })
+                if (hdrs.length() > 0) put("headers", hdrs)
+            } catch (_: Exception) { /* malformed → skip */ }
         })
     }
     prefs.saveMcpServersJson(arr.toString())
+}
+
+// MCP-2: parse "Key: Value" lines from the headers input field into a JSON object.
+// Blank lines and lines without ':' are skipped. Trims surrounding whitespace.
+internal fun parseHeadersInput(text: String): JSONObject {
+    val out = JSONObject()
+    text.lineSequence().forEach { line ->
+        val trimmed = line.trim()
+        if (trimmed.isEmpty()) return@forEach
+        val colonIdx = trimmed.indexOf(':')
+        if (colonIdx <= 0) return@forEach
+        val key = trimmed.substring(0, colonIdx).trim()
+        val value = trimmed.substring(colonIdx + 1).trim()
+        if (key.isNotEmpty()) try { out.put(key, value) } catch (_: Exception) {}
+    }
+    return out
+}
+
+// MCP-2: convert stored JSON-object headers back to display lines for the UI.
+internal fun headersJsonToLines(jsonStr: String): String {
+    return try {
+        val obj = JSONObject(jsonStr)
+        buildString {
+            obj.keys().forEach { k ->
+                if (length > 0) append('\n')
+                append(k).append(": ").append(obj.optString(k, ""))
+            }
+        }
+    } catch (_: Exception) { "" }
 }
 
 private fun loadMcpStdioServers(prefs: AppPreferences): List<McpStdioServer> {

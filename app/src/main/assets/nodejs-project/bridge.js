@@ -2545,7 +2545,7 @@ function broadcastMcpReady() {
     }
 }
 
-function mcpHttpPost(url, body, sessionId) {
+function mcpHttpPost(url, body, sessionId, extraHeaders) {
     return new Promise((resolve, reject) => {
         const bodyStr = JSON.stringify(body);
         const parsed  = new URL(url);
@@ -2557,6 +2557,10 @@ function mcpHttpPost(url, body, sessionId) {
             'Content-Length': Buffer.byteLength(bodyStr),
         };
         if (sessionId) headers['mcp-session-id'] = sessionId;
+        // MCP-2: per-server auth headers from mcp_http.json
+        if (extraHeaders && typeof extraHeaders === 'object') {
+            for (const k of Object.keys(extraHeaders)) headers[k] = extraHeaders[k];
+        }
         const req = mod.request({
             hostname: parsed.hostname,
             port:     parseInt(parsed.port) || (isHttps ? 443 : 80),
@@ -2602,7 +2606,8 @@ function mcpHttpPost(url, body, sessionId) {
 
 async function startMcpHttpServer(entry) {
     if (mcpHttpServers.has(entry.name)) return;
-    const srv = { url: entry.url, sessionId: null, tools: [] };
+    const hdrs = entry.headers || {};  // MCP-2
+    const srv = { url: entry.url, sessionId: null, tools: [], headers: hdrs };
     try {
         const initRes = await mcpHttpPost(entry.url, {
             jsonrpc: '2.0', id: 1, method: 'initialize',
@@ -2611,15 +2616,15 @@ async function startMcpHttpServer(entry) {
                 capabilities: { tools: {} },
                 clientInfo: { name: 'ClaudeCodeSetup', version: '1.0' },
             },
-        }, null);
+        }, null, hdrs);
         if (initRes.error) throw new Error(initRes.error.message || JSON.stringify(initRes.error));
         if (initRes._sid) srv.sessionId = initRes._sid;
         // fire-and-forget
         mcpHttpPost(entry.url,
             { jsonrpc: '2.0', method: 'notifications/initialized', params: {} },
-            srv.sessionId).catch(() => {});
+            srv.sessionId, hdrs).catch(() => {});
         const toolsRes = await mcpHttpPost(entry.url,
-            { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }, srv.sessionId);
+            { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }, srv.sessionId, hdrs);
         if (toolsRes.error) throw new Error(toolsRes.error.message || JSON.stringify(toolsRes.error));
         const tlist = (toolsRes.result || toolsRes).tools || [];
         srv.tools = tlist.map(t => ({
@@ -2649,7 +2654,7 @@ async function callMcpHttpTool(toolName, args) {
         const res = await mcpHttpPost(srv.url, {
             jsonrpc: '2.0', id: Date.now(), method: 'tools/call',
             params: { name: found._mcpTool, arguments: args },
-        }, srv.sessionId);
+        }, srv.sessionId, srv.headers);  // MCP-2: auth headers
         if (res.error) throw new Error(res.error.message || JSON.stringify(res.error));
         const result = res.result || res;
         return (result.content || []).map(c => c.text || JSON.stringify(c)).join('\n');
