@@ -15,10 +15,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.claudecodesetup.data.AiModel
 import com.claudecodesetup.data.AppPreferences
 import com.claudecodesetup.data.Cap
+import com.claudecodesetup.data.Provider
 import com.claudecodesetup.data.Providers
+import com.claudecodesetup.data.ProvidersRepository
 import com.claudecodesetup.discussion.Speaker
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Single-select model picker for Quick Ask. Mirrors the multi-select
@@ -32,15 +38,54 @@ fun QuickAskModelPickerSheet(
     onPick: (Speaker) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val candidates = remember {
-        val out = mutableListOf<SpeakerCandidate>()
-        for (p in Providers.ALL) {
+    // Configured providers — provider object + (apiKey, customBaseUrl) snapshot.
+    // Stable for the lifetime of the sheet.
+    data class Configured(val provider: Provider, val apiKey: String, val baseUrl: String)
+    val configured = remember {
+        Providers.ALL.mapNotNull { p ->
             val key = prefs.getApiKeyForProvider(p.id)
-            if (key.isEmpty()) continue
-            for (m in p.models) out.add(SpeakerCandidate(p, m))
+            if (key.isEmpty()) return@mapNotNull null
+            val custom = prefs.getCustomBaseUrlForProvider(p.id)
+            val baseUrl = if (custom.isNotEmpty()) custom else p.baseUrl
+            Configured(p, key, baseUrl)
+        }
+    }
+
+    // Per-provider live model state. Live fetch overrides static models on
+    // success; static list is kept as fallback on error. Same pattern as
+    // DiscussionModelPickerSheet — cures the "sunset model ID 404" class of bug.
+    val liveModels = remember { mutableStateMapOf<String, List<AiModel>>() }
+    val loadingProviders = remember { mutableStateListOf<String>() }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        configured.filter { it.provider.supportsLiveFetch }.forEach { cfg ->
+            loadingProviders.add(cfg.provider.id)
+            scope.launch {
+                try {
+                    val effective = cfg.provider.copy(baseUrl = cfg.baseUrl)
+                    val fetched = withContext(Dispatchers.IO) {
+                        ProvidersRepository.fetchModels(effective, cfg.apiKey)
+                    }
+                    if (fetched.isNotEmpty()) liveModels[cfg.provider.id] = fetched
+                } catch (_: Exception) {
+                    // Keep static fallback.
+                } finally {
+                    loadingProviders.remove(cfg.provider.id)
+                }
+            }
+        }
+    }
+
+    val candidates: List<SpeakerCandidate> = run {
+        val out = mutableListOf<SpeakerCandidate>()
+        for (cfg in configured) {
+            val models = liveModels[cfg.provider.id] ?: cfg.provider.models
+            for (m in models) out.add(SpeakerCandidate(cfg.provider, m))
         }
         out
     }
+    val isFetching = loadingProviders.isNotEmpty()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -58,8 +103,17 @@ fun QuickAskModelPickerSheet(
             Text(
                 "Tap to switch. Chat history is preserved across model changes.",
                 fontFamily = DmSansFamily, fontSize = 12.sp, color = NexusText3,
-                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
             )
+            if (isFetching) {
+                Text(
+                    "fetching live models…",
+                    fontFamily = SpaceMonoFamily, fontSize = 10.sp, color = NexusAccent,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+            } else {
+                Spacer(Modifier.height(4.dp))
+            }
             if (candidates.isEmpty()) {
                 Text(
                     "No providers with API keys configured. Go to Login → pick a provider first.",
