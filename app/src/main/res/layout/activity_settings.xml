@@ -548,6 +548,49 @@
                     android:background="@color/border" />
 
                 <LinearLayout
+                    android:id="@+id/btnManageTools"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="13dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Tools"
+                            android:textColor="@color/text_primary"
+                            android:textSize="13sp" />
+                        <TextView
+                            android:id="@+id/tvToolsSummary"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Choose which tools Claude can use"
+                            android:textColor="@color/text_tertiary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="›"
+                        android:textColor="@color/text_tertiary"
+                        android:textSize="16sp" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="@color/border" />
+
+                <LinearLayout
                     android:id="@+id/btnReport"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

@@ -6,7 +6,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.MenuItem
 import android.view.View
+import android.widget.CheckBox
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -54,6 +56,13 @@ class SettingsActivity : AppCompatActivity() {
         super.onResume()
         refreshMcpRows()
         refreshPreferenceToggles()
+        refreshToolsSummary()
+    }
+
+    private fun refreshToolsSummary() {
+        val off = try { JSONArray(prefs.getDisabledToolsJson()).length() } catch (_: Exception) { 0 }
+        binding.tvToolsSummary.text =
+            if (off == 0) "All tools enabled" else "$off tool(s) turned off"
     }
 
     @Suppress("DEPRECATION")
@@ -245,6 +254,8 @@ class SettingsActivity : AppCompatActivity() {
 
         binding.btnCustomCommands.setOnClickListener { showCustomCommandsDialog() }
 
+        binding.btnManageTools.setOnClickListener { showToolControlDialog() }
+
         binding.btnRestartBridge.setOnClickListener {
             startService(
                 android.content.Intent(this, com.claudecodesetup.services.ClaudeService::class.java)
@@ -252,6 +263,97 @@ class SettingsActivity : AppCompatActivity() {
             )
             android.widget.Toast.makeText(this, "Bridge restarting…", android.widget.Toast.LENGTH_SHORT).show()
         }
+    }
+
+    // ─── Tool control ────────────────────────────────────────────────────────
+    // Lets the user turn individual tools OFF. Disabled tools are stripped from
+    // every request by the proxy (bridge.js), so they save input tokens AND
+    // actually take effect — unlike the old permissions.allow approach the '*'
+    // wildcard silently overrode. Only tools that are actually sent appear here
+    // (the always-useless ones — Cron*, Worktree*, etc. — are pruned by the
+    // hardcoded PRUNED_TOOLS set and never reach the model regardless).
+    private data class ToolDef(val name: String, val desc: String, val core: Boolean)
+    private data class ToolGroup(val title: String, val tools: List<ToolDef>)
+
+    private val toolGroups = listOf(
+        ToolGroup("File & Shell  ·  recommended on", listOf(
+            ToolDef("Read",  "Read file contents", true),
+            ToolDef("Write", "Create or overwrite files", true),
+            ToolDef("Edit",  "Modify existing files", true),
+            ToolDef("Bash",  "Run terminal commands (also runs !install tools)", true),
+            ToolDef("Glob",  "Find files by name pattern", true),
+            ToolDef("Grep",  "Search text inside files", true),
+        )),
+        ToolGroup("Web", listOf(
+            ToolDef("WebSearch", "Search the web", false),
+            ToolDef("WebFetch",  "Open and read a URL", false),
+        )),
+        ToolGroup("Agents & Tasks", listOf(
+            ToolDef("Agent",           "Spawn a sub-agent for multi-step tasks", false),
+            ToolDef("TodoWrite",       "Claude tracks its own task checklist", false),
+            ToolDef("AskUserQuestion", "Ask you a multiple-choice question", false),
+            ToolDef("Skill",           "Run a built-in skill", false),
+        )),
+    )
+
+    private fun showToolControlDialog() {
+        val disabled = try {
+            val a = JSONArray(prefs.getDisabledToolsJson())
+            (0 until a.length()).map { a.getString(it) }.toMutableSet()
+        } catch (_: Exception) { mutableSetOf<String>() }
+
+        val dp = resources.displayMetrics.density
+        fun px(v: Int) = (v * dp).toInt()
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(px(20), px(8), px(20), px(8))
+        }
+        content.addView(TextView(this).apply {
+            text = "Turning a tool off removes that ability and shrinks every request (fewer input tokens). File & shell tools are needed for normal coding."
+            textSize = 12f
+            setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.text_tertiary))
+            setPadding(0, 0, 0, px(8))
+        })
+
+        val boxes = mutableMapOf<String, CheckBox>()
+        for (group in toolGroups) {
+            content.addView(TextView(this).apply {
+                text = group.title
+                textSize = 12f
+                setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.accent_orange))
+                setPadding(0, px(12), 0, px(4))
+            })
+            for (t in group.tools) {
+                val cb = CheckBox(this).apply {
+                    text = "${t.name} — ${t.desc}"
+                    textSize = 13f
+                    isChecked = !disabled.contains(t.name)  // checked = enabled
+                    setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.text_primary))
+                }
+                boxes[t.name] = cb
+                content.addView(cb)
+            }
+        }
+
+        val scroll = ScrollView(this).apply { addView(content) }
+
+        AlertDialog.Builder(this)
+            .setTitle("Tools")
+            .setView(scroll)
+            .setPositiveButton("Save") { _, _ ->
+                val off = JSONArray()
+                boxes.forEach { (name, cb) -> if (!cb.isChecked) off.put(name) }
+                prefs.saveDisabledToolsJson(off.toString())
+                bridgeManager.refreshConfig(prefs)   // rewrite bridge_config.json now
+                refreshToolsSummary()
+                Toast.makeText(this,
+                    if (off.length() == 0) "All tools enabled"
+                    else "${off.length()} tool(s) turned off — applies on next message",
+                    Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun showScheduledPromptsDialog() {
