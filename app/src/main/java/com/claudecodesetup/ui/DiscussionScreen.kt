@@ -39,6 +39,8 @@ fun DiscussionScreen(
             onStop = { orchestrator.stop() },
             onContinue = { orchestrator.continueAfterCap() },
             onSubmitHuman = { text -> orchestrator.submitHumanTurn(text) },
+            onSubmitVote = { choice -> orchestrator.submitHumanVote(choice) },
+            onPass = { orchestrator.passFloor() },
             onNewDiscussion = {
                 orchestrator.stop()
                 screen = "setup"

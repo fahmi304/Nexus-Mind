@@ -97,7 +97,9 @@ private fun faviconUrl(domain: String) =
 
 /** Bundled brand drawable for a model org. Returns 0 when no brand mark is
  *  bundled — caller should fall back to faviconUrl or the initial tile. */
-private fun brandIconForModel(modelId: String): Int {
+// internal (not private) so DiscussionLiveScreen reuses the exact same brand
+// mapping for speaker avatars — keeps picker and discussion avatars identical.
+internal fun brandIconForModel(modelId: String): Int {
     val id = modelId.lowercase()
     val org = id.substringBefore("/").replace("-", "").replace("_", "")
     return when {

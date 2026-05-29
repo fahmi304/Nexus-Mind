@@ -20,6 +20,7 @@ import com.claudecodesetup.data.AppPreferences
 import com.claudecodesetup.discussion.DiscussionConfig
 import com.claudecodesetup.discussion.DiscussionMode
 import com.claudecodesetup.discussion.HumanRole
+import com.claudecodesetup.discussion.Pacing
 import com.claudecodesetup.discussion.Speaker
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -36,6 +37,9 @@ fun DiscussionSetupScreen(
     var maxTurns by remember { mutableStateOf(initialConfig?.maxTurns ?: 6) }
     var enableJudge by remember { mutableStateOf(initialConfig?.enableJudge ?: false) }
     var humanRole by remember { mutableStateOf(initialConfig?.humanRole ?: HumanRole.NONE) }
+    var enableVoting by remember { mutableStateOf(initialConfig?.enableVoting ?: false) }
+    var pacing by remember { mutableStateOf(initialConfig?.pacing ?: Pacing.DELAY) }
+    var reactionDelaySec by remember { mutableStateOf(initialConfig?.reactionDelaySec ?: 5) }
     var showPicker by remember { mutableStateOf(false) }
 
     val canStart = topic.isNotBlank() && speakers.size in 2..4
@@ -182,6 +186,54 @@ fun DiscussionSetupScreen(
                         humanRole == HumanRole.INTERJECT) { humanRole = HumanRole.INTERJECT }
                 }
 
+                // Pacing — only relevant when the human interjects freely
+                if (humanRole == HumanRole.INTERJECT) {
+                    SectionLabel("PACING")
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        RoleCard("Open floor — wait for me", "After each model, the debate pauses until you interject or tap Pass.",
+                            pacing == Pacing.OPEN_FLOOR) { pacing = Pacing.OPEN_FLOOR }
+                        RoleCard("Reaction delay", "A timed gap after each model to interject; auto-continues if you stay quiet.",
+                            pacing == Pacing.DELAY) { pacing = Pacing.DELAY }
+                    }
+                    if (pacing == Pacing.DELAY) {
+                        SectionLabel("DELAY  (${reactionDelaySec}s)")
+                        Slider(
+                            value = reactionDelaySec.toFloat(),
+                            onValueChange = { reactionDelaySec = it.toInt() },
+                            valueRange = 2f..15f, steps = 12,
+                            colors = SliderDefaults.colors(
+                                thumbColor = NexusAccent, activeTrackColor = NexusAccent,
+                                inactiveTrackColor = NexusBorder2),
+                        )
+                    }
+                }
+
+                // Concluding vote
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(NexusSurface, RoundedCornerShape(10.dp))
+                        .border(1.dp, NexusBorder, RoundedCornerShape(10.dp))
+                        .clickable { enableVoting = !enableVoting }
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Concluding vote", fontFamily = DmSansFamily,
+                            fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                        Text("Each model votes FOR / AGAINST / UNDECIDED at the end; you vote too. +1 call per model.",
+                            fontFamily = DmSansFamily, fontSize = 11.sp, color = NexusText3)
+                    }
+                    Switch(
+                        checked = enableVoting,
+                        onCheckedChange = { enableVoting = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = NexusAccent,
+                            checkedTrackColor = NexusAccent.copy(alpha = 0.4f)),
+                    )
+                }
+
                 Spacer(Modifier.height(10.dp))
                 Button(
                     onClick = {
@@ -193,6 +245,9 @@ fun DiscussionSetupScreen(
                             enableJudge = enableJudge,
                             judgeSpeaker = if (enableJudge && speakers.isNotEmpty()) speakers.first() else null,
                             humanRole = humanRole,
+                            pacing = pacing,
+                            reactionDelaySec = reactionDelaySec,
+                            enableVoting = enableVoting,
                         )
                         onStart(cfg)
                     },

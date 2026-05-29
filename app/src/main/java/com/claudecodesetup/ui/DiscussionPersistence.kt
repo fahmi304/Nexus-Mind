@@ -6,6 +6,7 @@ import com.claudecodesetup.data.Providers
 import com.claudecodesetup.discussion.DiscussionConfig
 import com.claudecodesetup.discussion.DiscussionMode
 import com.claudecodesetup.discussion.HumanRole
+import com.claudecodesetup.discussion.Pacing
 import com.claudecodesetup.discussion.Speaker
 import org.json.JSONArray
 import org.json.JSONObject
@@ -28,6 +29,9 @@ object DiscussionPersistence {
                 put("maxTurns", cfg.maxTurns)
                 put("enableJudge", cfg.enableJudge)
                 put("humanRole", cfg.humanRole.name)
+                put("pacing", cfg.pacing.name)
+                put("reactionDelaySec", cfg.reactionDelaySec)
+                put("enableVoting", cfg.enableVoting)
                 put("speakers", JSONArray().apply {
                     for (s in cfg.speakers) put(JSONObject().apply {
                         put("providerId", s.provider.id)
@@ -72,6 +76,10 @@ object DiscussionPersistence {
                 judgeSpeaker = if (obj.optBoolean("enableJudge") && speakers.isNotEmpty()) speakers.first() else null,
                 humanRole = try { HumanRole.valueOf(obj.optString("humanRole", "NONE")) }
                             catch (_: Exception) { HumanRole.NONE },
+                pacing = try { Pacing.valueOf(obj.optString("pacing", "DELAY")) }
+                         catch (_: Exception) { Pacing.DELAY },
+                reactionDelaySec = obj.optInt("reactionDelaySec", 5),
+                enableVoting = obj.optBoolean("enableVoting", false),
             )
         } catch (_: Exception) { null }
     }
