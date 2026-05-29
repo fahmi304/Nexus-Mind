@@ -1132,6 +1132,31 @@ function handleProxyRequest(anthReq, res) {
         (baseModel && baseModel !== anthReq.model ? ' → oai:' + baseModel : '') +
         ' stream=' + stream + ' url=' + (pUrl||'MISSING') + '\n');
 
+    // Token-breakdown diagnostic — surfaces *why* a "hello" message hits TPM
+    // limits on low-tier providers. Most of the bytes come from claude-code's
+    // hardcoded system prompt + the full tool schema list, not the user text.
+    try {
+        const sysLen = getSystemText(anthReq).length;
+        const toolsArr = anthReq.tools || [];
+        const toolsJson = toolsArr.length ? JSON.stringify(toolsArr) : '';
+        const toolNames = toolsArr.map(t => t.name).join(',');
+        const msgs = anthReq.messages || [];
+        let msgsLen = 0;
+        for (const m of msgs) {
+            if (typeof m.content === 'string') { msgsLen += m.content.length; continue; }
+            for (const b of (m.content || [])) {
+                if (b.text) msgsLen += b.text.length;
+                else if (b.input) msgsLen += JSON.stringify(b.input).length;
+                else if (b.content) msgsLen += (typeof b.content === 'string' ? b.content.length : JSON.stringify(b.content).length);
+            }
+        }
+        const total = sysLen + toolsJson.length + msgsLen;
+        log('[proxy] size: sys=' + sysLen + 'c tools=' + toolsArr.length +
+            '(' + toolsJson.length + 'c) msgs=' + msgs.length + '(' + msgsLen + 'c) total=' +
+            total + 'c ≈' + Math.ceil(total / 3.5) + 'tok\n');
+        if (toolsArr.length) log('[proxy] tool-names: ' + toolNames + '\n');
+    } catch (_) {}
+
     if (!pUrl) return proxyError(res, 500, 'No provider URL in config — check app settings');
 
     // Anthropic API key users — forward request as-is (no OAI conversion needed)
