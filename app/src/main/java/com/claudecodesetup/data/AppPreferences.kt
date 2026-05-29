@@ -91,6 +91,13 @@ class AppPreferences(context: Context) {
     fun getMcpStdioServersJson(): String = prefs.getString(KEY_MCP_STDIO_SERVERS, "[]") ?: "[]"
     fun saveMcpStdioServersJson(json: String) = prefs.edit().putString(KEY_MCP_STDIO_SERVERS, json).apply()
 
+    // ─── Tool control (Settings → Tools) ────────────────────────────────────
+    // JSON array of tool names the user turned OFF. The proxy strips these from
+    // every claude-code request (NodeBridgeManager writes them into
+    // bridge_config.json → bridge.js merges with PRUNED_TOOLS). Empty = all on.
+    fun getDisabledToolsJson(): String = prefs.getString("disabled_tools", "[]") ?: "[]"
+    fun saveDisabledToolsJson(json: String) = prefs.edit().putString("disabled_tools", json).apply()
+
     // ─── Discussion (last config remembered, option 3B) ──────────────────────
     fun getDiscussionLastConfigJson(): String = prefs.getString("discussion_last_config", "") ?: ""
     fun saveDiscussionLastConfigJson(json: String) = prefs.edit().putString("discussion_last_config", json).apply()

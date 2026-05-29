@@ -321,6 +321,15 @@ class NodeBridgeManager(private val context: Context) {
         val effectiveModelId = RETIRED_MODEL_MAP.getOrDefault(modelId, modelId)
         if (effectiveModelId != modelId && prefs != null) prefs.setModelId(effectiveModelId)
         val localToken = getOrCreateLocalToken()
+        // User-disabled tools (Settings → Tools). The proxy strips these from
+        // every request so they're never sent — saves tokens AND takes effect,
+        // unlike the old permissions.allow approach the '*' wildcard overrode.
+        val disabledTools = JSONArray().apply {
+            try {
+                val arr = JSONArray(prefs?.getDisabledToolsJson() ?: "[]")
+                for (i in 0 until arr.length()) put(arr.getString(i))
+            } catch (_: Exception) {}
+        }
         val json = JSONObject().apply {
             put("mode",               mode)
             put("apiKey",             apiKey)
@@ -334,6 +343,7 @@ class NodeBridgeManager(private val context: Context) {
             put("ptyCols",            prefs?.getPtyCols() ?: 220)
             put("ptyRows",            prefs?.getPtyRows() ?: 50)
             put("localToken",         localToken)
+            put("disabledTools",      disabledTools)
         }
         try {
             val configFile = File(context.filesDir, CONFIG_FILE)

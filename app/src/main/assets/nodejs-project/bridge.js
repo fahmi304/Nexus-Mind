@@ -1143,13 +1143,23 @@ function handleProxyRequest(anthReq, res) {
     const key   = cfg.apiKey || '';
     const stream = !!anthReq.stream;
 
-    // Drop Android-useless tools before anything reads anthReq.tools (size
-    // diagnostic below + anthToOai conversion both pick up the pruned list).
+    // Drop tools before anything reads anthReq.tools (size diagnostic below +
+    // anthToOai conversion both pick up the pruned list). Two sources merge:
+    //   1. PRUNED_TOOLS  — always-useless on Android (hardcoded, never sent)
+    //   2. cfg.disabledTools — user's per-tool toggles from Settings.
+    // This is the CORRECT layer to control the tool set: stripping a tool here
+    // means the model is never told it exists, so it both saves input tokens
+    // and actually takes effect. (The old Settings "Tool Permissions" UI wired
+    // to permissions.allow did NOT work — the '*' wildcard overrode it and
+    // nothing was ever removed from the request. See CLAUDE.md.)
     if (Array.isArray(anthReq.tools) && anthReq.tools.length) {
+        const userOff = Array.isArray(cfg.disabledTools) ? cfg.disabledTools : [];
         const before = anthReq.tools.length;
-        anthReq.tools = anthReq.tools.filter(t => !PRUNED_TOOLS.has(t.name));
+        anthReq.tools = anthReq.tools.filter(t =>
+            !PRUNED_TOOLS.has(t.name) && userOff.indexOf(t.name) === -1);
         const dropped = before - anthReq.tools.length;
-        if (dropped) log('[proxy] pruned ' + dropped + ' Android-useless tool(s)\n');
+        if (dropped) log('[proxy] pruned ' + dropped + ' tool(s)' +
+            (userOff.length ? ' (' + userOff.length + ' user-disabled)' : '') + '\n');
     }
 
     const baseModel = cfg.modelId || anthReq.model || '';
