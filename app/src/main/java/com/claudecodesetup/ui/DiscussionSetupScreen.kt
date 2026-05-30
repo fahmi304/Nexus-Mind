@@ -264,16 +264,24 @@ fun DiscussionSetupScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            if (mode == DiscussionMode.DEBATE) "Final verdict (neutral judge)"
-                            else "Final judge summary",
+                            when (mode) {
+                                DiscussionMode.DEBATE      -> "Final verdict (neutral judge)"
+                                DiscussionMode.CODE_REVIEW -> "Final findings report"
+                                else                       -> "Final judge summary"
+                            },
                             fontFamily = DmSansFamily,
                             fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
                         Text(
-                            if (mode == DiscussionMode.DEBATE)
-                                "A neutral judge (your Moderator if set) reads the anonymized arguments " +
-                                "and declares a winner on the merits — not on which side it argued. +1 API call."
-                            else
-                                "First speaker writes a 3-paragraph summary at the end. +1 API call.",
+                            when (mode) {
+                                DiscussionMode.DEBATE ->
+                                    "A neutral judge (your Moderator if set) reads the anonymized arguments " +
+                                    "and declares a winner on the merits — not on which side it argued. +1 API call."
+                                DiscussionMode.CODE_REVIEW ->
+                                    "Consolidates the review into one numbered findings list, then every model " +
+                                    "votes agree/disagree on each — you see how many confirmed each finding. +1 call/model."
+                                else ->
+                                    "First speaker writes a 3-paragraph summary at the end. +1 API call."
+                            },
                             fontFamily = DmSansFamily, fontSize = 11.sp, color = NexusText3,
                         )
                     }

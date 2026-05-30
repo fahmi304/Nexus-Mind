@@ -31,6 +31,7 @@ import com.claudecodesetup.data.Providers
 import com.claudecodesetup.discussion.DiscussionMode
 import com.claudecodesetup.discussion.DiscussionState
 import com.claudecodesetup.discussion.HumanRole
+import com.claudecodesetup.discussion.ReviewFinding
 import com.claudecodesetup.discussion.Turn
 import com.claudecodesetup.discussion.TurnStatus
 import com.claudecodesetup.discussion.VoteChoice
@@ -126,6 +127,9 @@ fun DiscussionLiveScreen(
                 if (state.votes.isNotEmpty()) {
                     item("votes") { VoteResultsCard(state) }
                 }
+                if (state.reviewFindings.isNotEmpty()) {
+                    item("findings") { ReviewReport(state.reviewFindings) }
+                }
             }
 
             // ── Voting affordances ─────────────────────────────────────────────
@@ -138,6 +142,16 @@ fun DiscussionLiveScreen(
             }
             if (state.awaitingHumanVote) {
                 HumanVoteButtons(onVote = onSubmitVote)
+            }
+
+            // ── Code-review findings report (the list itself scrolls in the
+            //    transcript above; only the progress line shows here) ────────────
+            if (state.reviewPhase) {
+                Text(
+                    "● consolidating findings & polling the panel…",
+                    fontFamily = SpaceMonoFamily, fontSize = 11.sp, color = NexusAccent,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
+                )
             }
 
             // ── Human input bar ─────────────────────────────────────────────────
@@ -155,7 +169,7 @@ fun DiscussionLiveScreen(
             }
 
             // ── Footer ──────────────────────────────────────────────────────────
-            if (!state.isRunning && !state.votingPhase && !state.awaitingHumanVote) {
+            if (!state.isRunning && !state.votingPhase && !state.awaitingHumanVote && !state.reviewPhase) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(14.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -337,6 +351,54 @@ private fun HumanVoteButtons(onVote: (VoteChoice) -> Unit) {
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = NexusText2),
             ) { Text("Skip", fontFamily = DmSansFamily, fontSize = 13.sp) }
         }
+    }
+}
+
+// ── Code-review findings report — consolidated findings + per-finding agreement
+@Composable
+private fun ReviewReport(findings: List<ReviewFinding>) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
+        Text("REVIEW FINDINGS  (${findings.size})", fontFamily = SpaceMonoFamily, fontSize = 10.sp,
+            letterSpacing = 2.sp, color = NexusAccent)
+        Spacer(Modifier.height(8.dp))
+        findings.forEach { f ->
+            val (icon, catColor) = when (f.category) {
+                "BUG"          -> "🐞" to Color(0xFFEF4444)
+                "OPTIMIZATION" -> "⚡" to NexusAmber
+                "DEAD_CODE"    -> "🧹" to NexusBlue
+                else           -> "⚠" to NexusText2
+            }
+            val majority = f.totalVoters > 0 && f.agreeCount * 2 >= f.totalVoters
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 3.dp)
+                    .background(Color(0xFF1E1E22), RoundedCornerShape(8.dp))
+                    .border(1.dp, if (majority) NexusGreen.copy(alpha = 0.4f) else NexusBorder, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text("$icon ", fontSize = 13.sp)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(f.category.replace('_', ' '), fontFamily = SpaceMonoFamily, fontSize = 8.sp,
+                        letterSpacing = 1.sp, color = catColor)
+                    Text(f.text, fontFamily = DmSansFamily, fontSize = 13.sp,
+                        color = Color.White, lineHeight = 18.sp)
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "${f.agreeCount}/${f.totalVoters}",
+                    fontFamily = SpaceMonoFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                    color = if (majority) NexusGreen else NexusText3,
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "X/N = how many models confirmed each finding. Green = majority agreed. " +
+            "Tap a model's turn above for the full reasoning.",
+            fontFamily = DmSansFamily, fontSize = 10.sp, color = NexusText3,
+        )
     }
 }
 

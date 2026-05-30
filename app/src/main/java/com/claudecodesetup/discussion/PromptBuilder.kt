@@ -183,6 +183,44 @@ object PromptBuilder {
         return listOf(ChatMessage("system", sys), ChatMessage("user", sb.toString()))
     }
 
+    /**
+     * Code-review: consolidate the whole discussion into a single numbered,
+     * categorized findings list. Strict one-finding-per-line format so the
+     * orchestrator can parse it back into ReviewFinding objects.
+     */
+    fun buildFindingsExtractionMessages(topic: String, turns: List<Turn>): List<ChatMessage> {
+        val sys = "You are consolidating a multi-model code review into ONE findings list. " +
+            "Merge duplicates, drop vague or unverifiable comments, keep only concrete, actionable findings. " +
+            "Output ONLY the findings — one per line — in EXACTLY this format:\n" +
+            "<n>. [CATEGORY] description (line/location if known) — suggested fix\n" +
+            "CATEGORY is one of: BUG, OPTIMIZATION, DEAD_CODE, OTHER. Number from 1. " +
+            "No preamble, no headings, no closing remarks. Max 15 findings."
+        val sb = StringBuilder()
+        sb.append("## Code / topic under review\n").append(topic.trim()).append("\n\n## Review discussion\n\n")
+        for (t in turns) {
+            if (t.status != TurnStatus.DONE || t.isHuman) continue
+            sb.append("### ").append(t.speakerLabel).append("\n").append(t.text.trim()).append("\n\n")
+        }
+        sb.append("---\nConsolidated findings (numbered, one per line):")
+        return listOf(ChatMessage("system", sys), ChatMessage("user", sb.toString()))
+    }
+
+    /**
+     * Code-review: ask one model to agree/disagree with each consolidated
+     * finding. One line per finding: "<n>: AGREE" or "<n>: DISAGREE".
+     */
+    fun buildFindingsVoteMessages(topic: String, findings: List<ReviewFinding>, speaker: Speaker): List<ChatMessage> {
+        val sys = "You are validating a consolidated list of code-review findings. " +
+            "For EACH finding, decide whether it is a real, correct, worth-fixing issue given the code. " +
+            "Reply with one line per finding in EXACTLY this format: \"<number>: AGREE\" or \"<number>: DISAGREE\". " +
+            "AGREE means the finding is valid and worth acting on. Output nothing else. You are: ${speaker.label}."
+        val sb = StringBuilder()
+        sb.append("## Code / topic\n").append(topic.trim()).append("\n\n## Findings\n")
+        for (f in findings) sb.append(f.index).append(". [").append(f.category).append("] ").append(f.text).append("\n")
+        sb.append("\nYour votes (one \"<number>: AGREE|DISAGREE\" per line):")
+        return listOf(ChatMessage("system", sys), ChatMessage("user", sb.toString()))
+    }
+
     /** Builds the message list for the judge summary at the end. */
     fun buildJudgeMessages(topic: String, turns: List<Turn>): List<ChatMessage> {
         val sys = "You are a neutral judge summarizing a panel discussion between AI models. " +

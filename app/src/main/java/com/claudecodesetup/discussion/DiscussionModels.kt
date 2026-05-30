@@ -58,6 +58,15 @@ data class Vote(
     val isHuman: Boolean = false,
 )
 
+/** One consolidated code-review finding + how many models endorsed it. */
+data class ReviewFinding(
+    val index: Int,
+    val category: String,   // BUG | OPTIMIZATION | DEAD_CODE | OTHER
+    val text: String,
+    val agreeCount: Int = 0,
+    val totalVoters: Int = 0,
+)
+
 /** One speaker's contribution to the transcript. */
 data class Turn(
     val speakerId: String,
@@ -100,6 +109,10 @@ data class DiscussionState(
     /** True when the panel has voted and we're waiting for the human's vote. */
     val awaitingHumanVote: Boolean = false,
     val votes: List<Vote> = emptyList(),
+    // ── Code-review findings report ──
+    /** True while findings are being extracted / voted on. */
+    val reviewPhase: Boolean = false,
+    val reviewFindings: List<ReviewFinding> = emptyList(),
 ) {
     val votesFor: Int get() = votes.count { it.choice == VoteChoice.FOR }
     val votesAgainst: Int get() = votes.count { it.choice == VoteChoice.AGAINST }

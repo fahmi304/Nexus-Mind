@@ -127,6 +127,7 @@ class DiscussionOrchestrator(
             maxTurns = newCap,
             isRunning = true, stoppedReason = null, converged = false,
             votes = emptyList(), awaitingHumanVote = false, votingPhase = false,
+            reviewFindings = emptyList(), reviewPhase = false,
         )
         loopJob = scope.launch { runLoop() }
     }
@@ -264,7 +265,11 @@ class DiscussionOrchestrator(
         // (picks a winner on the merits); in other modes, a 3-paragraph summary.
         val judge = s.judgeSpeaker
         if (judge != null && s.turns.any { it.status == TurnStatus.DONE }) {
-            if (s.mode == DiscussionMode.DEBATE) runVerdict() else runJudgeSummary(judge)
+            when (s.mode) {
+                DiscussionMode.DEBATE      -> runVerdict()
+                DiscussionMode.CODE_REVIEW -> runReviewReport()
+                else                       -> runJudgeSummary(judge)
+            }
         }
         _state.value = _state.value.copy(isRunning = false, stoppedReason = reason)
 
@@ -338,6 +343,62 @@ class DiscussionOrchestrator(
             ?: s0.judgeSpeaker ?: s0.speakers.firstOrNull() ?: return
         runJudgeTurn(judge, PromptBuilder.buildVerdictMessages(s0.topic, priorDone),
             "⚖ Verdict — ${judge.model.name}", "Verdict")
+    }
+
+    /** Code-review: one model consolidates the discussion into a numbered
+     *  findings list, then every model votes agree/disagree per finding. The
+     *  result (findings + agreement counts) lands in state.reviewFindings. */
+    private suspend fun runReviewReport() {
+        val s0 = _state.value
+        val priorDone = s0.turns.filter { it.status == TurnStatus.DONE }
+        if (priorDone.none { !it.isHuman }) return
+        _state.value = s0.copy(reviewPhase = true)
+        // 1) Consolidate findings (single model).
+        val extractor = s0.judgeSpeaker ?: s0.speakers.firstOrNull()
+        if (extractor == null) { _state.value = _state.value.copy(reviewPhase = false); return }
+        val raw = collectText(extractor, PromptBuilder.buildFindingsExtractionMessages(s0.topic, priorDone))
+        val parsed = parseFindings(raw)
+        if (parsed.isEmpty()) { _state.value = _state.value.copy(reviewPhase = false); return }
+        val voters = _state.value.speakers
+        val findings = parsed.map { it.copy(totalVoters = voters.size) }
+        _state.value = _state.value.copy(reviewFindings = findings)
+        // 2) Each model votes agree/disagree per finding.
+        val tally = IntArray(findings.size + 1)
+        for (sp in voters) {
+            val txt = collectText(sp, PromptBuilder.buildFindingsVoteMessages(s0.topic, findings, sp))
+            for (idx in parseFindingVotes(txt, findings.size)) tally[idx]++
+        }
+        val scored = findings.map { it.copy(agreeCount = tally.getOrElse(it.index) { 0 }) }
+            .sortedByDescending { it.agreeCount }
+        _state.value = _state.value.copy(reviewFindings = scored, reviewPhase = false)
+    }
+
+    /** Parse the extractor's numbered "[CATEGORY] desc" lines into findings. */
+    private fun parseFindings(text: String): List<ReviewFinding> {
+        val re = Regex("""\[(BUG|OPTIMIZATION|DEAD[_ ]?CODE|OTHER)]\s*(.+)""", RegexOption.IGNORE_CASE)
+        val out = mutableListOf<ReviewFinding>()
+        for (line in text.lineSequence()) {
+            val m = re.find(line) ?: continue
+            val cat = m.groupValues[1].uppercase().replace(' ', '_')
+            val desc = m.groupValues[2].trim().trim('.', ' ')
+            if (desc.isEmpty()) continue
+            out.add(ReviewFinding(index = out.size + 1, category = cat, text = desc.take(240)))
+            if (out.size >= 15) break
+        }
+        return out
+    }
+
+    /** Parse a model's "<n>: AGREE/DISAGREE" lines; returns the AGREE indices. */
+    private fun parseFindingVotes(text: String, count: Int): Set<Int> {
+        val agree = mutableSetOf<Int>()
+        val re = Regex("""(\d{1,2})\s*[:.)\-]\s*(AGREE|YES|DISAGREE|NO)""", RegexOption.IGNORE_CASE)
+        for (mm in re.findAll(text)) {
+            val n = mm.groupValues[1].toIntOrNull() ?: continue
+            if (n !in 1..count) continue
+            val v = mm.groupValues[2].uppercase()
+            if (v == "AGREE" || v == "YES") agree.add(n)
+        }
+        return agree
     }
 
     private suspend fun runJudgeTurn(judge: Speaker, messages: List<ChatMessage>, label: String, role: String) {
