@@ -1466,7 +1466,11 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on42
                 try {
                     const parsed = JSON.parse(data);
                     if (provRes.statusCode !== 200) {
-                        if (provRes.statusCode === 400 && onBadRequest) return onBadRequest();
+                        if (provRes.statusCode === 400) {
+                            const why = (data || '').replace(/[\r\n]+/g, ' ').replace(/<[^>]+>/g, '').trim().slice(0, 400);
+                            if (why) log('[provider-400] ' + why + '\n');
+                            if (onBadRequest) return onBadRequest();
+                        }
                         if (provRes.statusCode === 429 && on429) return on429();
                         if (provRes.statusCode === 429) lastRateLimitMs = Date.now();
                         let errMsg = parsed.error?.message || 'Provider HTTP ' + provRes.statusCode;
@@ -1502,8 +1506,14 @@ function sendToProvider(baseUrl, apiKey, oaiReq, stream, res, onBadRequest, on42
                 provRes.setEncoding('utf8');
                 provRes.on('data', c => { errBody += c; });
                 provRes.on('end', () => {
-                    // 400 with tools in request → retry without tools
-                    if (provRes.statusCode === 400 && onBadRequest) return onBadRequest();
+                    // 400 with tools in request → log the provider's actual reason
+                    // (Gemini's OAI-compat 400 body says exactly which field it
+                    // rejects), then retry without tools.
+                    if (provRes.statusCode === 400) {
+                        const why = errBody.replace(/[\r\n]+/g, ' ').replace(/<[^>]+>/g, '').trim().slice(0, 400);
+                        if (why) log('[provider-400] ' + why + '\n');
+                        if (onBadRequest) return onBadRequest();
+                    }
                     let msg = 'Provider returned HTTP ' + provRes.statusCode;
                     if (provRes.statusCode === 429) {
                         if (on429) return on429();
