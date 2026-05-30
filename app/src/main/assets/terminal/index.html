@@ -188,6 +188,22 @@ html, body {
   word-break: normal;
   display: none;
 }
+.sys-row { position: relative; }
+.sys-copy-btn {
+  position: absolute;
+  bottom: 6px; right: 6px;
+  background: rgba(255,255,255,0.08);
+  color: rgba(144,144,160,0.85);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 5px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-family: 'Space Mono', 'Courier New', monospace;
+  cursor: pointer;
+  z-index: 2;
+  display: none;
+}
+.sys-copy-btn:active { background: rgba(232,131,74,0.3); color:#E8834A; }
 
 /* ── Markdown rendering ──────────────────────────────────────────────────── */
 .ai-bubble { white-space: normal; }
@@ -1125,6 +1141,7 @@ let aiRenderQueued   = false;
 // System bubble — collects non-response output (errors, init messages)
 let sysEl            = null;  // label div (dot + first line)
 let sysOutEl         = null;  // output code block div (lines 1+)
+let sysCopyBtn       = null;  // tiny copy button for the output block
 let sysAnsi          = makeAnsiState();
 let sysRenderQueued  = false;
 
@@ -1249,7 +1266,7 @@ function handleOSC(content){
     resetToIdle();
     msgs.innerHTML='';
     msgs.appendChild(thinkBub);
-    sysEl=null; sysOutEl=null; sysAnsi=makeAnsiState();
+    sysEl=null; sysOutEl=null; sysCopyBtn=null; sysAnsi=makeAnsiState();
     currentAiBubble=null; currentAiAnsi=null;
   } else if(content.startsWith('9;cwd:')){
     var cwd=content.slice(6);
@@ -2344,11 +2361,22 @@ function getSysBubble(){
     label.className='sys-bubble';
     const out=document.createElement('div');
     out.className='sys-output';
+    const copyBtn=document.createElement('button');
+    copyBtn.className='sys-copy-btn';
+    copyBtn.textContent='Copy';
+    copyBtn.onclick=function(){
+      const txt=sysOutEl?sysOutEl.innerText:'';
+      if(txt&&typeof Android!=='undefined') Android.copyText(txt);
+      copyBtn.textContent='Copied';
+      setTimeout(function(){copyBtn.textContent='Copy';},1200);
+    };
     row.appendChild(label);
     row.appendChild(out);
+    row.appendChild(copyBtn);
     msgs.appendChild(row);
     sysEl=label;
     sysOutEl=out;
+    sysCopyBtn=copyBtn;
   }
   return sysEl;
 }
@@ -2363,12 +2391,14 @@ function scheduleSysRender(){
       if(lines.length<=1){
         sysEl.innerHTML=linesToHtml(lines);
         if(sysOutEl) sysOutEl.style.display='none';
+        if(sysCopyBtn) sysCopyBtn.style.display='none';
       } else {
         sysEl.innerHTML=linesToHtml([lines[0]]);
         if(sysOutEl){
           sysOutEl.innerHTML=linesToHtml(lines.slice(1));
           sysOutEl.style.display='block';
         }
+        if(sysCopyBtn) sysCopyBtn.style.display='block';
       }
       scrollToBottom();
     }
@@ -2419,7 +2449,7 @@ const _sessionSnaps = new Map();
 window.termClear=function(sid){
   stopThinkingTimer();
   msgs.innerHTML='';
-  sysEl=null; sysOutEl=null;
+  sysEl=null; sysOutEl=null; sysCopyBtn=null;
   sysAnsi=makeAnsiState();
   currentAiBubble=null;
   currentAiAnsi=null;
@@ -2442,7 +2472,7 @@ window.termRestoreSnapshot = function(sid) {
   // M2: do NOT reset sysAnsi here — resetting mid-way while DOM already has
   // rendered content causes ANSI state/DOM mismatch and double-render bugs.
   // sysEl is cleared so next sys output creates a fresh bubble below restored content.
-  sysEl=null; sysOutEl=null;
+  sysEl=null; sysOutEl=null; sysCopyBtn=null;
   currentAiBubble=null; currentAiAnsi=null;
   chatState='IDLE';
   thinkBub.style.display='none';
@@ -2566,7 +2596,7 @@ function submitLine(text){
     }
     // All ! and $ commands run immediately regardless of busy state
     // Fresh sys bubble so bridge output appears below this cmd bubble
-    sysEl=null; sysOutEl=null; sysAnsi=makeAnsiState();
+    sysEl=null; sysOutEl=null; sysCopyBtn=null; sysAnsi=makeAnsiState();
     addCmdBubble(msg,false);
     // Normalize ! command verb to lowercase before sending — Android autocorrect
     // treats "!" as sentence-end and capitalizes the next character, breaking
@@ -2588,7 +2618,7 @@ function submitLine(text){
     if(inputHistory.length>50) inputHistory.shift();
   }
   resetToIdle(); // finalize any pending AI bubble and hide thinking animation
-  sysEl=null; sysOutEl=null;
+  sysEl=null; sysOutEl=null; sysCopyBtn=null;
   sysAnsi=makeAnsiState();
   // Remove suggestions bar if present
   const sb=document.getElementById('suggestions-bar');if(sb)sb.remove();
