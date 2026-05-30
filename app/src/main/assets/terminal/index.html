@@ -537,6 +537,60 @@ html, body {
   color: rgba(252,165,165,0.95);
 }
 
+/* ── Sub-agent status chip (mirrors MCP chip, top-right, amber theme) ──────── */
+#agent-chip {
+  position: fixed;
+  top: 8px; right: 8px;
+  background: rgba(232,131,74,0.12);
+  border: 1px solid rgba(232,131,74,0.4);
+  border-radius: 20px;
+  color: rgba(244,180,140,0.95);
+  font-size: 9px;
+  font-family: 'Space Mono','Courier New',monospace;
+  letter-spacing: 1px;
+  padding: 3px 9px;
+  z-index: 200;
+  cursor: pointer;
+  display: none;
+  user-select: none;
+  transition: opacity 0.6s ease, background 0.3s;
+}
+#agent-chip:active { background: rgba(232,131,74,0.3); }
+#agent-chip.running { animation: agentChipPulse 1.4s ease-in-out infinite; }
+#agent-chip.done {
+  background: rgba(61,214,140,0.14);
+  border-color: rgba(61,214,140,0.45);
+  color: rgba(134,239,172,0.95);
+}
+@keyframes agentChipPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(232,131,74,0.0); border-color: rgba(232,131,74,0.4); }
+  50%     { box-shadow: 0 0 10px 1px rgba(232,131,74,0.5); border-color: rgba(232,131,74,0.9); }
+}
+#agent-chip .ac-spin { display:inline-block; animation: agentSpin 2.4s linear infinite; }
+@keyframes agentSpin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+#agent-popover {
+  position: fixed;
+  top: 28px; right: 8px;
+  min-width: 190px; max-width: 280px;
+  background: rgba(20,14,10,0.97);
+  border: 1px solid rgba(232,131,74,0.3);
+  border-radius: 12px;
+  padding: 10px 12px;
+  z-index: 300;
+  display: none;
+  font-family: 'Space Mono','Courier New',monospace;
+  font-size: 10px;
+  color: rgba(240,225,215,0.9);
+  max-height: 55vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  text-align: center;
+}
+.agent-task-row { text-align:left; padding-left:4px; line-height:1.8; }
+.agent-task-row .att-run  { color: rgba(244,180,140,0.95); }
+.agent-task-row .att-done { color: rgba(134,239,172,0.95); }
+.agent-task-desc { color: rgba(200,200,210,0.6); padding-left:14px; font-size:9px; line-height:1.5; }
+
 /* ── Mermaid diagrams ─────────────────────────────────────────────────────── */
 .md-mermaid {
   background: rgba(0,0,0,0.3);
@@ -605,47 +659,8 @@ html, body {
   margin-left: 4px;
 }
 
-/* ── Sub-agent panel ─────────────────────────────────────────────────────── */
-.agent-panel {
-  margin: 6px 4px;
-  border-radius: 14px;
-  background: #151518;
-  border: 1px solid #2A2A30;
-  box-shadow: 0 4px 20px rgba(232,131,74,0.08);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 10px 14px 8px;
-  gap: 6px;
-}
-.agent-panel-header {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-}
-.agent-panel-title {
-  color: #E8834A;
-  font-size: 11px;
-  font-family: 'Space Mono','Courier New',monospace;
-  font-weight: 600;
-  flex: 1;
-}
-.agent-panel-count {
-  color: rgba(232,131,74,0.5);
-  font-size: 9px;
-  font-family: 'Space Mono','Courier New',monospace;
-}
-.agent-panel-desc {
-  width: 100%;
-  font-size: 10px;
-  font-family: 'Space Mono','Courier New',monospace;
-  color: rgba(232,131,74,0.45);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* Sub-agent activity is shown via #agent-chip / #agent-popover (top-right),
+   defined alongside the MCP chip styles above. */
 /* SVG animation keyframes */
 @keyframes ap-pulse1 { 0%{r:13px;opacity:.18} 100%{r:21px;opacity:0} }
 @keyframes ap-pulse2 { 0%{r:13px;opacity:.12} 100%{r:24px;opacity:0} }
@@ -681,6 +696,8 @@ html, body {
 <!-- MCP status chip (top-left, tappable for tool list) -->
 <div id="mcp-chip">MCP ● 0</div>
 <div id="mcp-popover"></div>
+<div id="agent-chip"></div>
+<div id="agent-popover"></div>
 
 <!-- Messages -->
 <div id="msgs"></div>
@@ -1646,8 +1663,7 @@ function showPermissionDialog(perm){
   scrollToBottom();
 }
 
-// ── Sub-agent animated panel ──────────────────────────────────────────────────
-var agentPanelEl   = null;  // current panel DOM element
+// ── Sub-agent activity (top-right chip + popover) ─────────────────────────────
 var agentNodeStates= [];    // 'running' | 'done' per spawned agent
 
 // Node layout: orchestrator at center, up to 3 sub-agents around it
@@ -1937,85 +1953,83 @@ function buildAgentSvg(states) {
   return svg;
 }
 
-function getAgentPanel(){
-  if(!agentPanelEl || !agentPanelEl.parentNode){
-    agentPanelEl=document.createElement('div');
-    agentPanelEl.className='agent-panel';
-    agentNodeStates=[];
-    msgs.appendChild(agentPanelEl);
-    scrollToBottom();
+// Sub-agent activity is now surfaced via a top-right status chip (mirrors the
+// MCP chip on the left) instead of an inline card. The chip pulses amber while
+// agents run; tapping it opens a popover with the live node graph + task list.
+var agentTasks     = [];     // {desc, status:'running'|'done'} per sub-agent
+var agentHideTimer = null;
+
+function renderAgentChip(){
+  var chip=document.getElementById('agent-chip');
+  if(!chip) return;
+  var n=agentNodeStates.length;
+  var allDone = n>0 && agentNodeStates.every(function(s){return s==='done';});
+  if(allDone){
+    chip.className='done';
+    chip.innerHTML='✦ '+n+' done';
+  } else {
+    chip.className='running';
+    chip.innerHTML='<span class="ac-spin">⬡</span> '+n+' agent'+(n>1?'s':'');
   }
-  return agentPanelEl;
+  chip.style.opacity='1';
+  chip.style.display='block';
+  var pop=document.getElementById('agent-popover');
+  if(pop && pop.style.display==='block') renderAgentPopover();
+}
+
+function renderAgentPopover(){
+  var pop=document.getElementById('agent-popover');
+  if(!pop) return;
+  var n=agentNodeStates.length;
+  var done=agentNodeStates.filter(function(s){return s==='done';}).length;
+  pop.innerHTML='<div style="font-size:9px;color:rgba(232,131,74,0.7);letter-spacing:1px;margin-bottom:6px;">SUB-AGENTS — '+done+'/'+n+' DONE</div>';
+  pop.appendChild(buildAgentSvg(agentNodeStates));
+  var list=document.createElement('div');
+  list.style.marginTop='6px';
+  for(var i=0;i<agentTasks.length;i++){
+    var t=agentTasks[i];
+    var isDone=t.status==='done';
+    var row=document.createElement('div');
+    row.className='agent-task-row';
+    row.innerHTML='<span class="'+(isDone?'att-done':'att-run')+'">'+(isDone?'✓':'●')+'</span> agent '+(i+1);
+    list.appendChild(row);
+    if(t.desc){
+      var d=document.createElement('div');
+      d.className='agent-task-desc';
+      d.textContent=t.desc;
+      list.appendChild(d);
+    }
+  }
+  pop.appendChild(list);
 }
 
 function showAgentPanel(perm){
+  // A pending hide-timer means the previous batch finished and is fading out —
+  // a new sub-agent belongs to a fresh batch, so reset before pushing.
+  if(agentHideTimer){ clearTimeout(agentHideTimer); agentHideTimer=null; agentNodeStates=[]; agentTasks=[]; }
   agentNodeStates.push('running');
+  var ti=perm.toolInput||{};
+  var desc=String(ti.description||ti.prompt||'').slice(0,80);
+  agentTasks.push({desc:desc, status:'running'});
   // T3: log this sub-agent invocation in the turn's tool list.
-  try {
-    var ti = perm.toolInput || {};
-    var summary = ti.description || ti.prompt || '';
-    currentTurnTools.push({ name: perm.toolName || 'Agent', summary: String(summary).slice(0, 80), status: 'ran' });
-  } catch(_) {}
-  var panel=getAgentPanel();
-  panel.innerHTML='';
-
-  var hdr=document.createElement('div');
-  hdr.className='agent-panel-header';
-  var dot=document.createElement('span');
-  dot.textContent='⬡';
-  dot.style.cssText='color:#E8834A;font-size:13px;';
-  var title=document.createElement('span');
-  title.className='agent-panel-title';
-  title.textContent='Sub-agents running';
-  var count=document.createElement('span');
-  count.className='agent-panel-count';
-  count.textContent=agentNodeStates.length+' agent'+(agentNodeStates.length>1?'s':'');
-  hdr.appendChild(dot); hdr.appendChild(title); hdr.appendChild(count);
-  panel.appendChild(hdr);
-
-  // Task description
-  var desc=perm.toolInput&&(perm.toolInput.description||perm.toolInput.prompt||'');
-  if(desc){
-    var d=document.createElement('div');
-    d.className='agent-panel-desc';
-    d.textContent=String(desc).slice(0,80);
-    panel.appendChild(d);
-  }
-
-  panel.appendChild(buildAgentSvg(agentNodeStates));
-  scrollToBottom();
+  try { currentTurnTools.push({ name: perm.toolName||'Agent', summary: desc, status:'ran' }); } catch(_){}
+  renderAgentChip();
 }
 
 function completeAgentPanel(){
-  if(!agentPanelEl||!agentPanelEl.parentNode) return;
+  if(!agentNodeStates.length) return;
   agentNodeStates=agentNodeStates.map(function(){return 'done';});
-  var panel=agentPanelEl;
-  panel.innerHTML='';
-
-  var hdr=document.createElement('div');
-  hdr.className='agent-panel-header';
-  var dot=document.createElement('span');
-  dot.textContent='✦';
-  dot.style.cssText='color:#34d399;font-size:13px;';
-  var title=document.createElement('span');
-  title.className='agent-panel-title';
-  title.style.color='#86efac';
-  title.textContent='Agents completed';
-  var count=document.createElement('span');
-  count.className='agent-panel-count';
-  count.textContent=agentNodeStates.length+' done';
-  hdr.appendChild(dot); hdr.appendChild(title); hdr.appendChild(count);
-  panel.appendChild(hdr);
-  panel.appendChild(buildAgentSvg(agentNodeStates));
-
-  // Fade and remove after 3s
-  setTimeout(function(){
-    panel.style.transition='opacity 0.8s';
-    panel.style.opacity='0';
-    setTimeout(function(){ if(panel.parentNode) panel.parentNode.removeChild(panel); }, 900);
-    agentPanelEl=null;
-    agentNodeStates=[];
-  }, 3000);
+  for(var i=0;i<agentTasks.length;i++) agentTasks[i].status='done';
+  renderAgentChip();
+  // Fade the chip out a few seconds after completion, then reset state.
+  agentHideTimer=setTimeout(function(){
+    var chip=document.getElementById('agent-chip');
+    var pop=document.getElementById('agent-popover');
+    if(pop) pop.style.display='none';
+    if(chip){ chip.style.opacity='0'; setTimeout(function(){ chip.style.display='none'; }, 700); }
+    agentNodeStates=[]; agentTasks=[];
+    agentHideTimer=null;
+  }, 4000);
 }
 
 // ── Follow-up suggestions ─────────────────────────────────────────────────────
@@ -2884,6 +2898,23 @@ document.addEventListener('click',function(e){
   var pop=document.getElementById('mcp-popover');
   var chip=document.getElementById('mcp-chip');
   if(pop&&pop.style.display==='block'&&!pop.contains(e.target)&&e.target!==chip){
+    pop.style.display='none';
+  }
+});
+
+// Sub-agent chip → toggle popover with the node graph + task list.
+document.getElementById('agent-chip').addEventListener('click',function(e){
+  e.stopPropagation();
+  var pop=document.getElementById('agent-popover');
+  if(!pop) return;
+  if(pop.style.display==='block'){ pop.style.display='none'; return; }
+  renderAgentPopover();
+  pop.style.display='block';
+});
+document.addEventListener('click',function(e){
+  var pop=document.getElementById('agent-popover');
+  var chip=document.getElementById('agent-chip');
+  if(pop&&pop.style.display==='block'&&!pop.contains(e.target)&&chip&&!chip.contains(e.target)){
     pop.style.display='none';
   }
 });
