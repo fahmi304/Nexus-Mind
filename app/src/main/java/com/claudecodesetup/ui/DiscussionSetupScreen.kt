@@ -141,6 +141,10 @@ fun DiscussionSetupScreen(
                 val turnsWarn = turnsUnlimited || effectiveTurns > 12
                 val sliderPos = (turnsText.toIntOrNull() ?: 20).coerceIn(2, 20)
                 val turnsAccent = if (turnsWarn) NexusRed else NexusAccent
+                // The box wins. Whenever it holds a value the slider can't show
+                // (blank = unlimited, or > 20), the slider is disabled/greyed so
+                // it's clear the exact box below is in control.
+                val sliderActive = !turnsUnlimited && effectiveTurns in 2..20
                 SectionLabel(
                     "MAX TURNS  (${if (turnsUnlimited) "∞" else effectiveTurns})",
                     color = if (turnsWarn) NexusRed else NexusBlue.copy(alpha = 0.8f),
@@ -149,12 +153,22 @@ fun DiscussionSetupScreen(
                     value = sliderPos.toFloat(),
                     onValueChange = { turnsText = it.toInt().toString() },
                     valueRange = 2f..20f, steps = 17,
+                    enabled = sliderActive,
                     colors = SliderDefaults.colors(
                         thumbColor = turnsAccent,
                         activeTrackColor = turnsAccent,
                         inactiveTrackColor = NexusBorder2,
+                        disabledThumbColor = NexusText3,
+                        disabledActiveTrackColor = NexusBorder2,
+                        disabledInactiveTrackColor = NexusBorder2,
                     ),
                 )
+                if (!sliderActive) {
+                    Text(
+                        "Slider off — using the exact value below.",
+                        fontFamily = DmSansFamily, fontSize = 10.sp, color = NexusText3,
+                    )
+                }
                 OutlinedTextField(
                     value = turnsText,
                     onValueChange = { new -> turnsText = new.filter { it.isDigit() }.take(3) },
