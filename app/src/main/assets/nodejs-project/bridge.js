@@ -3107,10 +3107,21 @@ function openPrintSession() {
             // '*' alone doesn't reliably match all tool types in v2.1.112
             // (WebSearch, WebFetch, MCP tools slip through and trigger permission dialogs).
             // Add explicit patterns so claude-code auto-approves before emitting 9;confirm:.
-            const TOOL_ALLOW = ['*', 'WebSearch(*)', 'WebFetch(*)', 'mcp__*'];
+            const TOOL_ALLOW = ['*', 'WebSearch(*)', 'WebFetch(*)'];
             for (const p of TOOL_ALLOW) {
                 if (!s.permissions.allow.includes(p)) s.permissions.allow.push(p);
             }
+            // MCP tools: claude-code does NOT support wildcards in MCP permission rules,
+            // so 'mcp__*' is silently ignored and every mcp__<server>__<tool> prompted
+            // every turn (user had to tick "Always allow" + resend). The valid format is
+            // 'mcp__<server>' (server-level — grants ALL of that server's tools). Add one
+            // per configured server so e.g. mcp__exa__web_search_exa auto-approves.
+            try {
+                for (const srvName of Object.keys(buildMcpServersObj())) {
+                    const rule = 'mcp__' + srvName;
+                    if (!s.permissions.allow.includes(rule)) s.permissions.allow.push(rule);
+                }
+            } catch (_) {}
             // Workspace boundary: claude-code's Write/Edit/Read tools refuse paths
             // OUTSIDE the working dir + additionalDirectories, independent of
             // permissions.allow:['*']. The app holds MANAGE_EXTERNAL_STORAGE, so the
