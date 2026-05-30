@@ -79,25 +79,10 @@ fun HomeScreen(
         ) {
             Spacer(Modifier.height(64.dp))
 
-            // App icon — loaded as Bitmap to support adaptive icons (API 26+).
-            // The adaptive foreground (108×108 viewBox) reserves a ~9dp safe-zone
-            // margin on every side for the launcher mask. When rendered flat in-app
-            // that margin becomes empty padding, making the logo look undersized in
-            // its tile. Over-extend the drawable bounds by 9/90 of bitmap size so
-            // the inner content (cardinals from y=9..99) fills edge-to-edge.
-            val context = LocalContext.current
-            val appIconBitmap = remember {
-                try {
-                    val drawable = ContextCompat.getDrawable(context, R.mipmap.ic_launcher)
-                    val px = 192
-                    val pad = (px * 9 / 90)  // crop the 9-unit safe-zone border
-                    val bmp = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
-                    val canvas = AndroidCanvas(bmp)
-                    drawable?.setBounds(-pad, -pad, px + pad, px + pad)
-                    drawable?.draw(canvas)
-                    bmp
-                } catch (_: Exception) { null }
-            }
+            // App logo — the Convergence Gate, drawn as a crisp Compose vector
+            // (not the rasterized launcher icon, which left dead safe-zone padding)
+            // and animated: energy pulses sweep inward along the spokes into a
+            // breathing core. Sized to fill the tile properly.
             Box(
                 modifier = Modifier
                     .size(76.dp)
@@ -106,13 +91,7 @@ fun HomeScreen(
                     .border(1.dp, Color(0xFF2A2A30), RoundedCornerShape(20.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                if (appIconBitmap != null) {
-                    Image(
-                        bitmap = appIconBitmap.asImageBitmap(),
-                        contentDescription = "App icon",
-                        modifier = Modifier.size(64.dp)
-                    )
-                }
+                ConvergenceLogo(modifier = Modifier.size(64.dp))
             }
 
             Spacer(Modifier.height(16.dp))
@@ -298,6 +277,71 @@ private fun IconBox(
         contentAlignment = Alignment.Center,
         content = content
     )
+}
+
+// The app logo, drawn 1:1 from ic_launcher_foreground.xml (108×108, center 54,54)
+// as a live Compose vector. Animation: a bright energy pulse sweeps inward along
+// each of the 8 spokes (4 cardinal + 4 diagonal) into the core, which breathes —
+// a literal rendering of "convergence", the app's namesake.
+@Composable
+private fun ConvergenceLogo(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "logo")
+    val sweep by transition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Restart),
+        label = "sweep",
+    )
+    val breathe by transition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "breathe",
+    )
+    val accent = NexusAccent
+    androidx.compose.foundation.Canvas(modifier = modifier) {
+        val k = size.minDimension / 108f
+        fun p(x: Float, y: Float) = Offset(x * k, y * k)
+        val c = p(54f, 54f)
+        val capRound = androidx.compose.ui.graphics.StrokeCap.Round
+
+        val cardinals = listOf(p(54f, 9f), p(99f, 54f), p(54f, 99f), p(9f, 54f))
+        val diagonals = listOf(p(18f, 18f), p(90f, 18f), p(18f, 90f), p(90f, 90f))
+
+        // Base spokes
+        for (o in diagonals) drawLine(accent.copy(alpha = 0.20f), o, c, strokeWidth = 2.5f * k, cap = capRound)
+        for (o in cardinals) drawLine(accent.copy(alpha = 0.35f), o, c, strokeWidth = 3f * k, cap = capRound)
+
+        // Diamond outline
+        val diamond = Path().apply {
+            moveTo(54f * k, 27f * k); lineTo(81f * k, 54f * k)
+            lineTo(54f * k, 81f * k); lineTo(27f * k, 54f * k); close()
+        }
+        drawPath(
+            diamond, accent.copy(alpha = 0.60f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = 3f * k, join = androidx.compose.ui.graphics.StrokeJoin.Round,
+            ),
+        )
+
+        // Tip dots
+        for (t in listOf(p(54f, 27f), p(81f, 54f), p(54f, 81f), p(27f, 54f)))
+            drawCircle(accent.copy(alpha = 0.50f), 3.6f * k, t)
+
+        // Traveling convergence pulses — fade in then out (sin) so they're invisible
+        // at the outer edge and at the core, brightest mid-spoke. No snap on loop.
+        val pulseA = kotlin.math.sin(sweep * Math.PI).toFloat().coerceIn(0f, 1f)
+        fun travel(o: Offset, weight: Float, dotR: Float) {
+            val pos = Offset(o.x + (c.x - o.x) * sweep, o.y + (c.y - o.y) * sweep)
+            drawCircle(accent.copy(alpha = 0.22f * pulseA * weight), dotR * 2.4f, pos)
+            drawCircle(accent.copy(alpha = 0.95f * pulseA * weight), dotR, pos)
+        }
+        for (o in cardinals) travel(o, 1f, 2.7f * k)
+        for (o in diagonals) travel(o, 0.7f, 2.2f * k)
+
+        // Center glow halo — breathes
+        drawCircle(accent.copy(alpha = 0.15f + 0.20f * breathe), (9f + 4f * breathe) * k, c)
+        // Center node — solid, slight pulse
+        drawCircle(accent, (5.4f + 0.6f * breathe) * k, c)
+    }
 }
 
 @Composable
