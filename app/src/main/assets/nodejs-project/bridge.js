@@ -1135,6 +1135,12 @@ const PRUNED_TOOLS = new Set([
     'CronCreate', 'CronDelete', 'CronList',
     'EnterWorktree', 'ExitWorktree',
     'ScheduleWakeup', 'NotebookEdit',
+    // Orchestration/harness tools with no function on a phone terminal — and
+    // they are loop drivers for weak OAI models (inv 68). Observed on-device:
+    // gpt-oss-120b spiralled on Skill("update-config") ~10x trying to self-grant
+    // a Write permission, then timed out (exit 143). AskUserQuestion is the other
+    // prime loop driver (weak models "ask permission" for things they can do).
+    'Skill', 'Monitor', 'PushNotification', 'RemoteTrigger', 'AskUserQuestion',
 ]);
 
 function handleProxyRequest(anthReq, res) {
