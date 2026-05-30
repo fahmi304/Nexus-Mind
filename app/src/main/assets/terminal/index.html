@@ -738,8 +738,6 @@ html, body {
 
 <!-- Keyboard toolbar -->
 <div id="toolbar">
-  <button class="tb-btn tb-accent" id="btn-yes" style="display:none">Yes</button>
-  <button class="tb-btn tb-accent" id="btn-no" style="display:none">No</button>
   <button class="tb-btn tb-accent" id="btn-shell">$ </button>
   <button class="tb-btn" id="btn-ctrl">Ctrl</button>
   <button class="tb-btn" id="btn-tab">Tab</button>
@@ -2326,8 +2324,6 @@ function finalizeAiBubble(){
       const ttsText=displayText.replace(/\x1b\[[0-9;]*m/g,'').replace(/```[\s\S]*?```/g,'[code block]').replace(/[*_#`]/g,'').trim().slice(0,500);
       if(ttsText) Android.speakText(ttsText);
     }
-    // If Claude ended with a question / action-request, show Yes/No quick-reply chips
-    maybeShowYesNo(displayText);
     scrollToBottom();
   }
   rawAiText='';
@@ -2338,44 +2334,6 @@ function finalizeAiBubble(){
   currentTurnTools=[];
   aiBubbleHasContent=false;
   chatState='IDLE';
-}
-
-// Show quick-reply chips when Claude asks for confirmation.
-// Guardian prompt "Proceed?" → No / Yes / Always (full words so Claude reads them in context).
-// General yes/no questions → No / Yes.
-function maybeShowYesNo(text){
-  var old=document.getElementById('yn-bar');
-  if(old)old.remove();
-  var plain=text.replace(/\x1b\[[0-9;]*[mA-Za-z]/g,'').trim();
-  if(!plain) return;
-  var endsQ=/[?？]\s*$/.test(plain);
-  var hasIntent=/\b(shall i|should i|would you like|do you want|do you need|want me to|let me know if|proceed\b|confirm\b|run this|execute this|apply this|overwrite|delete this|install this|go ahead)\b/i.test(plain);
-  if(!endsQ && !hasIntent) return;
-
-  // Guardian "Proceed?" → 3 chips with Always option
-  var isGuardian=/\bproceed\b/i.test(plain);
-  var chips=isGuardian
-    ? [['No','No','rgba(239,68,68,0.15)','rgba(239,68,68,0.35)','#f87171'],
-       ['Yes','Yes','rgba(34,197,94,0.12)','rgba(34,197,94,0.35)','#86efac'],
-       ['Always','Always','rgba(251,191,36,0.12)','rgba(251,191,36,0.35)','#fcd34d']]
-    : [['No','No','rgba(239,68,68,0.15)','rgba(239,68,68,0.35)','#f87171'],
-       ['Yes','Yes','rgba(34,197,94,0.12)','rgba(34,197,94,0.35)','#86efac']];
-
-  var bar=document.createElement('div');
-  bar.id='yn-bar';
-  bar.style.cssText='display:flex;gap:8px;padding:6px 12px 2px;flex-wrap:wrap;';
-  chips.forEach(function(c){
-    var btn=document.createElement('button');
-    btn.textContent=c[0];
-    btn.style.cssText='background:'+c[2]+';border:1px solid '+c[3]+';border-radius:14px;color:'+c[4]+';font-size:11px;font-family:Space Mono,monospace;padding:4px 14px;cursor:pointer;';
-    btn.addEventListener('click',function(){
-      bar.remove();
-      submitLine(c[1]);
-    });
-    bar.appendChild(btn);
-  });
-  msgs.appendChild(bar);
-  scrollToBottom();
 }
 
 function getSysBubble(){
@@ -2597,9 +2555,6 @@ function submitLine(text){
   historyIdx=-1;
   savedInput='';
   updateInputDisp();
-  // Hide Yes/No toolbar buttons — user is sending a new message
-  document.getElementById('btn-yes').style.display='none';
-  document.getElementById('btn-no').style.display='none';
   if(!msg && !pendingImageAttached) return;
   // Local bridge commands (!log, !help, !clear, $ cmd, etc.): show a terminal
   // command bubble so the user sees what was typed, then send as raw input.
@@ -2695,8 +2650,6 @@ function sendRawInput(){
   const text=inputBuffer.replace(/[\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u206f\ufeff\u00ad]/g,'').trim();
   inputBuffer='';ghost.value='';historyIdx=-1;savedInput='';
   updateInputDisp();
-  document.getElementById('btn-yes').style.display='none';
-  document.getElementById('btn-no').style.display='none';
   if(text.length>0){
     if(inputHistory[inputHistory.length-1]!==text){
       inputHistory.push(text);if(inputHistory.length>50)inputHistory.shift();
@@ -2781,16 +2734,6 @@ function tbRaw(key){
   if(typeof Android!=='undefined') Android.sendInput(key);
   ghost.focus();
 }
-document.getElementById('btn-yes').addEventListener('click',function(){
-  document.getElementById('btn-yes').style.display='none';
-  document.getElementById('btn-no').style.display='none';
-  tbRaw('y\r');ghost.focus();
-});
-document.getElementById('btn-no').addEventListener('click',function(){
-  document.getElementById('btn-yes').style.display='none';
-  document.getElementById('btn-no').style.display='none';
-  tbRaw('n\r');ghost.focus();
-});
 document.getElementById('btn-shell').addEventListener('click',function(){
   if(!inputBuffer.startsWith('$ ')){inputBuffer='$ '+inputBuffer;}
   ghost.value=inputBuffer;updateInputDisp();ghost.focus();
