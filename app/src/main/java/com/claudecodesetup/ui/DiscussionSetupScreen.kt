@@ -90,10 +90,21 @@ fun DiscussionSetupScreen(
                 SectionLabel("TOPIC")
                 OutlinedTextField(
                     value = topic, onValueChange = { topic = it },
-                    placeholder = { Text("Paste code, ask a question, propose a plan…") },
+                    placeholder = {
+                        Text("Paste code, ask a question, propose a plan…",
+                            fontFamily = DmSansFamily, fontSize = 13.sp, color = NexusText3)
+                    },
                     minLines = 3, maxLines = 8,
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions.Default,
+                    textStyle = TextStyle(fontFamily = DmSansFamily, fontSize = 14.sp, color = Color.White),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = NexusAccent,
+                        unfocusedBorderColor = NexusBorder2,
+                        cursorColor = NexusAccent,
+                    ),
                 )
 
                 // Mode
