@@ -82,7 +82,7 @@ jobs:
 
       - name: Show build info
         run: |
-          APK=app/build/outputs/apk/release/app-release.apk
+          APK=app/build/outputs/apk/release/NexusMind-release.apk
           AAB=app/build/outputs/bundle/release/app-release.aab
           echo "✅ Signed APK: $(du -sh $APK | cut -f1)"
           echo "✅ Signed AAB: $(du -sh $AAB | cut -f1)"
@@ -92,14 +92,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/NexusMind-release.apk
             app/build/outputs/bundle/release/app-release.aab
-          name: ClaudeCode Setup ${{ github.ref_name }}
+          name: NexusMind ${{ github.ref_name }}
           body: |
-            ## ClaudeCode Setup ${{ github.ref_name }}
+            ## NexusMind ${{ github.ref_name }}
 
             ### Install
-            1. Download `app-release.apk` below
+            1. Download `NexusMind-release.apk` below
             2. Enable **Install unknown apps** in Android Settings
             3. Open the APK and tap Install
             4. Follow the on-screen setup (WiFi recommended, ~500 MB first-time download)
@@ -116,7 +116,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: NexusMind-${{ github.ref_name }}-apk
-          path: app/build/outputs/apk/release/app-release.apk
+          path: app/build/outputs/apk/release/NexusMind-release.apk
           retention-days: 90
 
       - name: Upload signed AAB as artifact

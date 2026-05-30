@@ -89,15 +89,15 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: ClaudeCodeSetup-debug-${{ github.run_number }}
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: NexusMind-debug-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/NexusMind-debug.apk
           retention-days: 3
           if-no-files-found: error
 
       # ── 10. Show APK info ────────────────────────────────────────────────────
       - name: Show APK info
         run: |
-          APK=app/build/outputs/apk/debug/app-debug.apk
+          APK=app/build/outputs/apk/debug/NexusMind-debug.apk
           echo "Build successful"
           echo "APK size: $(du -sh "$APK" | cut -f1)"
           echo "Path: $APK"
