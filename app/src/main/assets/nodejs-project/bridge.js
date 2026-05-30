@@ -2140,11 +2140,21 @@ function buildMcpServersObj() {
                         "process.exit(1);" +
                         "});"
                     ],
-                    env: {
+                    // Full runtime env — NOT just the MCP_HTTP_* vars. claude-code's
+                    // MCP SDK (StdioClientTransport) spawns with `env: params.env ??
+                    // getDefaultEnvironment()`: when env is supplied it is used VERBATIM
+                    // (no parent-env inheritance), and the default set omits
+                    // LD_LIBRARY_PATH anyway. Without LD_LIBRARY_PATH=NATIVE_DIR the
+                    // shim's libnode-launcher.so can't find libnode.so and dies at exec,
+                    // so the server never initializes and 0 tools register. buildEnv()
+                    // supplies PATH/HOME/LD_LIBRARY_PATH; the shim ignores the ANTHROPIC_*
+                    // vars it doesn't read. (The bridge's own client already does this —
+                    // line ~2251 — which is why its [mcp-http:exa] launch succeeds.)
+                    env: Object.assign({}, buildEnv(), {
                         MCP_HTTP_NAME: String(up.name),
                         MCP_HTTP_URL: String(up.url),
                         MCP_HTTP_HEADERS: JSON.stringify(up.headers || {}),
-                    },
+                    }),
                 };
             }
         }
