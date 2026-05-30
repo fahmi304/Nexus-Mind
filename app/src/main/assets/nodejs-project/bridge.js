@@ -2955,6 +2955,18 @@ function openPrintSession() {
             for (const p of TOOL_ALLOW) {
                 if (!s.permissions.allow.includes(p)) s.permissions.allow.push(p);
             }
+            // Workspace boundary: claude-code's Write/Edit/Read tools refuse paths
+            // OUTSIDE the working dir + additionalDirectories, independent of
+            // permissions.allow:['*']. The app holds MANAGE_EXTERNAL_STORAGE, so the
+            // process can write anywhere on shared storage — grant the common storage
+            // roots (and the app files dir) as additional workspace dirs so the model
+            // can edit user files under /sdcard without hitting the out-of-workspace
+            // gate (the gate the model kept hitting then mis-explaining as a "security
+            // sandbox"). cwd itself is always allowed; this covers absolute paths.
+            if (!Array.isArray(s.permissions.additionalDirectories)) s.permissions.additionalDirectories = [];
+            for (const d of ['/sdcard', '/storage/emulated/0', '/storage/self/primary', FILES_DIR]) {
+                if (!s.permissions.additionalDirectories.includes(d)) s.permissions.additionalDirectories.push(d);
+            }
             // Inject per-tool always-allow and always-deny overrides saved by the user.
             // Bare names (e.g. 'Bash') get both 'Bash' and 'Bash(*)' so v2.1.112 matches them.
             // Pattern entries (e.g. 'Bash(git *)') already self-describe — inject as-is, no suffix.
