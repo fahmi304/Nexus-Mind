@@ -1,5 +1,9 @@
 package com.claudecodesetup.ui
 
+import android.provider.OpenableColumns
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.*
@@ -18,6 +23,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.claudecodesetup.data.AppPreferences
 import com.claudecodesetup.discussion.DiscussionConfig
 import com.claudecodesetup.discussion.DiscussionMode
@@ -48,6 +56,45 @@ fun DiscussionSetupScreen(
     var pacing by remember { mutableStateOf(initialConfig?.pacing ?: Pacing.DELAY) }
     var reactionDelaySec by remember { mutableStateOf(initialConfig?.reactionDelaySec ?: 5) }
     var showPicker by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // Attach a code/text file: read its contents and insert them into the topic,
+    // wrapped in a fenced block with the filename so the models see it as code.
+    val attachLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val loaded = withContext(Dispatchers.IO) {
+                try {
+                    var name = uri.lastPathSegment ?: "file"
+                    context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                        if (c.moveToFirst()) {
+                            val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                            if (idx >= 0) name = c.getString(idx) ?: name
+                        }
+                    }
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: return@withContext null
+                    if (bytes.size > 200_000) return@withContext Pair(name, null) // too big
+                    Pair(name, String(bytes, Charsets.UTF_8))
+                } catch (e: Exception) { null }
+            }
+            when {
+                loaded == null ->
+                    Toast.makeText(context, "Couldn't read that file", Toast.LENGTH_SHORT).show()
+                loaded.second == null ->
+                    Toast.makeText(context, "File too large (max 200 KB)", Toast.LENGTH_SHORT).show()
+                else -> {
+                    val (name, body) = loaded
+                    val block = "```" + name + "\n" + body!!.trimEnd() + "\n```"
+                    topic = if (topic.isBlank()) block else topic.trimEnd() + "\n\n" + block
+                    Toast.makeText(context, "Attached $name (${body.length} chars)", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     val canStart = topic.isNotBlank() && speakers.size in 2..4
 
@@ -106,6 +153,18 @@ fun DiscussionSetupScreen(
                         cursorColor = NexusAccent,
                     ),
                 )
+                Row(
+                    modifier = Modifier
+                        .background(NexusSurface2, RoundedCornerShape(8.dp))
+                        .border(1.dp, NexusBorder, RoundedCornerShape(8.dp))
+                        .clickable { attachLauncher.launch(arrayOf("*/*")) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("📎", fontSize = 13.sp, modifier = Modifier.padding(end = 6.dp))
+                    Text("Attach code file", fontFamily = DmSansFamily, fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium, color = NexusAccent)
+                }
 
                 // Mode
                 SectionLabel("MODE")
