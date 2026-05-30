@@ -194,7 +194,7 @@ private fun TopicCard(topic: String) {
             letterSpacing = 2.sp, color = NexusAccent)
         Spacer(Modifier.size(4.dp))
         Text(topic, fontFamily = SpaceMonoFamily, fontSize = 13.sp,
-            color = Color(0xFFF0F0F2), lineHeight = 20.sp)
+            color = Color.White, lineHeight = 20.sp)
     }
 }
 
@@ -236,7 +236,7 @@ private fun AiChatRow(turn: Turn, onCopy: () -> Unit) {
             ) {
                 if (turn.text.isNotEmpty()) {
                     Text(turn.text, fontFamily = SpaceMonoFamily, fontSize = 13.sp,
-                        color = Color(0xFFF0F0F2), lineHeight = 20.sp)
+                        color = Color.White, lineHeight = 20.sp)
                 } else if (turn.status == TurnStatus.STREAMING) {
                     TypingDots(v.accent)
                 }
@@ -273,7 +273,7 @@ private fun HumanBubble(label: String, text: String) {
                 fontWeight = FontWeight.SemiBold, color = NexusAccent)
             Spacer(Modifier.size(5.dp))
             Text(text, fontFamily = SpaceMonoFamily, fontSize = 13.sp,
-                color = Color(0xFFF0F0F2), lineHeight = 20.sp)
+                color = Color.White, lineHeight = 20.sp)
         }
     }
 }

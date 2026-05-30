@@ -164,7 +164,7 @@ fun ChatTextField(
         placeholder = {
             Text(placeholder, fontFamily = SpaceMonoFamily, fontSize = 13.sp, color = NexusText3)
         },
-        textStyle = TextStyle(fontFamily = SpaceMonoFamily, fontSize = 13.sp, color = NexusText),
+        textStyle = TextStyle(fontFamily = SpaceMonoFamily, fontSize = 13.sp, color = Color.White),
         shape = RoundedCornerShape(14.dp),
         minLines = 1,
         maxLines = maxLines,
@@ -173,8 +173,8 @@ fun ChatTextField(
             focusedContainerColor = InputWrapBg,
             unfocusedContainerColor = InputWrapBg,
             disabledContainerColor = InputWrapBg,
-            focusedTextColor = NexusText,
-            unfocusedTextColor = NexusText,
+            focusedTextColor = Color.White,
+            unfocusedTextColor = Color.White,
             disabledTextColor = NexusText2,
             focusedBorderColor = NexusAccent,
             unfocusedBorderColor = InputWrapBorder,

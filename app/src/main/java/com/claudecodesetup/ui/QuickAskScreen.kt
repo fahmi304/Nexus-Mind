@@ -249,7 +249,7 @@ private fun QuickAskBubble(msg: Message, onCopy: () -> Unit) {
                 Text(
                     msg.text,
                     fontFamily = DmSansFamily, fontSize = 14.sp,
-                    color = NexusText, lineHeight = 20.sp,
+                    color = Color.White, lineHeight = 20.sp,
                 )
             } else if (msg.status == MessageStatus.STREAMING) {
                 Text("typing…", fontFamily = SpaceMonoFamily, fontSize = 11.sp, color = NexusText3)
