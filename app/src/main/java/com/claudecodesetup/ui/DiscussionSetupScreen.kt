@@ -167,9 +167,10 @@ fun DiscussionSetupScreen(
                         )
                     }
                     Text(
-                        "Defence argues for the topic, Opposition argues against, Moderator stays " +
-                        "neutral. Sides are fixed for the whole debate — pick Roundtable instead if " +
-                        "you want models free to change their minds.",
+                        "For a yes/no topic, Defence argues for it and Opposition against. For an " +
+                        "either/or topic (\"Toyota or Honda\"), Defence champions the first option and " +
+                        "Opposition the second. Moderator stays neutral. Sides are fixed for the whole " +
+                        "debate — pick Roundtable instead if you want models free to change their minds.",
                         fontFamily = DmSansFamily, fontSize = 11.sp, color = NexusText3,
                     )
                 }

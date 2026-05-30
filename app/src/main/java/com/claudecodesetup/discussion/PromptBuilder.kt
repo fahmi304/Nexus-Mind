@@ -42,9 +42,22 @@ object PromptBuilder {
                 "Don't cling to your first take just to stay consistent — reasoning honestly matters more than looking right."
             DiscussionMode.DEBATE -> {
                 val side = speaker.role.ifEmpty { "Participant" }
-                "$BASE_RULES\n\nYour assigned side: $side. " +
-                "Argue this position rigorously. If you're the Moderator, stay neutral, " +
-                "summarize the disagreement crisply, and ask the sharpest next question."
+                val stance = when (side) {
+                    "Defence" ->
+                        "You take the AFFIRMATIVE side. If the topic is a yes/no question or a proposal, " +
+                        "argue FOR it. If the topic is an either/or choice (\"X or Y\"), you champion the " +
+                        "FIRST option named and must commit to it the whole debate."
+                    "Opposition" ->
+                        "You take the OPPOSING side. If the topic is a yes/no question or a proposal, " +
+                        "argue AGAINST it. If the topic is an either/or choice (\"X or Y\"), you champion the " +
+                        "SECOND option named and must commit to it the whole debate."
+                    "Moderator" ->
+                        "You are the Moderator. Stay neutral, summarize the disagreement crisply, " +
+                        "and ask the sharpest next question."
+                    else -> "Argue your assigned position rigorously."
+                }
+                "$BASE_RULES\n\nYour assigned side: $side. $stance " +
+                "Pick your side and defend it — never reply \"both\", \"it depends\", or refuse to choose."
             }
             DiscussionMode.CRITIQUE -> {
                 if (isFirst) "$BASE_RULES\n\nYou go first. Propose a concrete solution / answer / plan in 1–2 paragraphs. " +
@@ -163,9 +176,14 @@ object PromptBuilder {
     fun buildVerdictMessages(topic: String, turns: List<Turn>): List<ChatMessage> {
         val sys = "You are a strict, neutral adjudicator of a debate. You have no stake in either side. " +
             "Judge ONLY on the merit and rigor of the arguments — ignore confidence, tone, and length. " +
-            "The sides are anonymized: \"Side A (Defence)\" argues FOR the topic, \"Side B (Opposition)\" argues AGAINST it. " +
-            "Your FIRST line must be EXACTLY one of:  WINNER: DEFENCE  |  WINNER: OPPOSITION  |  WINNER: DRAW. " +
-            "Then give three short points: (1) the decisive argument, (2) the best-supported answer to the question on the merits, " +
+            "The sides are anonymized: \"Side A (Defence)\" argues FOR the topic / the FIRST option, " +
+            "\"Side B (Opposition)\" argues AGAINST the topic / the SECOND option. " +
+            "You MUST reach a concrete verdict — never answer \"both\", \"it depends\", or compare endlessly without deciding.\n" +
+            "Output EXACTLY this shape:\n" +
+            "Line 1 — ANSWER: <directly resolve the topic's question — name the single winning option, " +
+            "or YES/NO for a proposal>\n" +
+            "Line 2 — one of:  WINNER: DEFENCE  |  WINNER: OPPOSITION  |  WINNER: DRAW\n" +
+            "Then three short points: (1) the decisive argument, (2) why the winning answer is best on the merits, " +
             "(3) the losing side's key weakness. Be concise and impartial."
         val sb = StringBuilder()
         sb.append("## Topic\n").append(topic.trim()).append("\n\n## Arguments (anonymized)\n\n")
@@ -179,7 +197,7 @@ object PromptBuilder {
             }
             sb.append("### ").append(side).append("\n").append(t.text.trim()).append("\n\n")
         }
-        sb.append("---\nDeliver your verdict (start with \"WINNER:\"):")
+        sb.append("---\nDeliver your verdict. Line 1 must start with \"ANSWER:\" and name the single winner:")
         return listOf(ChatMessage("system", sys), ChatMessage("user", sb.toString()))
     }
 
