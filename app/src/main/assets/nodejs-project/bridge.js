@@ -1957,6 +1957,11 @@ function buildEnv() {
     const env = {
         HOME: FILES_DIR,
         TERM: 'xterm-256color',
+        // claude-code's Bash TOOL aborts with "No suitable shell found … set the
+        // SHELL environment variable" when SHELL is unset (Android has no default).
+        // /system/bin/sh is a valid POSIX shell (the bridge's own `$` commands use
+        // it). Without this, Write/Edit/Read tools work but the Bash tool is dead.
+        SHELL: '/system/bin/sh',
         LANG: 'en_US.UTF-8',
         LINES: '50',
         COLUMNS: '160',
