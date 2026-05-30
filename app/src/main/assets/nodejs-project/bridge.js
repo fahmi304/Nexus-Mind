@@ -1155,6 +1155,12 @@ function handleProxyRequest(anthReq, res) {
     if (Array.isArray(anthReq.tools) && anthReq.tools.length) {
         const userOff = Array.isArray(cfg.disabledTools) ? cfg.disabledTools : [];
         const before = anthReq.tools.length;
+        // Did claude-code actually load any MCP tools? If the count is 0 here, the
+        // problem is upstream (shim/discovery), not the proxy. If > 0, they reached
+        // the proxy and any later absence is a pruning/conversion issue.
+        const mcpNames = anthReq.tools.filter(t => /^mcp__/.test(t.name || '')).map(t => t.name);
+        log('[proxy] mcp tools in request: ' + mcpNames.length +
+            (mcpNames.length ? ' [' + mcpNames.join(',') + ']' : '') + '\n');
         anthReq.tools = anthReq.tools.filter(t =>
             !PRUNED_TOOLS.has(t.name) && userOff.indexOf(t.name) === -1);
         const dropped = before - anthReq.tools.length;
@@ -1936,6 +1942,13 @@ function buildEnv() {
         : 'claude-3-5-sonnet-20241022';
 
     env.DISABLE_AUTOUPDATER = '1';
+    // MCP startup/tool timeouts — the HTTP MCP shim does a lazy upstream init
+    // (initialize + tools/list round-trips to a remote server) on claude-code's
+    // first tools/list. claude-code's default MCP connect timeout can fire before
+    // those remote hops complete, so the server is dropped and its tools never
+    // reach the model. Give it generous headroom.
+    env.MCP_TIMEOUT      = '30000';
+    env.MCP_TOOL_TIMEOUT = '30000';
     // Android has no /tmp — point Node.js temp files to app's files dir
     env.TMPDIR = FILES_DIR;
     env.TEMP   = FILES_DIR;
