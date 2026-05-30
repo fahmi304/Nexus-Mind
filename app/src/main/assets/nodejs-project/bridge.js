@@ -2088,6 +2088,73 @@ function lineDiff(oldText, newText) {
 
 const MCP_STDIO_CONFIG  = path.join(FILES_DIR, 'mcp_stdio.json');
 const MCP_CONFIG_FILE   = path.join(FILES_DIR, 'mcp_config.json');
+const MCP_SPAWN_CONFIG  = path.join(FILES_DIR, 'mcp_spawn_config.json');
+
+// Build the mcpServers object claude-code consumes via `--mcp-config`. Merges
+// real stdio servers (from mcp_config.json) + one stdio shim per HTTP server
+// (from mcp_http.json). HTTP servers go through the lazy `mcp_http_proxy.js`
+// stdio shim — claude-code only ever spawns a LOCAL stdio process and speaks
+// stdio MCP, so there is NO remote SSE connect at spawn time (that was the
+// invariant-51 hang). Returns {} when nothing is configured.
+//
+// NOTE: claude-code does NOT read `mcpServers` from settings.json — MCP must be
+// supplied via --mcp-config (or .mcp.json). The old settings.json injection was
+// a silent no-op, which is why `[proxy] mcp tools in request: 0` on every turn.
+function buildMcpServersObj() {
+    const servers = {};
+    try {
+        if (fs.existsSync(MCP_CONFIG_FILE)) {
+            const cfg = JSON.parse(fs.readFileSync(MCP_CONFIG_FILE, 'utf8'));
+            for (const [name, srv] of Object.entries((cfg && cfg.mcpServers) || {})) {
+                if (srv && srv.type === 'stdio') servers[name] = srv; // raw HTTP/SSE excluded
+            }
+        }
+    } catch (e) { log('[mcp-spawn] stdio read error: ' + e.message + '\n'); }
+    try {
+        const shimPath = path.join(FILES_DIR, 'mcp_http_proxy.js');
+        if (fs.existsSync(MCP_HTTP_CONFIG) && fs.existsSync(shimPath)) {
+            const httpCfg = JSON.parse(fs.readFileSync(MCP_HTTP_CONFIG, 'utf8'));
+            for (const up of (Array.isArray(httpCfg) ? httpCfg : [])) {
+                if (!up || !up.name || !up.url) continue;
+                const safeName = String(up.name).replace(/[^a-zA-Z0-9_-]/g, '_');
+                servers[safeName] = {
+                    type: 'stdio',
+                    command: LAUNCHER,
+                    args: ['-e',
+                        "import('file://" + shimPath + "').catch(function(e){" +
+                        "process.stderr.write('[mcp-http-proxy] import failed: '+e.message+'\\n');" +
+                        "process.exit(1);" +
+                        "});"
+                    ],
+                    env: {
+                        MCP_HTTP_NAME: String(up.name),
+                        MCP_HTTP_URL: String(up.url),
+                        MCP_HTTP_HEADERS: JSON.stringify(up.headers || {}),
+                    },
+                };
+            }
+        }
+    } catch (e) { log('[mcp-spawn] http read error: ' + e.message + '\n'); }
+    return servers;
+}
+
+// Write the --mcp-config file for a spawn; returns its path, or null if no
+// servers are configured (so the caller omits the flag entirely).
+function writeSpawnMcpConfig() {
+    const servers = buildMcpServersObj();
+    if (Object.keys(servers).length === 0) {
+        try { if (fs.existsSync(MCP_SPAWN_CONFIG)) fs.unlinkSync(MCP_SPAWN_CONFIG); } catch (_) {}
+        return null;
+    }
+    try {
+        fs.writeFileSync(MCP_SPAWN_CONFIG, JSON.stringify({ mcpServers: servers }, null, 2));
+        log('[mcp-spawn] --mcp-config servers: ' + Object.keys(servers).join(', ') + '\n');
+        return MCP_SPAWN_CONFIG;
+    } catch (e) {
+        log('[mcp-spawn] write error: ' + e.message + '\n');
+        return null;
+    }
+}
 const mcpStdioServers = new Map(); // name → { proc, tools, pendingCbs, msgId, buf }
 // MCP-7: per-server restart counters for crash auto-reconnect. Cleared after
 // 5 min of stable uptime (see setTimeout in startMcpStdioServer success path).
@@ -3048,70 +3115,11 @@ function openPrintSession() {
                     }
                 }
             } catch (_) {}
-            // Inject stdio MCP servers into settings.json so claude-code can use them in
-            // print mode. HTTP/SSE servers are excluded — connecting to remote endpoints
-            // during spawn causes the same hang as --mcp-config (see CLAUDE.md item 5a).
-            try {
-                if (fs.existsSync(MCP_CONFIG_FILE)) {
-                    const mcpCfg = JSON.parse(fs.readFileSync(MCP_CONFIG_FILE, 'utf8'));
-                    if (mcpCfg && mcpCfg.mcpServers) {
-                        const stdioOnly = {};
-                        for (const [name, srv] of Object.entries(mcpCfg.mcpServers)) {
-                            if (srv.type === 'stdio') stdioOnly[name] = srv;
-                        }
-                        if (Object.keys(stdioOnly).length > 0) {
-                            s.mcpServers = stdioOnly;
-                            log('[patchSettings] injected stdio mcpServers: ' + Object.keys(stdioOnly).join(', ') + '\n');
-                        } else {
-                            delete s.mcpServers;
-                        }
-                    } else {
-                        delete s.mcpServers;
-                    }
-                } else {
-                    delete s.mcpServers;
-                }
-            } catch(e2) { log('[patchSettings] mcpServers inject error: ' + e2.message + '\n'); }
-
-            // MCP-1: HTTP MCP via stdio-proxy shim. One shim process per upstream HTTP
-            // MCP server in mcp_http.json — gives claude-code print mode access to
-            // HTTP MCP tools (previously agentic-only). Lazy upstream init inside the
-            // shim means spawn-time health-check stays clean (invariant 51 preserved).
-            try {
-                if (fs.existsSync(MCP_HTTP_CONFIG)) {
-                    const httpCfg = JSON.parse(fs.readFileSync(MCP_HTTP_CONFIG, 'utf8'));
-                    if (Array.isArray(httpCfg) && httpCfg.length > 0) {
-                        const shimPath = path.join(FILES_DIR, 'mcp_http_proxy.js');
-                        if (fs.existsSync(shimPath)) {
-                            s.mcpServers = s.mcpServers || {};
-                            let injected = 0;
-                            for (const up of httpCfg) {
-                                if (!up || !up.name || !up.url) continue;
-                                const safeName = String(up.name).replace(/[^a-zA-Z0-9_-]/g, '_');
-                                s.mcpServers[safeName] = {
-                                    type: 'stdio',
-                                    command: LAUNCHER,
-                                    args: ['-e',
-                                        "import('file://" + shimPath + "').catch(function(e){" +
-                                        "process.stderr.write('[mcp-http-proxy] import failed: '+e.message+'\\n');" +
-                                        "process.exit(1);" +
-                                        "});"
-                                    ],
-                                    env: {
-                                        MCP_HTTP_NAME: String(up.name),
-                                        MCP_HTTP_URL: String(up.url),
-                                        MCP_HTTP_HEADERS: JSON.stringify(up.headers || {}),
-                                    },
-                                };
-                                injected++;
-                            }
-                            if (injected > 0) log('[patchSettings] injected ' + injected + ' HTTP MCP proxy shim(s)\n');
-                        } else {
-                            log('[patchSettings] mcp_http_proxy.js missing at ' + shimPath + ' — HTTP MCP in terminal disabled\n');
-                        }
-                    }
-                }
-            } catch(e3) { log('[patchSettings] HTTP MCP shim inject error: ' + e3.message + '\n'); }
+            // MCP servers are NOT configured via settings.json — claude-code ignores
+            // mcpServers here. They're supplied at spawn time via --mcp-config
+            // (writeSpawnMcpConfig / buildMcpServersObj). Strip any stale key so we
+            // never ship a conflicting/duplicate server list in settings.json.
+            delete s.mcpServers;
 
             fs.writeFileSync(sp, JSON.stringify(s, null, 2));
             log('[patchSettings] ok — approved=' + JSON.stringify(s.customApiKeyResponses.approved) + '\n');
@@ -3276,20 +3284,27 @@ function openPrintSession() {
         // claude-code v2.1.112 to hang indefinitely on Android after HEAD / health-check).
         const preamble = [STORAGE_NOTE, customPrompt].filter(Boolean).join('\n\n');
         const finalMsg = '[Instructions]\n' + preamble + '\n\n' + msg;
-        // Inject --mcp-config when the config file exists so MCP tools (exa, etc.)
-        // are available to claude-code in print mode, not just in interactive mode.
-        // --mcp-config is intentionally omitted in print mode. Each message spawns a
-        // fresh process; re-connecting to external HTTP/SSE MCP servers on every spawn
-        // hangs claude-code after the HEAD / health-check if any server is unreachable.
-        // MCP tools are available in agentic mode (persistent process, one-time connect).
-        const hasMcpConf = fs.existsSync(MCP_CONFIG_FILE);
-        log('[runMessage] mcp_config exists=' + hasMcpConf + '\n');
+        // --mcp-config supplies MCP servers to claude-code in print mode. claude-code
+        // does NOT read mcpServers from settings.json (that injection was a no-op —
+        // it's why MCP tools never reached the model). The config here contains only
+        // STDIO entries: real stdio servers + the lazy `mcp_http_proxy.js` shim for
+        // each HTTP server. No raw HTTP/SSE servers → no remote connect at spawn →
+        // no invariant-51 hang (the shim connects upstream lazily on first tool call).
+        const spawnMcpCfg = writeSpawnMcpConfig();
+        log('[runMessage] mcp_config exists=' + fs.existsSync(MCP_CONFIG_FILE) +
+            ' spawn-mcp=' + (spawnMcpCfg ? 'yes' : 'no') + '\n');
         let argvCode =
             'process.argv[2]="--output-format";' +
             'process.argv[3]="stream-json";' +
             'process.argv[4]="--print";' +
             'process.argv[5]="--verbose";';
         let argvLen = 6;
+        if (spawnMcpCfg) {
+            argvCode += 'process.argv[' + argvLen + ']="--mcp-config";';
+            argvLen++;
+            argvCode += 'process.argv[' + argvLen + ']=' + JSON.stringify(spawnMcpCfg) + ';';
+            argvLen++;
+        }
         if (state.hasHistory) {
             argvCode += 'process.argv[' + argvLen + ']="--continue";';
             argvLen++;
@@ -3315,7 +3330,7 @@ function openPrintSession() {
         // Verify cwd exists — spawn throws synchronously (ENOENT) if cwd is missing.
         const spawnCwd = (state.cwd && fs.existsSync(state.cwd)) ? state.cwd : FILES_DIR;
         log('[runMessage] spawn claude-code, model=' + (cfg.modelId || '?') + ' provider=' + (cfg.providerId || '?') + ' mode=' + (cfg.mode || '?') + ' baseUrl=' + (cfg.baseUrl || '?') + '\n');
-        log('[runMessage] argv: --output-format stream-json --print --verbose' + (state.hasHistory ? ' --continue' : '') + ' <msg>' + '\n');
+        log('[runMessage] argv: --output-format stream-json --print --verbose' + (spawnMcpCfg ? ' --mcp-config ' + spawnMcpCfg : '') + (state.hasHistory ? ' --continue' : '') + ' <msg>' + '\n');
         let proc;
         try {
             proc = spawn(LAUNCHER, ['-e', evalCode], { env, cwd: spawnCwd });
