@@ -3398,15 +3398,19 @@ function openPrintSession() {
                 if (fc > 0 && !/\w/.test(line.slice(0, fc))) line = line.slice(fc);
             }
 
-            // Tertiary guard: strip leading visible-punctuation prefix before the first
-            // word char when the prefix is mixed (≥2 distinct chars, ≤8 chars, no spaces).
-            // Android gesture keyboards leak composing artefacts like ".-.,..hello".
-            // Safe: single-char repeats like "..." or "--" are left intact.
+            // Tertiary guard: strip a leading run of gesture-keyboard artefact
+            // punctuation before the first word char. Android glide/gesture keyboards
+            // leak composing noise like ".-.+.+.+.*.,.hey" (often 10–20+ chars, so no
+            // length cap). Only strip when the WHOLE prefix is artefact punctuation
+            // (no spaces, no word chars) AND has ≥2 distinct chars — so single-char
+            // runs like "...", "---", "***" (markdown/dividers) are left intact.
             {
                 const fw = line.search(/\w/);
-                if (fw > 0 && fw <= 8) {
+                if (fw > 0) {
                     const prefix = line.slice(0, fw);
-                    if (!/\s/.test(prefix) && new Set(prefix).size >= 2) line = line.slice(fw);
+                    if (/^[.,\-+*~^'";:]+$/.test(prefix) && new Set(prefix).size >= 2) {
+                        line = line.slice(fw);
+                    }
                 }
             }
 
