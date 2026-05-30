@@ -35,6 +35,28 @@ import com.claudecodesetup.discussion.HumanRole
 import com.claudecodesetup.discussion.Pacing
 import com.claudecodesetup.discussion.PromptBuilder
 import com.claudecodesetup.discussion.Speaker
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
+
+/** Outcome of reading an attached file: either extracted text or a user-facing error. */
+private sealed class AttachResult {
+    data class Ok(val name: String, val body: String) : AttachResult()
+    data class Err(val message: String) : AttachResult()
+}
+
+/** Heuristic: does this byte stream look like binary (not UTF-8 text)? */
+private fun looksBinary(bytes: ByteArray): Boolean {
+    val n = minOf(bytes.size, 8000)
+    if (n == 0) return false
+    var control = 0
+    for (i in 0 until n) {
+        val b = bytes[i].toInt() and 0xFF
+        if (b == 0) return true                       // NUL byte → definitely binary
+        if (b < 0x09 || b in 0x0E..0x1F) control++     // control chars (excl. tab/LF/CR)
+    }
+    return control * 100 / n > 5                        // >5% control chars → binary
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,8 +83,9 @@ fun DiscussionSetupScreen(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    // Attach a code/text file: read its contents and insert them into the topic,
-    // wrapped in a fenced block with the filename so the models see it as code.
+    // Attach a code/text/PDF file: read its contents and insert them into the topic,
+    // wrapped in a fenced block with the filename so the models see it as code. PDFs
+    // are run through PdfBox text extraction; plain text/code is decoded as UTF-8.
     val attachLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -77,22 +100,41 @@ fun DiscussionSetupScreen(
                             if (idx >= 0) name = c.getString(idx) ?: name
                         }
                     }
+                    val mime = context.contentResolver.getType(uri) ?: ""
+                    val isPdf = mime == "application/pdf" || name.endsWith(".pdf", ignoreCase = true)
                     val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                        ?: return@withContext null
-                    if (bytes.size > 200_000) return@withContext Pair(name, null) // too big
-                    Pair(name, String(bytes, Charsets.UTF_8))
-                } catch (e: Exception) { null }
+                        ?: return@withContext AttachResult.Err("Couldn't read that file")
+                    // PDFs can be larger than plain text; cap raw bytes accordingly.
+                    if (isPdf && bytes.size > 5_000_000)
+                        return@withContext AttachResult.Err("PDF too large (max 5 MB)")
+                    if (!isPdf && bytes.size > 200_000)
+                        return@withContext AttachResult.Err("File too large (max 200 KB)")
+                    if (isPdf) {
+                        PDFBoxResourceLoader.init(context)
+                        val text = PDDocument.load(bytes).use { doc ->
+                            PDFTextStripper().getText(doc)
+                        }.trim()
+                        if (text.isBlank())
+                            return@withContext AttachResult.Err("No extractable text in that PDF (it may be scanned images)")
+                        // Guard against a huge PDF blowing up the token count.
+                        val capped = if (text.length > 200_000) text.substring(0, 200_000) + "\n…[truncated]" else text
+                        AttachResult.Ok(name, capped)
+                    } else {
+                        if (looksBinary(bytes))
+                            return@withContext AttachResult.Err("That looks like a binary file — attach text, code, or a PDF.")
+                        AttachResult.Ok(name, String(bytes, Charsets.UTF_8))
+                    }
+                } catch (e: Exception) {
+                    AttachResult.Err("Couldn't read that file: ${e.message ?: "unknown error"}")
+                }
             }
-            when {
-                loaded == null ->
-                    Toast.makeText(context, "Couldn't read that file", Toast.LENGTH_SHORT).show()
-                loaded.second == null ->
-                    Toast.makeText(context, "File too large (max 200 KB)", Toast.LENGTH_SHORT).show()
-                else -> {
-                    val (name, body) = loaded
-                    val block = "```" + name + "\n" + body!!.trimEnd() + "\n```"
+            when (loaded) {
+                is AttachResult.Err ->
+                    Toast.makeText(context, loaded.message, Toast.LENGTH_SHORT).show()
+                is AttachResult.Ok -> {
+                    val block = "```" + loaded.name + "\n" + loaded.body.trimEnd() + "\n```"
                     topic = if (topic.isBlank()) block else topic.trimEnd() + "\n\n" + block
-                    Toast.makeText(context, "Attached $name (${body.length} chars)", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Attached ${loaded.name} (${loaded.body.length} chars)", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -169,7 +211,7 @@ fun DiscussionSetupScreen(
                         tint = NexusAccent,
                         modifier = Modifier.size(15.dp).padding(end = 6.dp),
                     )
-                    Text("Attach code file", fontFamily = DmSansFamily, fontSize = 12.sp,
+                    Text("Attach code / PDF", fontFamily = DmSansFamily, fontSize = 12.sp,
                         fontWeight = FontWeight.Medium, color = NexusAccent)
                 }
 
