@@ -91,7 +91,7 @@ fun HomeScreen(
                     .border(1.dp, Color(0xFF2A2A30), RoundedCornerShape(20.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                ConvergenceLogo(modifier = Modifier.size(64.dp))
+                ConvergenceLogo(modifier = Modifier.size(70.dp))
             }
 
             Spacer(Modifier.height(16.dp))
@@ -298,8 +298,18 @@ private fun ConvergenceLogo(modifier: Modifier = Modifier) {
     )
     val accent = NexusAccent
     androidx.compose.foundation.Canvas(modifier = modifier) {
-        val k = size.minDimension / 108f
-        fun p(x: Float, y: Float) = Offset(x * k, y * k)
+        // The artwork's structural extent is the cardinal tips at ±45 from center
+        // (54). The 108 viewBox is an adaptive-icon box that carries ~9 units of dead
+        // bleed-zone margin on every side — irrelevant here (we draw the full box, no
+        // mask), so dividing by 108 left the logo filling only ~70% of the tile.
+        // Scale by the content half-extent (45) and recenter explicitly so the tips
+        // sit a small uniform margin from the canvas edge at any size. `fill` is the
+        // one knob: 1.0 = tips touch the edge; lower = more breathing room.
+        val fill = 0.90f
+        val k = (size.minDimension / 2f) * fill / 45f
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        fun p(x: Float, y: Float) = Offset(cx + (x - 54f) * k, cy + (y - 54f) * k)
         val c = p(54f, 54f)
         val capRound = androidx.compose.ui.graphics.StrokeCap.Round
 
@@ -312,8 +322,8 @@ private fun ConvergenceLogo(modifier: Modifier = Modifier) {
 
         // Diamond outline
         val diamond = Path().apply {
-            moveTo(54f * k, 27f * k); lineTo(81f * k, 54f * k)
-            lineTo(54f * k, 81f * k); lineTo(27f * k, 54f * k); close()
+            val a = p(54f, 27f); val b = p(81f, 54f); val d = p(54f, 81f); val e = p(27f, 54f)
+            moveTo(a.x, a.y); lineTo(b.x, b.y); lineTo(d.x, d.y); lineTo(e.x, e.y); close()
         }
         drawPath(
             diamond, accent.copy(alpha = 0.60f),
