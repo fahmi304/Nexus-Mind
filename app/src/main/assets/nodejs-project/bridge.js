@@ -1960,10 +1960,15 @@ function buildEnv() {
         LANG: 'en_US.UTF-8',
         LINES: '50',
         COLUMNS: '160',
-        // Bypass the "do you trust this folder?" prompt. pE_() in cli.js returns
-        // true immediately when CLAUDE_CODE_SANDBOXED is set, skipping the
-        // per-directory hasTrustDialogAccepted check in settings.json entirely.
-        CLAUDE_CODE_SANDBOXED: '1',
+        // NOTE (2026-05-30 experiment): CLAUDE_CODE_SANDBOXED='1' was REMOVED here.
+        // It was set only to skip the "do you trust this folder?" prompt, but it also
+        // appears to switch claude-code's Bash TOOL into workspace-only-writes sandbox
+        // mode — Bash writes to /sdcard silently no-op while reporting "✓ Completed"
+        // (see Known gaps: Bash tool sandbox). Trust is now granted explicitly per-cwd
+        // via ensureProjectTrusted() (writes hasTrustDialogAccepted into ~/.claude.json)
+        // before each spawn. REVERT (re-add this line) if the trust dialog reappears and
+        // hangs print mode (inv 5b family) — that means ensureProjectTrusted's shape is
+        // wrong and the env bypass is still needed.
         // Include npm-global bin and a bundled-binaries dir (for future git/gh bundles)
         // FILES_DIR/bin first so our claude/node wrappers take precedence over npm bin scripts
         PATH: (process.env.PATH || '/system/bin:/system/xbin') +
@@ -3367,6 +3372,9 @@ function openPrintSession() {
 
         // Verify cwd exists — spawn throws synchronously (ENOENT) if cwd is missing.
         const spawnCwd = (state.cwd && fs.existsSync(state.cwd)) ? state.cwd : FILES_DIR;
+        // Pre-trust this cwd so claude-code skips the "do you trust this folder?" prompt
+        // now that CLAUDE_CODE_SANDBOXED is gone (which also un-sandboxes the Bash tool).
+        ensureProjectTrusted(spawnCwd);
         log('[runMessage] spawn claude-code, model=' + (cfg.modelId || '?') + ' provider=' + (cfg.providerId || '?') + ' mode=' + (cfg.mode || '?') + ' baseUrl=' + (cfg.baseUrl || '?') + '\n');
         log('[runMessage] argv: --output-format stream-json --print' + (spawnMcpCfg ? ' --mcp-config ' + spawnMcpCfg : '') + (state.hasHistory ? ' --continue' : '') + ' --verbose <msg>' + '\n');
         let proc;
@@ -4359,6 +4367,34 @@ function openPrintSession() {
     server.listen(PORT, HOST, () => {
         log('Print Bridge ready on ' + HOST + ':' + PORT + '\n');
     });
+}
+
+// Mark a project directory as trusted in ~/.claude.json so claude-code skips the
+// "do you trust this folder?" prompt without CLAUDE_CODE_SANDBOXED (which also
+// sandboxed the Bash tool — see Known gaps). claude-code keys trust per absolute
+// cwd under projects[cwd]. Merges into the existing file so other claude-code
+// state (history flags, etc.) is preserved. Best-effort: any failure is logged,
+// not fatal (worst case the trust prompt reappears, which the log will show).
+function ensureProjectTrusted(cwd) {
+    try {
+        const cjPath = path.join(FILES_DIR, '.claude.json');
+        let cj = {};
+        try { cj = JSON.parse(fs.readFileSync(cjPath, 'utf8')) || {}; } catch (_) {}
+        if (typeof cj !== 'object' || cj === null) cj = {};
+        if (!cj.projects || typeof cj.projects !== 'object') cj.projects = {};
+        for (const dir of [cwd, FILES_DIR]) {
+            const p = cj.projects[dir] || {};
+            p.hasTrustDialogAccepted = true;
+            p.hasCompletedProjectOnboarding = true;
+            cj.projects[dir] = p;
+        }
+        // Top-level onboarding flags some claude-code builds also gate on.
+        cj.hasCompletedOnboarding = true;
+        cj.bypassPermissionsModeAccepted = true;
+        fs.writeFileSync(cjPath, JSON.stringify(cj));
+    } catch (e) {
+        log('[trust] ensureProjectTrusted failed: ' + e.message + '\n');
+    }
 }
 
 // Write FILES_DIR/bin/claude and FILES_DIR/bin/node wrappers so that
