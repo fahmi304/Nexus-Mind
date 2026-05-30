@@ -23,6 +23,7 @@ import com.claudecodesetup.discussion.DiscussionConfig
 import com.claudecodesetup.discussion.DiscussionMode
 import com.claudecodesetup.discussion.HumanRole
 import com.claudecodesetup.discussion.Pacing
+import com.claudecodesetup.discussion.PromptBuilder
 import com.claudecodesetup.discussion.Speaker
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,6 +50,14 @@ fun DiscussionSetupScreen(
     var showPicker by remember { mutableStateOf(false) }
 
     val canStart = topic.isNotBlank() && speakers.size in 2..4
+
+    // Debate: give each speaker a default side as soon as the lineup is set (or
+    // changes), so the SIDES picker shows a starting assignment to flip.
+    LaunchedEffect(mode, speakers.map { it.model.id }) {
+        if (mode == DiscussionMode.DEBATE && speakers.size in 2..4 && speakers.any { it.role.isEmpty() }) {
+            speakers = PromptBuilder.defaultDebateRoles(speakers)
+        }
+    }
 
     AppBackground {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -133,6 +142,36 @@ fun DiscussionSetupScreen(
                         }
                     }
                     Text("→", fontSize = 16.sp, color = NexusAccent)
+                }
+
+                // Debate sides — let the user assign Defence / Opposition / Moderator.
+                if (mode == DiscussionMode.DEBATE && speakers.isNotEmpty()) {
+                    SectionLabel("SIDES")
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        speakers.forEachIndexed { i, sp ->
+                            DebateSideRow(
+                                speaker = sp,
+                                onPick = { newRole ->
+                                    speakers = speakers.toMutableList()
+                                        .also { it[i] = it[i].copy(role = newRole) }
+                                },
+                            )
+                        }
+                    }
+                    val hasFor = speakers.any { it.role == "Defence" }
+                    val hasAgainst = speakers.any { it.role == "Opposition" }
+                    if (!hasFor || !hasAgainst) {
+                        Text(
+                            "⚠ A debate needs at least one Defence and one Opposition.",
+                            fontFamily = DmSansFamily, fontSize = 11.sp, color = NexusAmber,
+                        )
+                    }
+                    Text(
+                        "Defence argues for the topic, Opposition argues against, Moderator stays " +
+                        "neutral. Sides are fixed for the whole debate — pick Roundtable instead if " +
+                        "you want models free to change their minds.",
+                        fontFamily = DmSansFamily, fontSize = 11.sp, color = NexusText3,
+                    )
                 }
 
                 // Max turns — slider (quick pick 2..20) + exact/unlimited box.
@@ -351,6 +390,47 @@ fun DiscussionSetupScreen(
 private fun SectionLabel(s: String, color: Color = NexusBlue.copy(alpha = 0.8f)) {
     Text(s, fontFamily = SpaceMonoFamily, fontSize = 10.sp,
         letterSpacing = 2.sp, color = color)
+}
+
+// One row per speaker in Debate mode: model name + Defence/Opposition/Moderator
+// chips. The stored role values stay "For"/"Against"/"Moderator" (what the
+// prompt + start() expect); the UI just labels them for the user.
+@Composable
+private fun DebateSideRow(speaker: Speaker, onPick: (String) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(NexusSurface, RoundedCornerShape(10.dp))
+            .border(1.dp, NexusBorder, RoundedCornerShape(10.dp))
+            .padding(10.dp),
+    ) {
+        Text(speaker.model.name, fontFamily = DmSansFamily, fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 1)
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            SideChip("Defence", speaker.role == "Defence", NexusGreen) { onPick("Defence") }
+            SideChip("Opposition", speaker.role == "Opposition", NexusRed) { onPick("Opposition") }
+            SideChip("Moderator", speaker.role == "Moderator", NexusBlue) { onPick("Moderator") }
+        }
+    }
+}
+
+@Composable
+private fun SideChip(label: String, selected: Boolean, accent: Color, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .background(
+                if (selected) accent.copy(alpha = 0.20f) else NexusSurface2,
+                RoundedCornerShape(8.dp),
+            )
+            .border(1.dp, if (selected) accent else NexusBorder, RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    ) {
+        Text(label, fontFamily = DmSansFamily, fontSize = 11.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) accent else NexusText2)
+    }
 }
 
 @Composable

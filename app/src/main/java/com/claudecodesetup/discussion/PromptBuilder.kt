@@ -87,15 +87,11 @@ object PromptBuilder {
      * start; the roles are stable for the duration of the discussion.
      */
     fun assignRoles(mode: DiscussionMode, speakers: List<Speaker>): List<Speaker> = when (mode) {
-        DiscussionMode.DEBATE -> when (speakers.size) {
-            2 -> listOf(speakers[0].copy(role = "For"), speakers[1].copy(role = "Against"))
-            3 -> listOf(speakers[0].copy(role = "For"), speakers[1].copy(role = "Against"), speakers[2].copy(role = "Moderator"))
-            4 -> listOf(
-                speakers[0].copy(role = "For"), speakers[1].copy(role = "For"),
-                speakers[2].copy(role = "Against"), speakers[3].copy(role = "Against"),
-            )
-            else -> speakers
-        }
+        // If the user picked sides in setup (all roles set), honor them; else
+        // fall back to the index-based default.
+        DiscussionMode.DEBATE ->
+            if (speakers.size in 2..4 && speakers.all { it.role.isNotEmpty() }) speakers
+            else defaultDebateRoles(speakers)
         DiscussionMode.CRITIQUE, DiscussionMode.CODE_REVIEW -> {
             // First speaker proposes, rest critique. Labels are advisory.
             speakers.mapIndexed { i, s ->
@@ -103,6 +99,19 @@ object PromptBuilder {
             }
         }
         DiscussionMode.ROUNDTABLE -> speakers
+    }
+
+    /** Default side assignment for Debate when the user hasn't chosen: first
+     *  speaker(s) Defence ("For"), rest Opposition ("Against"), with a Moderator
+     *  for a 3-way. Used as the setup-screen default and the start() fallback. */
+    fun defaultDebateRoles(speakers: List<Speaker>): List<Speaker> = when (speakers.size) {
+        2 -> listOf(speakers[0].copy(role = "Defence"), speakers[1].copy(role = "Opposition"))
+        3 -> listOf(speakers[0].copy(role = "Defence"), speakers[1].copy(role = "Opposition"), speakers[2].copy(role = "Moderator"))
+        4 -> listOf(
+            speakers[0].copy(role = "Defence"), speakers[1].copy(role = "Defence"),
+            speakers[2].copy(role = "Opposition"), speakers[3].copy(role = "Opposition"),
+        )
+        else -> speakers
     }
 
     private fun renderTranscript(topic: String, priorTurns: List<Turn>, currentSpeaker: Speaker): String {

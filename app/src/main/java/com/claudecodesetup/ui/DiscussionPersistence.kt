@@ -36,6 +36,7 @@ object DiscussionPersistence {
                     for (s in cfg.speakers) put(JSONObject().apply {
                         put("providerId", s.provider.id)
                         put("modelId", s.model.modelId)
+                        put("role", s.role)   // Debate side (For/Against/Moderator)
                     })
                 })
             }
@@ -65,7 +66,7 @@ object DiscussionPersistence {
                 if (apiKey.isEmpty()) continue   // key rotated away; skip silently
                 val custom = prefs.getCustomBaseUrlForProvider(pid)
                 val baseUrl = if (custom.isNotEmpty()) custom else prov.baseUrl
-                speakers.add(Speaker(prov, model, apiKey, baseUrl))
+                speakers.add(Speaker(prov, model, apiKey, baseUrl).copy(role = so.optString("role", "")))
             }
             DiscussionConfig(
                 topic = obj.optString("topic"),

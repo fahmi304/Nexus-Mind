@@ -19,7 +19,7 @@ data class Speaker(
 /** Modes change the system prompt scaffolding and how roles are assigned. */
 enum class DiscussionMode(val label: String, val tagline: String) {
     ROUNDTABLE("Roundtable", "Open-ended discussion — disagree when warranted."),
-    DEBATE   ("Debate",     "Models take sides (For / Against / Moderator)."),
+    DEBATE   ("Debate",     "Models take sides — pick Defence / Opposition / Moderator."),
     CRITIQUE ("Critique",   "First proposes, the rest tear it apart."),
     CODE_REVIEW("Code Review", "Critique tuned for code. Verify-by-running still needs the terminal.")
 }
