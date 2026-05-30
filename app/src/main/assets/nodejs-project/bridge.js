@@ -3692,7 +3692,9 @@ function openPrintSession() {
                     try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[31m[!test-agent] could not write agent file: ' + e.message + '\x1b[0m\r\n'); } catch(_) {}
                     continue;
                 }
-                const testText = 'Run the nexus_probe sub-agent (via the Agent/Task tool) for a connectivity check, then tell me the exact string it returned.';
+                const testText = 'Use the Task tool (it may also be named Agent) to dispatch a sub-agent with subagent_type "nexus_probe". ' +
+                    'Do NOT use the Bash tool and do NOT run any shell command — "nexus_probe" is a sub-agent, not an executable. ' +
+                    'After the sub-agent replies, tell me the exact string it returned.';
                 const cleanup = () => { try { fs.unlinkSync(agentFile); } catch(_) {} };
                 try {
                     const tcfg = readConfig();
