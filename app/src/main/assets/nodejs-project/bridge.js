@@ -3069,6 +3069,10 @@ function openPrintSession() {
         } catch(_) { return false; }
     }
     function isToolAlreadyAllowed(toolName, toolInput, allowList) {
+        // '*' sentinel (set by !approve-tools) = approve every tool silently, no
+        // permission card. The Agent/Task carve-out in the callers still forces the
+        // sub-agent panel to render, so agent activity stays visible.
+        if ((allowList || []).includes('*')) return true;
         if ((allowList || []).includes(toolName)) return true;
         if (toolName === 'Bash') {
             const cmd = ((toolInput && toolInput.command) || '').toString().trim();
@@ -3653,6 +3657,31 @@ function openPrintSession() {
                 continue;
             }
 
+            // ── !approve-tools — pre-approve ALL tools, silence permission cards ──
+            // Adds a '*' sentinel to auto_approve.json. From then on every tool runs
+            // without a permission card (isToolAlreadyAllowed short-circuits on '*').
+            // Persists across spawns. `!approve-tools off` reverts to per-tool cards.
+            if (line.startsWith('!approve-tools')) {
+                const arg = line.slice('!approve-tools'.length).trim().toLowerCase();
+                const list = loadApproveList();
+                if (arg === 'off') {
+                    list.allow = (list.allow || []).filter(e => e !== '*');
+                    saveApproveList(list);
+                    try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[33m[approve-tools OFF — permission cards will show again]\x1b[0m\r\n'); } catch(_) {}
+                } else if (arg === 'status') {
+                    const on = (list.allow || []).includes('*');
+                    try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[2m[approve-tools is ' + (on ? 'ON' : 'OFF') + ']\x1b[0m\r\n'); } catch(_) {}
+                } else {
+                    if (!(list.allow || []).includes('*')) {
+                        list.allow = list.allow || [];
+                        list.allow.push('*');
+                        saveApproveList(list);
+                    }
+                    try { if (state.socket) state.socket.write(SYS_FENCE + '\x1b[32m[approve-tools ON — all tools auto-approved, no permission cards (sub-agent panel still shows). Use !approve-tools off to revert]\x1b[0m\r\n'); } catch(_) {}
+                }
+                continue;
+            }
+
             // ── !clear — interrupt current process and reset session ──────────────
             if (line.startsWith('!clear')) {
                 if (state.currentProc) {
@@ -3684,6 +3713,7 @@ function openPrintSession() {
                     '  \x1b[33m!clear\x1b[0m              Start a new conversation\r\n' +
                     '  \x1b[33m!context [path]\x1b[0m     Load file/dir as context\r\n' +
                     '  \x1b[33m!attach <file>\x1b[0m      Attach file to next message\r\n' +
+                    '  \x1b[33m!approve-tools [off]\x1b[0m Auto-approve all tools, hide permission cards\r\n' +
                     '  \x1b[33m!install [pkg]\x1b[0m      Install binary/npm (no arg = list available)\r\n' +
                     '  \x1b[33m!pty <cmd>\x1b[0m          Run interactive program (bash, python3…)\r\n' +
                     '  \x1b[33m!log [n|all|clear]\x1b[0m   Show last n lines (default 100); !log all = full; !log clear = wipe\r\n' +
