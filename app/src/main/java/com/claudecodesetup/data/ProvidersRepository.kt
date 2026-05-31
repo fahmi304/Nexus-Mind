@@ -92,6 +92,12 @@ object ProvidersRepository {
             // back to the bundled brand drawable here. Without this, every provider
             // loaded from assets/providers.json falls through to the letter fallback.
             iconResId       = brandResIdForProvider(id),
+            // These two gate live model fetch (↻ Refresh) and the URL-config field.
+            // Default to true so JSON-loaded providers don't silently lose live fetch
+            // (only Ollama overrides isUrlConfigurable). Without reading them here the
+            // JSON path forces both false, diverging from Providers.ALL.
+            supportsLiveFetch  = obj.optBoolean("supportsLiveFetch", true),
+            isUrlConfigurable  = obj.optBoolean("isUrlConfigurable", id == "ollama"),
         )
     }
 

@@ -362,6 +362,7 @@
       "baseUrl": "",
       "requiresProxy": false,
       "requiresApiKey": true,
+      "supportsLiveFetch": false,
       "models": [
         {
           "name": "Claude Sonnet 4.5",
