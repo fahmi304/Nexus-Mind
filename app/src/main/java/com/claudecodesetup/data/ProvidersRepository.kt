@@ -104,6 +104,7 @@ object ProvidersRepository {
         "gemini"        -> com.claudecodesetup.R.drawable.ic_brand_gemini
         "meta_llama"    -> com.claudecodesetup.R.drawable.ic_brand_meta
         "deepseek"      -> com.claudecodesetup.R.drawable.ic_brand_deepseek
+        "qwen"          -> com.claudecodesetup.R.drawable.ic_brand_qwen
         "ollama"        -> com.claudecodesetup.R.drawable.ic_brand_ollama
         "anthropic"     -> com.claudecodesetup.R.drawable.ic_brand_claude
         "anthropic_api" -> com.claudecodesetup.R.drawable.ic_brand_claude
@@ -161,6 +162,7 @@ object ProvidersRepository {
         "groq"        -> fetchOpenAiStyleModels("https://api.groq.com/openai/v1/models", apiKey, provider, isAlwaysFree = true)
         "deepseek"    -> fetchOpenAiStyleModels("https://api.deepseek.com/models", apiKey, provider)
         "kimi"        -> fetchOpenAiStyleModels("https://api.moonshot.ai/v1/models", apiKey, provider)
+        "qwen"        -> fetchOpenAiStyleModels("https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models", apiKey, provider)
         "anthropic"     -> fetchAnthropicModels(apiKey)
         "anthropic_api" -> fetchAnthropicModels(apiKey)
         "meta_llama"  -> fetchOpenAiStyleModels("https://api.llama.com/v1/models", apiKey, provider)

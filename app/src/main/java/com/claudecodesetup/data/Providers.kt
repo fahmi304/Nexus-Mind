@@ -186,6 +186,27 @@ object Providers {
         )
     )
 
+    val QWEN = Provider(
+        id = "qwen",
+        name = "Qwen (Alibaba)",
+        iconResId = R.drawable.ic_brand_qwen,
+        supportsLiveFetch = true,
+        signupUrl = "https://modelstudio.console.alibabacloud.com/",
+        rateLimit = "Free trial quota on signup · then paid",
+        malaysiaStatus = MalaysiaStatus.GREEN,
+        malaysiaNote = "International endpoint (Singapore) — works in Malaysia",
+        baseUrl = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        requiresProxy = true,
+        models = listOf(
+            AiModel("Qwen Max",         "qwen-max",         setOf(Cap.TOOLS, Cap.LONG_CTX),             "Most capable · text"),
+            AiModel("Qwen Plus",        "qwen-plus",        setOf(Cap.TOOLS, Cap.LONG_CTX),             "Balanced"),
+            AiModel("Qwen Turbo",       "qwen-turbo",       setOf(Cap.TOOLS, Cap.FAST, Cap.LONG_CTX),   "Fast · cheap"),
+            AiModel("Qwen3 Coder Plus", "qwen3-coder-plus", setOf(Cap.TOOLS, Cap.CODING, Cap.LONG_CTX), "Code specialist"),
+            AiModel("Qwen VL Max",      "qwen-vl-max",      setOf(Cap.TOOLS, Cap.VISION, Cap.LONG_CTX), "Vision · most capable"),
+            AiModel("QwQ Plus",         "qwq-plus",         setOf(Cap.REASONING),                       "Deep reasoning · text")
+        )
+    )
+
     val OLLAMA = Provider(
         id = "ollama",
         name = "Personal AI",
@@ -292,7 +313,7 @@ object Providers {
         models = emptyList()
     )
 
-    val ALL = listOf(GROQ, GEMINI, OPENROUTER, ANTHROPIC_API, DEEPSEEK, KIMI, NVIDIA_NIM, META_LLAMA, OLLAMA)
+    val ALL = listOf(GROQ, GEMINI, OPENROUTER, ANTHROPIC_API, DEEPSEEK, KIMI, QWEN, NVIDIA_NIM, META_LLAMA, OLLAMA)
 
     fun byId(id: String): Provider? = when (id) {
         "anthropic"     -> ANTHROPIC

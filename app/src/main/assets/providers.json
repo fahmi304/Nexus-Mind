@@ -175,6 +175,43 @@
       ]
     },
     {
+      "id": "qwen",
+      "name": "Qwen (Alibaba)",
+      "signupUrl": "https://modelstudio.console.alibabacloud.com/",
+      "rateLimit": "Free trial quota on signup · then paid",
+      "malaysiaStatus": "GREEN",
+      "malaysiaNote": "International endpoint (Singapore) — works in Malaysia",
+      "baseUrl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      "requiresProxy": true,
+      "requiresApiKey": true,
+      "models": [
+        {
+          "name": "Qwen Max",
+          "modelId": "qwen-max"
+        },
+        {
+          "name": "Qwen Plus",
+          "modelId": "qwen-plus"
+        },
+        {
+          "name": "Qwen Turbo",
+          "modelId": "qwen-turbo"
+        },
+        {
+          "name": "Qwen3 Coder Plus",
+          "modelId": "qwen3-coder-plus"
+        },
+        {
+          "name": "Qwen VL Max",
+          "modelId": "qwen-vl-max"
+        },
+        {
+          "name": "QwQ Plus",
+          "modelId": "qwq-plus"
+        }
+      ]
+    },
+    {
       "id": "nvidia_nim",
       "name": "NVIDIA NIM",
       "signupUrl": "https://build.nvidia.com/models",
